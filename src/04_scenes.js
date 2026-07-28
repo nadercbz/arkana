@@ -426,6 +426,72 @@ G.SpiegelScene = () => {
 };
 
 // ------------------------------------------------------------
+// Inschrift lesen: trägt die Story
+// ------------------------------------------------------------
+G.InschriftScene = (ins) => {
+  let t = 0, chars = 0;
+  return {
+    translucent: true,
+    update(dt) {
+      t += dt; chars += dt * 52;
+      if (G.input.pressed('action') || G.input.pressed('cancel')) {
+        if (chars < ins.text.length) chars = ins.text.length;
+        else G.popScene();
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.globalAlpha = 0.82; c.fillStyle = '#000'; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      const h = 300, y0 = (G.H - h) / 2;
+      c.fillStyle = p.bgVoid; c.fillRect(28, y0, G.W - 56, h);
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(29, y0 + 1, G.W - 58, h - 2);
+      // Eingeritzte Ecken
+      c.fillStyle = p.dim;
+      c.fillRect(34, y0 + 6, 18, 2); c.fillRect(34, y0 + 6, 2, 18);
+      c.fillRect(G.W - 52, y0 + h - 24, 18, 2); c.fillRect(G.W - 36, y0 + h - 24, 2, 18);
+
+      G.text(c, '⌖ INSCHRIFT', G.W / 2, y0 + 26, p.textDim, 13, 'center');
+      const tl = G.wrapText(c, ins.titel, G.W - 90, 18);
+      tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 52 + i * 22, p.main, 18, 'center'));
+      const shown = ins.text.slice(0, Math.floor(chars));
+      const wrapped = G.wrapText(c, shown, G.W - 84, 17);
+      wrapped.slice(0, 8).forEach((l, i) => G.text(c, l, 42, y0 + 112 + i * 24, p.textBright, 17));
+      if (chars >= ins.text.length && Math.floor(t * 2) % 2 === 0) {
+        G.text(c, '[ OK ]', G.W / 2, y0 + h - 34, p.textDim, 14, 'center');
+      }
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Ortsname beim ersten Betreten, mit Ankunftstext
+// ------------------------------------------------------------
+G.OrtScene = (ort, text) => {
+  let t = 0;
+  return {
+    translucent: true,
+    update(dt) {
+      t += dt;
+      if (t > 4.5 || G.input.pressed('action') || G.input.pressed('cancel')) G.popScene();
+    },
+    draw(c) {
+      const p = G.pal;
+      const fade = t < 0.5 ? t / 0.5 : (t > 3.8 ? Math.max(0, (4.5 - t) / 0.7) : 1);
+      c.globalAlpha = fade * 0.72; c.fillStyle = '#000';
+      c.fillRect(0, G.FIELD_H / 2 - 92, G.W, 184);
+      c.globalAlpha = fade;
+      c.fillStyle = p.main;
+      c.fillRect(40, G.FIELD_H / 2 - 92, G.W - 80, 2);
+      c.fillRect(40, G.FIELD_H / 2 + 90, G.W - 80, 2);
+      G.textGlow(c, ort.toUpperCase(), G.W / 2, G.FIELD_H / 2 - 72, p.bright, 21);
+      const wrapped = G.wrapText(c, text, G.W - 76, 16);
+      wrapped.slice(0, 5).forEach((l, i) => G.text(c, l, G.W / 2, G.FIELD_H / 2 - 32 + i * 24, p.text, 16, 'center'));
+      c.globalAlpha = 1;
+    },
+  };
+};
+
+// ------------------------------------------------------------
 // Oberwelt
 // ------------------------------------------------------------
 G.OverworldScene = () => {
@@ -436,6 +502,15 @@ G.OverworldScene = () => {
   const spiritPos = { x: 0, y: 0 };
   const spiritTrail = [];
   let ambientTimer = 0;
+  let fauna = [];
+  let faunaRoom = null;
+
+  function ensureFauna() {
+    if (faunaRoom === G.state.room) return;
+    const r = room();
+    fauna = G.newFauna((r && r.biome) || 'asche', G.hashStr(G.state.room + (r ? r.biome : '')));
+    faunaRoom = G.state.room;
+  }
 
   const area = () => G.MAPS[G.state.area];
   const room = () => area().rooms[G.state.room];
@@ -519,17 +594,36 @@ G.OverworldScene = () => {
     }
   }
 
+  // Position eines NPC oder Schreins aus den generierten Plätzen holen
+  function spotOf(list, idx) {
+    const arr = (list || {})[G.state.room];
+    if (!arr || !arr[idx || 0]) return null;
+    return arr[idx || 0];
+  }
+
   function nearest() {
     const px = G.state.px + 13, py = G.state.py + 32;
     for (const n of (area().npcs || {})[G.state.room] || []) {
-      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
+      const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
+      if (!sp) continue;
+      if (Math.hypot(px - (sp[0] * TT + 13), py - (sp[1] * TT + 32)) < 52) return { type: 'npc', npc: n };
+    }
+    // Inschriften tragen die Story
+    const insch = (area().inschriftSpots || {})[G.state.room] || [];
+    for (let i = 0; i < insch.length; i++) {
+      const [tx, ty] = insch[i];
+      if (Math.hypot(px - (tx * TT + 20), py - (ty * TT + 24)) < 46) return { type: 'inschrift', idx: i };
     }
     for (const f of (G.state.fragMap || {})[G.state.room] || []) {
       if (G.state.fragmente.includes(f.id)) continue;
       if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
     }
-    const sh = (area().shrines || {})[G.state.room];
-    if (sh && Math.hypot(px - (sh.x + 40), py - (sh.y + 40)) < 78) return { type: 'shrine' };
+    const shDef = (area().shrines || {})[G.state.room];
+    if (shDef) {
+      const sp = spotOf(area().npcSpots, 0);
+      const sx = sp ? sp[0] * TT : 3 * TT, sy = sp ? sp[1] * TT : 3 * TT;
+      if (Math.hypot(px - (sx + 20), py - (sy + 24)) < 78) return { type: 'shrine' };
+    }
     const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
     for (const tr of (area().triggers || {})[G.state.room] || []) {
       if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
@@ -540,6 +634,7 @@ G.OverworldScene = () => {
   return {
     enter() {
       ensureFragments();
+      ensureFauna();
       spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
     },
     update(dt) {
@@ -599,6 +694,13 @@ G.OverworldScene = () => {
           rescueIfStuck();
           vx = 0; vy = 0;          // Restgeschwindigkeit verwerfen
           transition = null; G.save();
+          // Beim ersten Betreten den Ankunftstext zeigen
+          const st = G.STORY && G.STORY[G.state.room];
+          const key = 'ank:' + G.state.room;
+          if (st && st.ankunft && !G.state.gelesen[key]) {
+            G.state.gelesen[key] = 1; G.save();
+            G.pushScene(G.OrtScene(st.ort || (room() && room().name) || '', st.ankunft));
+          }
         }
         G.updateAnim(anim, dt, 0, 0, false);
         return;
@@ -627,6 +729,8 @@ G.OverworldScene = () => {
         if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
       }
 
+      ensureFauna();
+      G.updateFauna(fauna, dt, t, G.state.px + 13, G.state.py + 26);
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
@@ -659,6 +763,13 @@ G.OverworldScene = () => {
         const it = nearest();
         if (it) {
           if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
+          else if (it.type === 'inschrift') {
+            const st = G.STORY && G.STORY[G.state.room];
+            const ins = st && st.inschriften && st.inschriften[it.idx % st.inschriften.length];
+            const key = G.state.room + ':' + it.idx;
+            if (!G.state.gelesen[key]) { G.state.gelesen[key] = 1; G.state.stats.inschriften = (G.state.stats.inschriften || 0) + 1; G.save(); }
+            G.pushScene(G.InschriftScene(ins || { titel: 'Verwitterter Stein', text: 'Die Zeichen sind nicht mehr zu lesen.' }));
+          }
           else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
           else if (it.type === 'shrine') { G.pushScene(G.SpiegelScene()); }
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
@@ -695,10 +806,20 @@ G.OverworldScene = () => {
           if (!G.state.fragmente.includes(f.id)) G.drawFragment(c, f.x, f.y, p, t, i * 1.7);
         });
         // Schrein
-        const sh = (area().shrines || {})[G.state.room];
-        if (sh) G.drawShrine(c, sh.x, sh.y, p, t);
+        if ((area().shrines || {})[G.state.room]) {
+          const sp = spotOf(area().npcSpots, 0);
+          if (sp) G.drawShrine(c, sp[0] * TT - 20, sp[1] * TT - 20, p, t);
+        }
         // NPCs
-        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => G.drawNpc(c, n.x * TT, n.y * TT, p, n.v, t, i));
+        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => {
+          const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
+          if (sp) G.drawNpc(c, sp[0] * TT, sp[1] * TT, p, n.v, t, i);
+        });
+        // Inschriften
+        ((area().inschriftSpots || {})[G.state.room] || []).forEach(([tx, ty], i) => {
+          const key = G.state.room + ':' + i;
+          G.drawInschrift(c, tx * TT, ty * TT, p, t, !!G.state.gelesen[key]);
+        });
 
         // Ladenflackern
         if (G.state.area === 'stadt' && G.state.room === '1,2' && Math.sin(t * 6.5) > 0.55) {
@@ -707,6 +828,7 @@ G.OverworldScene = () => {
         }
 
         G.drawParticles(c);
+        G.drawFauna(c, fauna, p, t);
 
         // Begleiter hinter dem Spieler
         if (G.state.phase === 'arkana' && G.state.sig) {
@@ -718,10 +840,12 @@ G.OverworldScene = () => {
         const glow = G.state.phase === 'prolog' ? G.PAL.amber.main : null;
         G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, glow);
 
+        // Licht der Fackeln, Kristalle und Leylinien über allem
+        G.drawLight(c, room(), p, t);
         c.restore();
       }
 
-      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.48);
+      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.44);
 
       // ---- HUD ----
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
@@ -739,7 +863,7 @@ G.OverworldScene = () => {
       }
       const it = !transition && nearest();
       if (it) {
-        const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN' }[it.type];
+        const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN', inschrift: 'LESEN' }[it.type];
         c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
         c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 44, G.W - 28, 40); c.globalAlpha = 1;
         c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(14, G.HUD_Y + 44, G.W - 28, 40);

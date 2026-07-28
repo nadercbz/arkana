@@ -745,6 +745,162 @@ G.drawShrine = (c, px, py, p, t) => {
 };
 
 // ------------------------------------------------------------
+// LICHT: Fackeln, Kristalle und Leylinien werfen echtes Licht
+// ------------------------------------------------------------
+// Wird als weiches Overlay über den Raum gelegt. Die Lichtquellen
+// stammen aus den Kacheln selbst, deshalb passt es immer zum Raum.
+const LIGHT_TILES = { f: [46, 1.0], c: [40, 0.75], '*': [30, 0.55], M: [26, 0.5], D: [24, 0.4], p: [20, 0.35] };
+
+G.drawLight = (c, room, p, t) => {
+  const tiles = G.roomTiles(room);
+  const src = [];
+  for (let ty = 0; ty < G.ROOM_H; ty++) {
+    const row = tiles[ty] || '';
+    for (let tx = 0; tx < G.ROOM_W; tx++) {
+      const L = LIGHT_TILES[row[tx]];
+      if (L) src.push([tx * T + T / 2, ty * T + T / 2, L[0], L[1], noise2(tx, ty)]);
+    }
+  }
+  if (!src.length) return;
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  for (const [x, y, r, i0, n] of src) {
+    const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + n * 9));
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    const col = p.glow;
+    g.addColorStop(0, col);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = 0.16 * flick;
+    c.fillStyle = g;
+    c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  c.restore();
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// FAUNA: kleine Lebewesen je Habitat, rein dekorativ
+// ------------------------------------------------------------
+G.newFauna = (biome, seed) => {
+  const rng = G.mulberry32(seed >>> 0);
+  const kinds = {
+    sumpf: { n: 5, art: 'fisch' }, mond: { n: 7, art: 'falter' },
+    hain: { n: 8, art: 'gluehwurm' }, kristall: { n: 4, art: 'splitter' },
+    unterwelt: { n: 5, art: 'funke' }, wueste: { n: 3, art: 'kaefer' },
+    sternen: { n: 6, art: 'stern' }, bibliothek: { n: 4, art: 'blatt' },
+    asche: { n: 4, art: 'krahe' },
+  };
+  const k = kinds[biome] || kinds.asche;
+  const out = [];
+  for (let i = 0; i < k.n; i++) {
+    out.push({
+      art: k.art,
+      x: rng() * G.W, y: rng() * G.FIELD_H,
+      vx: (rng() - 0.5) * 22, vy: (rng() - 0.5) * 18,
+      ph: rng() * 6.28, sp: 0.6 + rng() * 0.9,
+    });
+  }
+  return out;
+};
+
+G.updateFauna = (fa, dt, t, px, py) => {
+  for (const f of fa) {
+    if (f.art === 'gluehwurm' || f.art === 'falter' || f.art === 'funke') {
+      // Schweben mit Eigenleben, weichen dem Spieler leicht aus
+      f.x += (f.vx + Math.sin(t * f.sp + f.ph) * 12) * dt;
+      f.y += (f.vy + Math.cos(t * f.sp * 1.3 + f.ph) * 10) * dt;
+      const dx = f.x - px, dy = f.y - py, d = Math.hypot(dx, dy);
+      if (d < 46 && d > 0.1) { f.x += (dx / d) * 26 * dt; f.y += (dy / d) * 26 * dt; }
+    } else if (f.art === 'fisch') {
+      f.x += f.vx * dt; f.y += Math.sin(t * 1.4 + f.ph) * 10 * dt;
+    } else if (f.art === 'krahe' || f.art === 'blatt') {
+      f.x += f.vx * dt * 1.4; f.y += (f.vy * 0.4 + Math.sin(t * 2 + f.ph) * 14) * dt;
+    } else {
+      f.x += f.vx * dt * 0.6; f.y += f.vy * dt * 0.6;
+    }
+    // Am Rand umkehren statt verschwinden
+    if (f.x < 6) { f.x = 6; f.vx = Math.abs(f.vx); }
+    if (f.x > G.W - 6) { f.x = G.W - 6; f.vx = -Math.abs(f.vx); }
+    if (f.y < 6) { f.y = 6; f.vy = Math.abs(f.vy); }
+    if (f.y > G.FIELD_H - 6) { f.y = G.FIELD_H - 6; f.vy = -Math.abs(f.vy); }
+  }
+};
+
+G.drawFauna = (c, fa, p, t) => {
+  for (const f of fa) {
+    const x = Math.round(f.x), y = Math.round(f.y);
+    const puls = 0.5 + 0.5 * Math.sin(t * 3 + f.ph);
+    if (f.art === 'gluehwurm' || f.art === 'funke') {
+      c.globalAlpha = 0.2 * puls; c.fillStyle = p.glow;
+      c.beginPath(); c.arc(x, y, 6, 0, 6.283); c.fill();
+      c.globalAlpha = 0.7 + 0.3 * puls; c.fillStyle = p.bright;
+      c.fillRect(x - 1, y - 1, 2, 2);
+    } else if (f.art === 'falter') {
+      const w = Math.sin(t * 12 + f.ph) * 3;
+      c.globalAlpha = 0.75; c.fillStyle = p.textBright;
+      c.fillRect(x - 1, y - 1, 2, 3);
+      c.fillStyle = p.text;
+      c.fillRect(x - 1 - Math.abs(w), y - 1, Math.abs(w), 2);
+      c.fillRect(x + 1, y - 1, Math.abs(w), 2);
+    } else if (f.art === 'fisch') {
+      c.globalAlpha = 0.4; c.fillStyle = p.main;
+      const dir = f.vx > 0 ? 1 : -1;
+      c.fillRect(x, y, 5, 2);
+      c.fillRect(x - dir * 2, y - 1, 2, 4);
+    } else if (f.art === 'krahe') {
+      c.globalAlpha = 0.55; c.fillStyle = p.bgVoid;
+      const flap = Math.sin(t * 8 + f.ph) * 2;
+      c.fillRect(x - 4, y - flap, 4, 1);
+      c.fillRect(x + 1, y + flap, 4, 1);
+      c.fillRect(x - 1, y, 2, 2);
+    } else if (f.art === 'blatt') {
+      c.globalAlpha = 0.5; c.fillStyle = p.dim;
+      c.save(); c.translate(x, y); c.rotate(t * 1.6 + f.ph);
+      c.fillRect(-3, -1, 6, 2); c.restore();
+    } else if (f.art === 'stern') {
+      c.globalAlpha = 0.3 + 0.6 * puls; c.fillStyle = p.bright;
+      c.fillRect(x, y, 2, 2);
+      if (puls > 0.85) { c.fillRect(x - 2, y, 6, 1); c.fillRect(x, y - 2, 1, 6); }
+    } else if (f.art === 'splitter') {
+      c.globalAlpha = 0.35 + 0.4 * puls; c.fillStyle = p.glow;
+      c.save(); c.translate(x, y); c.rotate(t + f.ph);
+      c.fillRect(-2, -2, 4, 4); c.restore();
+    } else {
+      c.globalAlpha = 0.5; c.fillStyle = p.dim;
+      c.fillRect(x, y, 3, 2);
+    }
+  }
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Inschrift: ein lesbarer Stein, trägt die Story
+// ------------------------------------------------------------
+G.drawInschrift = (c, px, py, p, t, gelesen) => {
+  const x = Math.round(px), y = Math.round(py);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x + 20, y + 33, 10, 3, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  // Stele
+  c.fillStyle = p.bgDeep; c.fillRect(x + 11, y + 8, 18, 25);
+  c.fillStyle = p.card; c.fillRect(x + 12, y + 9, 15, 23);
+  c.fillStyle = p.cardLight; c.fillRect(x + 13, y + 10, 4, 21);
+  c.fillStyle = p.cardHi; c.fillRect(x + 12, y + 8, 15, 2);
+  // Eingeritzte Zeilen
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x + 15, y + 14, 9, 1); c.fillRect(x + 15, y + 18, 7, 1);
+  c.fillRect(x + 15, y + 22, 10, 1); c.fillRect(x + 15, y + 26, 6, 1);
+  if (!gelesen) {
+    const a = 0.35 + 0.35 * Math.sin(t * 2.2);
+    c.globalAlpha = a * 0.5; c.fillStyle = p.main;
+    c.beginPath(); c.arc(x + 20, y + 20, 17, 0, 6.283); c.fill();
+    c.globalAlpha = a; c.fillStyle = p.bright;
+    c.fillRect(x + 18, y + 3, 4, 4);
+    c.globalAlpha = 1;
+  }
+};
+
+// ------------------------------------------------------------
 // Raum zeichnen
 // ------------------------------------------------------------
 G.roomTiles = (r) => (r && r.tiles) ? r.tiles : r;

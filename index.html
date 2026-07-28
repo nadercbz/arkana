@@ -473,6 +473,7 @@ G.load = () => {
       ...base, ...s,
       stats: { ...base.stats, ...(s.stats || {}) },
       fragmente: Array.isArray(s.fragmente) ? s.fragmente : [],
+      gelesen: (s.gelesen && typeof s.gelesen === 'object') ? s.gelesen : {},
       flags: (s.flags && typeof s.flags === 'object') ? s.flags : {},
     };
     if (typeof merged.px !== 'number' || !Number.isFinite(merged.px)) merged.px = base.px;
@@ -1232,6 +1233,162 @@ G.drawShrine = (c, px, py, p, t) => {
 };
 
 // ------------------------------------------------------------
+// LICHT: Fackeln, Kristalle und Leylinien werfen echtes Licht
+// ------------------------------------------------------------
+// Wird als weiches Overlay über den Raum gelegt. Die Lichtquellen
+// stammen aus den Kacheln selbst, deshalb passt es immer zum Raum.
+const LIGHT_TILES = { f: [46, 1.0], c: [40, 0.75], '*': [30, 0.55], M: [26, 0.5], D: [24, 0.4], p: [20, 0.35] };
+
+G.drawLight = (c, room, p, t) => {
+  const tiles = G.roomTiles(room);
+  const src = [];
+  for (let ty = 0; ty < G.ROOM_H; ty++) {
+    const row = tiles[ty] || '';
+    for (let tx = 0; tx < G.ROOM_W; tx++) {
+      const L = LIGHT_TILES[row[tx]];
+      if (L) src.push([tx * T + T / 2, ty * T + T / 2, L[0], L[1], noise2(tx, ty)]);
+    }
+  }
+  if (!src.length) return;
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  for (const [x, y, r, i0, n] of src) {
+    const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + n * 9));
+    const g = c.createRadialGradient(x, y, 0, x, y, r);
+    const col = p.glow;
+    g.addColorStop(0, col);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.globalAlpha = 0.16 * flick;
+    c.fillStyle = g;
+    c.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  c.restore();
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// FAUNA: kleine Lebewesen je Habitat, rein dekorativ
+// ------------------------------------------------------------
+G.newFauna = (biome, seed) => {
+  const rng = G.mulberry32(seed >>> 0);
+  const kinds = {
+    sumpf: { n: 5, art: 'fisch' }, mond: { n: 7, art: 'falter' },
+    hain: { n: 8, art: 'gluehwurm' }, kristall: { n: 4, art: 'splitter' },
+    unterwelt: { n: 5, art: 'funke' }, wueste: { n: 3, art: 'kaefer' },
+    sternen: { n: 6, art: 'stern' }, bibliothek: { n: 4, art: 'blatt' },
+    asche: { n: 4, art: 'krahe' },
+  };
+  const k = kinds[biome] || kinds.asche;
+  const out = [];
+  for (let i = 0; i < k.n; i++) {
+    out.push({
+      art: k.art,
+      x: rng() * G.W, y: rng() * G.FIELD_H,
+      vx: (rng() - 0.5) * 22, vy: (rng() - 0.5) * 18,
+      ph: rng() * 6.28, sp: 0.6 + rng() * 0.9,
+    });
+  }
+  return out;
+};
+
+G.updateFauna = (fa, dt, t, px, py) => {
+  for (const f of fa) {
+    if (f.art === 'gluehwurm' || f.art === 'falter' || f.art === 'funke') {
+      // Schweben mit Eigenleben, weichen dem Spieler leicht aus
+      f.x += (f.vx + Math.sin(t * f.sp + f.ph) * 12) * dt;
+      f.y += (f.vy + Math.cos(t * f.sp * 1.3 + f.ph) * 10) * dt;
+      const dx = f.x - px, dy = f.y - py, d = Math.hypot(dx, dy);
+      if (d < 46 && d > 0.1) { f.x += (dx / d) * 26 * dt; f.y += (dy / d) * 26 * dt; }
+    } else if (f.art === 'fisch') {
+      f.x += f.vx * dt; f.y += Math.sin(t * 1.4 + f.ph) * 10 * dt;
+    } else if (f.art === 'krahe' || f.art === 'blatt') {
+      f.x += f.vx * dt * 1.4; f.y += (f.vy * 0.4 + Math.sin(t * 2 + f.ph) * 14) * dt;
+    } else {
+      f.x += f.vx * dt * 0.6; f.y += f.vy * dt * 0.6;
+    }
+    // Am Rand umkehren statt verschwinden
+    if (f.x < 6) { f.x = 6; f.vx = Math.abs(f.vx); }
+    if (f.x > G.W - 6) { f.x = G.W - 6; f.vx = -Math.abs(f.vx); }
+    if (f.y < 6) { f.y = 6; f.vy = Math.abs(f.vy); }
+    if (f.y > G.FIELD_H - 6) { f.y = G.FIELD_H - 6; f.vy = -Math.abs(f.vy); }
+  }
+};
+
+G.drawFauna = (c, fa, p, t) => {
+  for (const f of fa) {
+    const x = Math.round(f.x), y = Math.round(f.y);
+    const puls = 0.5 + 0.5 * Math.sin(t * 3 + f.ph);
+    if (f.art === 'gluehwurm' || f.art === 'funke') {
+      c.globalAlpha = 0.2 * puls; c.fillStyle = p.glow;
+      c.beginPath(); c.arc(x, y, 6, 0, 6.283); c.fill();
+      c.globalAlpha = 0.7 + 0.3 * puls; c.fillStyle = p.bright;
+      c.fillRect(x - 1, y - 1, 2, 2);
+    } else if (f.art === 'falter') {
+      const w = Math.sin(t * 12 + f.ph) * 3;
+      c.globalAlpha = 0.75; c.fillStyle = p.textBright;
+      c.fillRect(x - 1, y - 1, 2, 3);
+      c.fillStyle = p.text;
+      c.fillRect(x - 1 - Math.abs(w), y - 1, Math.abs(w), 2);
+      c.fillRect(x + 1, y - 1, Math.abs(w), 2);
+    } else if (f.art === 'fisch') {
+      c.globalAlpha = 0.4; c.fillStyle = p.main;
+      const dir = f.vx > 0 ? 1 : -1;
+      c.fillRect(x, y, 5, 2);
+      c.fillRect(x - dir * 2, y - 1, 2, 4);
+    } else if (f.art === 'krahe') {
+      c.globalAlpha = 0.55; c.fillStyle = p.bgVoid;
+      const flap = Math.sin(t * 8 + f.ph) * 2;
+      c.fillRect(x - 4, y - flap, 4, 1);
+      c.fillRect(x + 1, y + flap, 4, 1);
+      c.fillRect(x - 1, y, 2, 2);
+    } else if (f.art === 'blatt') {
+      c.globalAlpha = 0.5; c.fillStyle = p.dim;
+      c.save(); c.translate(x, y); c.rotate(t * 1.6 + f.ph);
+      c.fillRect(-3, -1, 6, 2); c.restore();
+    } else if (f.art === 'stern') {
+      c.globalAlpha = 0.3 + 0.6 * puls; c.fillStyle = p.bright;
+      c.fillRect(x, y, 2, 2);
+      if (puls > 0.85) { c.fillRect(x - 2, y, 6, 1); c.fillRect(x, y - 2, 1, 6); }
+    } else if (f.art === 'splitter') {
+      c.globalAlpha = 0.35 + 0.4 * puls; c.fillStyle = p.glow;
+      c.save(); c.translate(x, y); c.rotate(t + f.ph);
+      c.fillRect(-2, -2, 4, 4); c.restore();
+    } else {
+      c.globalAlpha = 0.5; c.fillStyle = p.dim;
+      c.fillRect(x, y, 3, 2);
+    }
+  }
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Inschrift: ein lesbarer Stein, trägt die Story
+// ------------------------------------------------------------
+G.drawInschrift = (c, px, py, p, t, gelesen) => {
+  const x = Math.round(px), y = Math.round(py);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x + 20, y + 33, 10, 3, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  // Stele
+  c.fillStyle = p.bgDeep; c.fillRect(x + 11, y + 8, 18, 25);
+  c.fillStyle = p.card; c.fillRect(x + 12, y + 9, 15, 23);
+  c.fillStyle = p.cardLight; c.fillRect(x + 13, y + 10, 4, 21);
+  c.fillStyle = p.cardHi; c.fillRect(x + 12, y + 8, 15, 2);
+  // Eingeritzte Zeilen
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x + 15, y + 14, 9, 1); c.fillRect(x + 15, y + 18, 7, 1);
+  c.fillRect(x + 15, y + 22, 10, 1); c.fillRect(x + 15, y + 26, 6, 1);
+  if (!gelesen) {
+    const a = 0.35 + 0.35 * Math.sin(t * 2.2);
+    c.globalAlpha = a * 0.5; c.fillStyle = p.main;
+    c.beginPath(); c.arc(x + 20, y + 20, 17, 0, 6.283); c.fill();
+    c.globalAlpha = a; c.fillStyle = p.bright;
+    c.fillRect(x + 18, y + 3, 4, 4);
+    c.globalAlpha = 1;
+  }
+};
+
+// ------------------------------------------------------------
 // Raum zeichnen
 // ------------------------------------------------------------
 G.roomTiles = (r) => (r && r.tiles) ? r.tiles : r;
@@ -1346,7 +1503,8 @@ G.newState = () => ({
   area: 'stadt', room: '1,1', px: 167, py: 250,
   flags: {},
   fragmente: [],
-  stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0 },
+  gelesen: {},
+  stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0, inschriften: 0 },
 });
 
 // ============================================================
@@ -1445,379 +1603,435 @@ function buildStadt() {
 
 
 
+
+
 // ------------------------------------------------------------
-// ARKANA: 20 Räume, neun Habitate, jeder Raum eigen gestaltet
+// ARKANA: 20 Räume, elf Layout-Archetypen, neun Habitate.
+// Die Räume kommen aus dem Generator in /tmp/arkana_world.py und
+// sind asymmetrisch: Höhlen, Labyrinthe, Inseln, Schluchten,
+// Ruinen, Säulenhallen, Terrassen, Haine, Abgründe, Kammern.
 // ------------------------------------------------------------
 function buildAsche() {
   const rooms = {};
-  rooms['0,1'] = { biome: 'sumpf', name: 'Ufer der Vergessenen', tiles: [
+  rooms['0,1'] = { biome: 'sumpf', name: 'Ufer der Vergessenen', arch: 'islands', tiles: [
       '~~~~~~~~~',
       '~~~~~~~~~',
-      '~~..~~..~',
-      '~.g....g~',
-      '~.......~',
-      '~..BBB..~',
-      '~...B...~',
-      '~...B...~',
-      '~...B...~',
-      '~..www..~',
-      '~.g...g.~',
-      '~.......~',
-      '~~.....~~',
-      '~~~...~~~',
-  ] };
-  rooms['0,2'] = { biome: 'sumpf', name: 'Nebelsumpf', tiles: [
-      '~~~...~~~',
+      '~~~~..~~~',
+      '~~~....~~',
       '~~......~',
-      '~..g..g.~',
-      '~.g..g..~',
-      '~..~~~..~',
-      '~.g...g.~',
-      '~...w....',
-      '~..ww....',
-      '~...w....',
-      '~.g...g.~',
-      '~..~~~..~',
-      '~.g..g..~',
+      '~~.....~~',
+      '~~..w.w~~',
+      '~~..w..~~',
+      '~...w.g.~',
+      '~~.....~~',
       '~~.....~~',
       '~~~...~~~',
-  ] };
-  rooms['0,3'] = { biome: 'mond', name: 'Stille Bucht', tiles: [
       '~~~...~~~',
-      '~~.....~~',
-      '~.......~',
-      '~..iii..~',
-      '~.i...i.~',
-      '~.i.p.i.~',
-      '#.i...i.#',
-      '#.i...i.#',
-      '#..iii..#',
-      '~.......~',
-      '~~.....~~',
-      '~~~~~~~~~',
-      '~~~~~~~~~',
-      '#########',
+      '~~~...~~~',
   ] };
-  rooms['1,0'] = { biome: 'mond', name: 'Halle der stillen Spiegel', tiles: [
+  rooms['0,2'] = { biome: 'sumpf', name: 'Nebelsumpf', arch: 'islands', tiles: [
+      '~~~...~~~',
+      '~~....~~~',
+      '~.....~~~',
+      '~~.~~~~~~',
+      '~~w~~~~~~',
+      '~~.~~~~~~',
+      '~...~~...',
+      '~........',
+      '~........',
+      '~~......~',
+      '~~~~...~~',
+      '~~~...~~~',
+      '~~~...~~~',
+      '~~~...~~~',
+  ] };
+  rooms['0,3'] = { biome: 'mond', name: 'Stille Bucht', arch: 'islands', tiles: [
+      '~~~...~~~',
+      '~~~...~~~',
+      '~~....~~~',
+      '~~...w~~~',
+      '~~~.~w~~~',
+      '~~~w~w~~~',
+      '#~~w~.~~#',
+      '#~.w...~#',
+      '#...~.~~#',
+      '.....w~~~',
+      '~...~.~~~',
+      '~~.w...~~',
+      '~~~~~.~~~',
+      '~~~###~~~',
+  ] };
+  rooms['1,0'] = { biome: 'mond', name: 'Halle der stillen Spiegel', arch: 'terrace', tiles: [
       '#########',
-      '#iii.iii#',
-      '#i.....i#',
-      '#i..x..i#',
-      '#i.....i#',
-      '#..iii..#',
+      '#..i....#',
+      '#.iiii..#',
+      '#...x...#',
       '#.......#',
-      '#..iii..#',
+      '#..iiii.#',
       '#.......#',
-      '#i.....i#',
-      '#ii...ii#',
-      '#iii.iii#',
+      '#.......#',
+      '#....iii#',
+      '#.......#',
+      '#....iii#',
+      '#.......#',
       '#.......#',
       '###...###',
   ] };
-  rooms['1,1'] = { biome: 'bibliothek', name: 'Verbrannte Bibliothek', tiles: [
+  rooms['1,1'] = { biome: 'bibliothek', name: 'Verbrannte Bibliothek', arch: 'maze', tiles: [
       '###...###',
-      '#bb...bb#',
-      '#b.....b#',
-      '#b.bbb.b#',
-      '#..b.b..#',
-      '#.bb.bb.#',
+      '##......#',
+      '#.b.....#',
+      '#.......#',
+      '#..b....#',
+      '#.#.....#',
       '#........',
-      '#...x....',
       '#........',
-      '#.bb.bb.#',
-      '#..b.b..#',
-      '#b.bbb.b#',
+      '#b.......',
+      '#...f...#',
       '#.......#',
+      '#.......#',
+      '#......##',
       '#########',
   ] };
-  rooms['1,2'] = { biome: 'hain', name: 'Wurzelhain', tiles: [
+  rooms['1,2'] = { biome: 'hain', name: 'Wurzelhain', arch: 'grove', tiles: [
       '#########',
-      '#T.rrr.T#',
-      '#.r...r.#',
-      '#r..p..r#',
-      '#.r...r.#',
-      '#..rrr..#',
+      '#....g..#',
+      '#g......#',
+      '#.pg....#',
+      '#r......#',
+      '#.......#',
+      '.....r...',
       '.........',
-      '...p.p...',
       '.........',
-      '#..rrr..#',
-      '#.r...r.#',
-      '#r..p..r#',
-      '#T.....T#',
+      '#.......#',
+      '#......g#',
+      '#.......#',
+      '#.....g.#',
       '###...###',
   ] };
-  rooms['1,3'] = { biome: 'mond', name: 'Mondgarten', tiles: [
+  rooms['1,3'] = { biome: 'mond', name: 'Mondgarten', arch: 'grove', tiles: [
       '###...###',
-      '#p.....p#',
-      '#.ii.ii.#',
-      '#..i.i..#',
-      '#p.....p#',
-      '#..www..#',
-      '#.w...w..',
-      '#.w.p.w..',
-      '#.w...w..',
-      '#..www..#',
-      '#p.....p#',
-      '#..i.i..#',
-      '#.ii.ii.#',
+      '#.......#',
+      '#pp....g#',
+      '#.p.....#',
+      '#.......#',
+      '#.i....i#',
+      '#..p.....',
+      '#...i....',
+      '#w.......',
+      '#.g.....#',
+      '#..w....#',
+      '#...p...#',
+      '#.p.....#',
       '#########',
   ] };
-  rooms['2,0'] = { biome: 'sternen', name: 'Sternenwarte', tiles: [
+  rooms['2,0'] = { biome: 'sternen', name: 'Sternenwarte', arch: 'chamber', tiles: [
       '#########',
-      '###vvv###',
-      '##v...v##',
-      '#v.....v#',
-      '#v..M..v#',
-      '##.....##',
-      '#.......#',
-      '#..o.o..#',
-      '#.......#',
-      '##.....##',
-      '###...###',
-      '##bb.bb##',
-      '##.....##',
-      '###...###',
-  ] };
-  rooms['2,1'] = { biome: 'asche', name: 'Spiegelhof', tiles: [
-      '###...###',
-      '##.....##',
-      '#..ooo..#',
-      '#.o...o.#',
-      '#.o...o.#',
-      '#.......#',
-      '..o...o..',
-      '..o...o..',
-      '..o...o..',
-      '#.o...o.#',
-      '#..ooo..#',
-      '##.....##',
-      '###...###',
+      '#o,b,MMM#',
+      '#,,,,,,,#',
+      '#M,,,,,,#',
+      '#,,,,,,M#',
+      '#M,,,o,M#',
+      '#M,,,,,,#',
+      '#,,,,,,,#',
+      '#o,,,,,o#',
+      '#,,,,,,M#',
+      '#,,,,,,b#',
+      '#o,...,M#',
+      '#M,...,M#',
       '###...###',
   ] };
-  rooms['2,2'] = { biome: 'asche', name: 'Aschenstadt', tiles: [
+  rooms['2,1'] = { biome: 'asche', name: 'Spiegelhof', arch: 'hall', tiles: [
       '###...###',
       '#.......#',
-      '#.f###f.#',
-      '#..#,#..#',
-      '#..#,#..#',
-      '#..#D#..#',
-      '....,....',
-      '....,....',
-      '....,....',
-      '#..o.o..#',
       '#.......#',
-      '#..*.*..#',
       '#.......#',
-      '###...###',
-  ] };
-  rooms['2,3'] = { biome: 'asche', name: 'Markt der Mustersucher', tiles: [
-      '###...###',
-      '#==...==#',
-      '#=.....=#',
-      '#=.o.o.=#',
-      '#=.....=#',
-      '#==...==#',
+      '#.......#',
+      '#o..o.f.#',
       '.........',
-      '...f.f...',
       '.........',
-      '#==...==#',
-      '#=.....=#',
-      '#=.o.o.=#',
-      '#==...==#',
+      '.....o...',
+      '#..x....#',
+      '#.......#',
+      '#o.....o#',
+      '#.......#',
       '###...###',
   ] };
-  rooms['2,4'] = { biome: 'unterwelt', name: 'Die Tiefe', tiles: [
+  rooms['2,2'] = { biome: 'asche', name: 'Aschenstadt', arch: 'ruin', tiles: [
       '###...###',
-      '#RR...RR#',
-      '#R.....R#',
-      '#R.MMM.R#',
-      '#R.M,M.R#',
-      '#R.M,M.R#',
-      'RR.,,,.RR',
-      'RR.....RR',
+      '#.......#',
+      '#.......#',
+      '#.......#',
+      '#.##.#..#',
+      '#.##.#o.#',
+      '...#.#...',
+      '...#.....',
+      '....#....',
+      '#...###.#',
+      '#...#.#.#',
+      '#.....#.#',
+      '#.......#',
+      '###...###',
+  ] };
+  rooms['2,3'] = { biome: 'asche', name: 'Markt der Mustersucher', arch: 'open', tiles: [
+      '###...###',
+      '#.......#',
+      '#.....o.#',
+      '#.......#',
+      '#.......#',
+      '#......=#',
+      '.........',
+      '.........',
+      '.........',
+      '#.......#',
+      '#..=....#',
+      '#......=#',
+      '#.=.....#',
+      '###...###',
+  ] };
+  rooms['2,4'] = { biome: 'unterwelt', name: 'Die Tiefe', arch: 'chamber', tiles: [
       'RRR...RRR',
-      '#RRR.RRR#',
-      '#RR...RR#',
-      '#R.....R#',
-      '#RR...RR#',
-      '###RRR###',
-  ] };
-  rooms['3,0'] = { biome: 'kristall', name: 'Echokammer', tiles: [
+      'RMM...,fR',
+      'RM,...,MR',
+      'R,,,,,,,R',
+      'R,,,,,,,R',
+      'R,,,,M,,R',
+      'R,,,,,,xR',
+      'R,,,,,,MR',
+      'RM,,,,,,R',
+      'Rx,,,,,,R',
+      'Rx,,,,,,R',
+      'R,,,,,,xR',
+      'RM,,x,fMR',
       'RRRRRRRRR',
+  ] };
+  rooms['3,0'] = { biome: 'kristall', name: 'Echokammer', arch: 'maze', tiles: [
+      'RRRRRRRRR',
+      'R.RM..RRR',
       'R.......R',
-      'R.RRRRR.R',
-      'R.R...R.R',
-      'R.R.c.R.R',
-      'R.R.R.R.R',
-      'R.R.R.R.R',
-      'R.R.RRR.R',
-      'R.R.....R',
-      'R.RRRRRRR',
+      'R..M....R',
+      'R...M...R',
       'R.......R',
-      'RRRRRRR.R',
       'R.......R',
+      'RR....M.R',
+      'RR....M.R',
+      'RR.R....R',
+      'RR.R....R',
+      'R.......R',
+      'RR......R',
       'RRR...RRR',
   ] };
-  rooms['3,1'] = { biome: 'kristall', name: 'Kristallkaverne', tiles: [
+  rooms['3,1'] = { biome: 'kristall', name: 'Kristallkaverne', arch: 'cave', tiles: [
       'RRR...RRR',
-      'RRR...RRR',
-      'RR.....RR',
-      'R..c.c..R',
+      'R......RR',
       'R.......R',
-      'R...c...R',
-      '........R',
+      'R.......R',
+      'RR......R',
+      'R.......R',
       '....c...R',
       '........R',
+      '........R',
       'R.......R',
-      'R..c.c..R',
-      'RR.....RR',
-      'RRR...RRR',
+      'R....c..R',
+      'R.......R',
+      'RR......R',
       'RRRRRRRRR',
   ] };
-  rooms['3,2'] = { biome: 'wueste', name: 'Sandtor', tiles: [
+  rooms['3,2'] = { biome: 'wueste', name: 'Sandtor', arch: 'open', tiles: [
       '#########',
       '#sssssss#',
-      '#s.....s#',
-      '#s.M.M.s#',
-      '#s.....s#',
-      '#ss...ss#',
-      '.........',
-      '....M....',
-      '.........',
-      '#ss...ss#',
-      '#s.....s#',
-      '#s.M.M.s#',
+      '#sMsssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      'sssssssss',
+      'sssssssss',
+      'sssssssss',
+      '#sssssss#',
+      '#sxsssss#',
+      '#sssssss#',
       '#sssssss#',
       '#########',
   ] };
-  rooms['3,3'] = { biome: 'unterwelt', name: 'Glutschlund', tiles: [
-      '###RRR###',
-      '#f.....f#',
-      '#.vvvvv.#',
-      '#.v...v.#',
-      '#.v.f.v.#',
-      '#.v...v.#',
-      '..BBBBB.R',
-      '....f...R',
-      '..BBBBB.R',
-      '#.v...v.#',
-      '#.v.f.v.#',
-      '#.v...v.#',
-      '#f.....f#',
-      '###...###',
-  ] };
-  rooms['3,4'] = { biome: 'unterwelt', name: 'Adern des Glutschlunds', tiles: [
-      '###...###',
-      '#RR...RR#',
-      '#R.....R#',
-      '#R.RRR.R#',
-      '#R.R.R.R#',
-      '#R.R.R.R#',
-      'R..R.R..R',
-      'R..R.R..R',
-      'R..RRR..R',
-      '#R.....R#',
-      '#R.fff.R#',
-      '#R.....R#',
-      '#RRR.RRR#',
-      '###RRR###',
-  ] };
-  rooms['4,1'] = { biome: 'wueste', name: 'Wandernde Dünen', tiles: [
-      '#########',
-      '#sssssss#',
-      '#ss...ss#',
-      '#s.....s#',
-      '#s..M..s#',
-      '#s.....s#',
-      '#ss...ss#',
-      '#sssssss#',
-      '#ss...ss#',
-      '#s.....s#',
-      '#s..M..s#',
-      '#ss...ss#',
-      '#ss...ss#',
-      '###...###',
-  ] };
-  rooms['4,2'] = { biome: 'wueste', name: 'Die stumme Pyramide', tiles: [
-      '###...###',
-      '#ss...ss#',
-      '#s#####s#',
-      '#s#,,,#s#',
-      '#s#,x,#s#',
-      '#s#,,,#s#',
-      '...D,,,##',
-      '....,,,##',
-      '...#,,,##',
-      '#s#,,,#s#',
-      '#s#####s#',
-      '#s.....s#',
-      '#ss...ss#',
-      '###...###',
-  ] };
-  rooms['4,3'] = { biome: 'unterwelt', name: 'Obsidianfeld', tiles: [
-      '###...###',
-      '#Rv...vR#',
-      '#v.....v#',
-      '#R..f..R#',
-      '#v.....v#',
-      '#R.....R#',
-      'R...M...R',
+  rooms['3,3'] = { biome: 'unterwelt', name: 'Glutschlund', arch: 'chasm', tiles: [
+      'RRRRRRRRR',
       'R.......R',
-      'R...M...R',
-      '#R.....R#',
-      '#v.....v#',
-      '#R..f..R#',
-      '#v.....v#',
-      '###RRR###',
+      'R.......R',
+      'R.......R',
+      'Rvvvvv..R',
+      'RBBBBB..R',
+      '...vvv.fR',
+      '...vvv..R',
+      '...vvv..R',
+      'R.......R',
+      'R.......R',
+      'R.......R',
+      'R.......R',
+      'RRR...RRR',
+  ] };
+  rooms['3,4'] = { biome: 'unterwelt', name: 'Adern des Glutschlunds', arch: 'cave', tiles: [
+      'RRR...RRR',
+      'RRR...RRR',
+      'RRR.....R',
+      'R.......R',
+      'R.....M.R',
+      'R.......R',
+      'R.......R',
+      'R.......R',
+      'R.....f.R',
+      'R.......R',
+      'R....M..R',
+      'R.......R',
+      'RRM.....R',
+      'RRRRRRRRR',
+  ] };
+  rooms['4,1'] = { biome: 'wueste', name: 'Wandernde Dünen', arch: 'open', tiles: [
+      '#########',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#ssMssss#',
+      '#sssssMM#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '#sssssss#',
+      '###sss###',
+  ] };
+  rooms['4,2'] = { biome: 'wueste', name: 'Die stumme Pyramide', arch: 'chamber', tiles: [
+      '###sss###',
+      '#,MsssM,#',
+      '#x,sss,M#',
+      '#,,,,,,o#',
+      '#M,,,,,,#',
+      '#o,,,,,,#',
+      'sss,,,,,#',
+      'sss,,,,M#',
+      'sss,,,,,#',
+      '#o,x,,,,#',
+      '#o,,,,,o#',
+      '#o,sss,o#',
+      '#o,sss,x#',
+      '###sss###',
+  ] };
+  rooms['4,3'] = { biome: 'unterwelt', name: 'Obsidianfeld', arch: 'canyon', tiles: [
+      'RRR...RRR',
+      'RRR.....R',
+      'RRR.....R',
+      'RRRR...RR',
+      'RRRR...RR',
+      'RRR...RRR',
+      'RR...R..R',
+      'R.......R',
+      'R..MRR..R',
+      'R...RRRRR',
+      'R.M..RRRR',
+      'R...RRRRR',
+      'RR...RRRR',
+      'RRRRRRRRR',
   ] };
 
   const autoFragSpots = {
-    '0,1': [[7,2], [2,2], [1,11], [7,11]],
-    '0,2': [[7,1], [2,1], [1,11], [7,11]],
-    '0,3': [[2,1], [6,1], [1,4], [7,4]],
-    '1,0': [[1,12], [7,12], [2,2], [6,2]],
-    '1,1': [[1,12], [7,12], [3,1], [6,2]],
-    '1,2': [[2,1], [6,1], [1,11], [7,11]],
-    '1,3': [[1,1], [7,1], [1,12], [7,12]],
-    '2,0': [[2,12], [6,12], [3,2], [6,3]],
-    '2,1': [[2,1], [6,1], [1,4], [7,4]],
-    '2,2': [[1,1], [7,1], [1,12], [7,12]],
-    '2,3': [[1,1], [7,1], [1,12], [7,12]],
-    '2,4': [[3,1], [6,2], [2,11], [6,11]],
-    '3,0': [[1,1], [7,1], [1,12], [7,12]],
-    '3,1': [[3,1], [6,2], [1,3], [1,10]],
-    '3,2': [[1,1], [7,1], [1,12], [7,12]],
-    '3,3': [[1,2], [7,2], [1,11], [7,11]],
-    '3,4': [[3,1], [6,2], [2,11], [6,11]],
-    '4,1': [[1,1], [7,1], [1,12], [7,12]],
-    '4,2': [[1,1], [7,1], [1,12], [7,12]],
-    '4,3': [[3,1], [6,2], [2,12], [6,12]],
+    '0,1': [[4,9], [3,12], [4,2], [3,6]],
+    '0,2': [[2,1], [2,5], [4,7], [6,6]],
+    '0,3': [[2,3], [4,2], [5,10], [2,10]],
+    '1,0': [[6,9], [4,11], [2,12], [7,4]],
+    '1,1': [[3,11], [5,4], [5,10], [7,7]],
+    '1,2': [[2,1], [5,3], [7,7], [7,12]],
+    '1,3': [[5,11], [5,5], [2,2], [7,12]],
+    '2,0': [[5,4], [6,2], [6,9], [2,5]],
+    '2,1': [[4,8], [6,7], [2,3], [3,11]],
+    '2,2': [[1,4], [2,10], [4,2], [6,8]],
+    '2,3': [[3,8], [1,5], [5,5], [2,10]],
+    '2,4': [[3,5], [3,10], [2,12], [6,6]],
+    '3,0': [[1,5], [6,2], [4,11], [1,11]],
+    '3,1': [[5,2], [3,5], [3,8], [6,6]],
+    '3,2': [[5,4], [3,12], [4,7], [1,11]],
+    '3,3': [[3,12], [5,5], [6,12], [7,1]],
+    '3,4': [[6,3], [1,3], [3,1], [1,10]],
+    '4,1': [[5,3], [3,11], [4,6], [1,5]],
+    '4,2': [[3,12], [3,7], [7,4], [2,3]],
+    '4,3': [[5,1], [6,6], [1,11], [3,6]],
+  };
+
+  const autoNpcSpots = {
+    '0,1': [[2,10]],
+    '0,2': [[4,11]],
+    '0,3': [[5,7]],
+    '1,0': [[7,1]],
+    '1,1': [[3,7]],
+    '1,2': [[1,7]],
+    '1,3': [[5,1]],
+    '2,0': [[6,6]],
+    '2,1': [[6,10]],
+    '2,2': [[7,5]],
+    '2,3': [[6,7]],
+    '2,4': [[5,4]],
+    '3,0': [[6,5]],
+    '3,1': [[5,9]],
+    '3,2': [[1,5]],
+    '3,3': [[1,11]],
+    '3,4': [[7,12]],
+    '4,1': [[7,1]],
+    '4,2': [[4,1]],
+    '4,3': [[1,8]],
+  };
+
+  const autoInschriften = {
+    '0,1': [[7,4], [2,4], [6,8]],
+    '0,2': [[7,8], [4,2], [5,9]],
+    '0,3': [[5,4], [3,6], [1,8]],
+    '1,0': [[1,9], [1,1], [2,5]],
+    '1,1': [[7,1], [1,5], [1,9]],
+    '1,2': [[6,1], [4,10], [5,8]],
+    '1,3': [[7,6], [3,4], [6,8]],
+    '2,0': [[5,11], [3,10], [2,12]],
+    '2,1': [[7,1], [6,3], [5,5]],
+    '2,2': [[5,11], [1,8], [1,1]],
+    '2,3': [[7,1], [7,12], [3,3]],
+    '2,4': [[7,9], [4,8], [4,2]],
+    '3,0': [[3,4], [3,8], [7,7]],
+    '3,1': [[1,11], [7,12], [1,3]],
+    '3,2': [[7,1], [6,10], [2,3]],
+    '3,3': [[1,7], [3,9], [7,10]],
+    '3,4': [[1,6], [4,5], [6,10]],
+    '4,1': [[6,10], [4,9], [1,12]],
+    '4,2': [[5,5], [6,2], [5,11]],
+    '4,3': [[3,10], [4,3], [4,12]],
   };
 
   return {
     pal: 'amber',
     rooms,
     npcs: {
-      '2,2': [ { x: 2, y: 10, v: 2, dlg: 'asche_wache' } ],
-      '2,1': [ { x: 4, y: 5, v: 3, dlg: 'hof_hueterin' } ],
-      '2,3': [ { x: 3, y: 3, v: 1, dlg: 'asche_haendler' }, { x: 5, y: 11, v: 2, dlg: 'asche_kind' } ],
-      '1,1': [ { x: 4, y: 12, v: 3, dlg: 'biblio_archivar' } ],
-      '1,2': [ { x: 4, y: 2, v: 2, dlg: 'hain_alte' } ],
-      '0,2': [ { x: 4, y: 10, v: 3, dlg: 'sumpf_faehrmann' } ],
-      '3,1': [ { x: 4, y: 11, v: 1, dlg: 'kristall_hoerer' } ],
-      '3,2': [ { x: 4, y: 11, v: 2, dlg: 'wueste_wanderer' } ],
-      '3,3': [ { x: 4, y: 11, v: 1, dlg: 'glut_schmied' } ],
-      '1,3': [ { x: 4, y: 2, v: 3, dlg: 'mond_gaertnerin' } ],
-      '2,0': [ { x: 4, y: 12, v: 2, dlg: 'sternwarte_deuterin' } ],
-      '2,4': [ { x: 4, y: 11, v: 3, dlg: 'tiefe_stimme' } ],
-      '4,2': [ { x: 4, y: 11, v: 1, dlg: 'pyramide_waechter' } ],
+      '0,1': [ { spot: 0, v: 0, dlg: 'ufer_faehre' } ],
+      '0,2': [ { spot: 0, v: 1, dlg: 'sumpf_faehrmann' } ],
+      '0,3': [ { spot: 0, v: 2, dlg: 'bucht_schweigende' } ],
+      '1,0': [ { spot: 0, v: 3, dlg: 'spiegel_wanderin' } ],
+      '1,1': [ { spot: 0, v: 0, dlg: 'biblio_archivar' } ],
+      '1,2': [ { spot: 0, v: 1, dlg: 'hain_alte' } ],
+      '1,3': [ { spot: 0, v: 2, dlg: 'mond_gaertnerin' } ],
+      '2,0': [ { spot: 0, v: 3, dlg: 'sternwarte_deuterin' } ],
+      '2,1': [ { spot: 0, v: 0, dlg: 'hof_hueterin' } ],
+      '2,2': [ { spot: 0, v: 1, dlg: 'asche_wache' } ],
+      '2,3': [ { spot: 0, v: 2, dlg: 'asche_haendler' } ],
+      '2,4': [ { spot: 0, v: 3, dlg: 'tiefe_stimme' } ],
+      '3,0': [ { spot: 0, v: 0, dlg: 'echo_lauscher' } ],
+      '3,1': [ { spot: 0, v: 1, dlg: 'kristall_hoerer' } ],
+      '3,2': [ { spot: 0, v: 2, dlg: 'wueste_wanderer' } ],
+      '3,3': [ { spot: 0, v: 3, dlg: 'glut_schmied' } ],
+      '3,4': [ { spot: 0, v: 0, dlg: 'adern_bergmann' } ],
+      '4,1': [ { spot: 0, v: 1, dlg: 'duenen_nomade' } ],
+      '4,2': [ { spot: 0, v: 2, dlg: 'pyramide_waechter' } ],
+      '4,3': [ { spot: 0, v: 3, dlg: 'obsidian_schmelzer' } ],
     },
-    shrines: {
-      '2,1': { x: 3 * 40, y: 4 * 40 },
-      '4,2': { x: 3 * 40, y: 3 * 40 },
-      '2,4': { x: 3 * 40, y: 8 * 40 },
-    },
+    shrines: { '2,1': { spot: 0 }, '4,2': { spot: 0 }, '2,4': { spot: 0 } },
     fragSpots: autoFragSpots,
+    npcSpots: autoNpcSpots,
+    inschriftSpots: autoInschriften,
     ambient: 'asche',
   };
 }
@@ -1849,6 +2063,14 @@ G.DIALOGE = {
   sternwarte_deuterin: ['Von hier sieht man das Gewölbe am besten. Die Zeichen ziehen langsam, aber sie ziehen.', 'Der Index hat den Himmel geschwärzt. Ein Loch haben sie übersehen. Das über uns.'],
   tiefe_stimme: ['Du bist tief gekommen. Die meisten drehen vorher um.', 'Hier unten ist es still genug, dass man sich selbst hört. Das halten nicht viele aus.'],
   pyramide_waechter: ['Sie ist leer. Das war sie immer.', 'Die Leute erfinden lieber einen Schatz, als eine leere Kammer zu ertragen. Das ist der ganze Trick.'],
+  spiegel_wanderin: ['Das Eis hier hält Augenblicke fest. Schau nicht zu lange hin.', 'Ich habe einmal einen Moment gesehen, den ich lieber vergessen hätte. Jetzt komme ich jeden Tag zurück.'],
+  echo_lauscher: ['Die Spirale gibt alles zurück. Nur später und ehrlicher.', 'Ruf etwas hinein, das du dir selbst nicht sagst. Dann weißt du, warum ich hier sitze.'],
+  ufer_faehre: ['Hier kamen die an, die vergessen werden wollten.', 'Manche hat der Index geschickt. Manche kamen freiwillig. Am Ufer sieht man den Unterschied nicht mehr.'],
+  bucht_schweigende: ['Sprich leise. Das Eis trägt jedes Wort bis ans andere Ufer.', 'Ich rede hier seit Jahren nicht. Für dich mache ich eine Ausnahme, weil du zuhörst.'],
+  duenen_nomade: ['Der Sand deckt alles zu. Das ist keine Drohung, das ist ein Angebot.', 'Wer hier eine Spur hinterlassen will, muss immer weitergehen.'],
+  obsidian_schmelzer: ['Das schwarze Glas war einmal flüssig. Jetzt hält es die Form von damals.', 'So arbeitet auch der Index. Er friert ein, was in Bewegung war.'],
+  adern_bergmann: ['Die Gänge folgen der Hitze, nicht dem Verstand.', 'Ich grabe nicht nach Erz. Ich grabe nach dem, was sie hier unten verschüttet haben.'],
+
 };
 
 // ===== 04_scenes.js =====
@@ -2280,6 +2502,72 @@ G.SpiegelScene = () => {
 };
 
 // ------------------------------------------------------------
+// Inschrift lesen: trägt die Story
+// ------------------------------------------------------------
+G.InschriftScene = (ins) => {
+  let t = 0, chars = 0;
+  return {
+    translucent: true,
+    update(dt) {
+      t += dt; chars += dt * 52;
+      if (G.input.pressed('action') || G.input.pressed('cancel')) {
+        if (chars < ins.text.length) chars = ins.text.length;
+        else G.popScene();
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.globalAlpha = 0.82; c.fillStyle = '#000'; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      const h = 300, y0 = (G.H - h) / 2;
+      c.fillStyle = p.bgVoid; c.fillRect(28, y0, G.W - 56, h);
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(29, y0 + 1, G.W - 58, h - 2);
+      // Eingeritzte Ecken
+      c.fillStyle = p.dim;
+      c.fillRect(34, y0 + 6, 18, 2); c.fillRect(34, y0 + 6, 2, 18);
+      c.fillRect(G.W - 52, y0 + h - 24, 18, 2); c.fillRect(G.W - 36, y0 + h - 24, 2, 18);
+
+      G.text(c, '⌖ INSCHRIFT', G.W / 2, y0 + 26, p.textDim, 13, 'center');
+      const tl = G.wrapText(c, ins.titel, G.W - 90, 18);
+      tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 52 + i * 22, p.main, 18, 'center'));
+      const shown = ins.text.slice(0, Math.floor(chars));
+      const wrapped = G.wrapText(c, shown, G.W - 84, 17);
+      wrapped.slice(0, 8).forEach((l, i) => G.text(c, l, 42, y0 + 112 + i * 24, p.textBright, 17));
+      if (chars >= ins.text.length && Math.floor(t * 2) % 2 === 0) {
+        G.text(c, '[ OK ]', G.W / 2, y0 + h - 34, p.textDim, 14, 'center');
+      }
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Ortsname beim ersten Betreten, mit Ankunftstext
+// ------------------------------------------------------------
+G.OrtScene = (ort, text) => {
+  let t = 0;
+  return {
+    translucent: true,
+    update(dt) {
+      t += dt;
+      if (t > 4.5 || G.input.pressed('action') || G.input.pressed('cancel')) G.popScene();
+    },
+    draw(c) {
+      const p = G.pal;
+      const fade = t < 0.5 ? t / 0.5 : (t > 3.8 ? Math.max(0, (4.5 - t) / 0.7) : 1);
+      c.globalAlpha = fade * 0.72; c.fillStyle = '#000';
+      c.fillRect(0, G.FIELD_H / 2 - 92, G.W, 184);
+      c.globalAlpha = fade;
+      c.fillStyle = p.main;
+      c.fillRect(40, G.FIELD_H / 2 - 92, G.W - 80, 2);
+      c.fillRect(40, G.FIELD_H / 2 + 90, G.W - 80, 2);
+      G.textGlow(c, ort.toUpperCase(), G.W / 2, G.FIELD_H / 2 - 72, p.bright, 21);
+      const wrapped = G.wrapText(c, text, G.W - 76, 16);
+      wrapped.slice(0, 5).forEach((l, i) => G.text(c, l, G.W / 2, G.FIELD_H / 2 - 32 + i * 24, p.text, 16, 'center'));
+      c.globalAlpha = 1;
+    },
+  };
+};
+
+// ------------------------------------------------------------
 // Oberwelt
 // ------------------------------------------------------------
 G.OverworldScene = () => {
@@ -2290,6 +2578,15 @@ G.OverworldScene = () => {
   const spiritPos = { x: 0, y: 0 };
   const spiritTrail = [];
   let ambientTimer = 0;
+  let fauna = [];
+  let faunaRoom = null;
+
+  function ensureFauna() {
+    if (faunaRoom === G.state.room) return;
+    const r = room();
+    fauna = G.newFauna((r && r.biome) || 'asche', G.hashStr(G.state.room + (r ? r.biome : '')));
+    faunaRoom = G.state.room;
+  }
 
   const area = () => G.MAPS[G.state.area];
   const room = () => area().rooms[G.state.room];
@@ -2373,17 +2670,36 @@ G.OverworldScene = () => {
     }
   }
 
+  // Position eines NPC oder Schreins aus den generierten Plätzen holen
+  function spotOf(list, idx) {
+    const arr = (list || {})[G.state.room];
+    if (!arr || !arr[idx || 0]) return null;
+    return arr[idx || 0];
+  }
+
   function nearest() {
     const px = G.state.px + 13, py = G.state.py + 32;
     for (const n of (area().npcs || {})[G.state.room] || []) {
-      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
+      const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
+      if (!sp) continue;
+      if (Math.hypot(px - (sp[0] * TT + 13), py - (sp[1] * TT + 32)) < 52) return { type: 'npc', npc: n };
+    }
+    // Inschriften tragen die Story
+    const insch = (area().inschriftSpots || {})[G.state.room] || [];
+    for (let i = 0; i < insch.length; i++) {
+      const [tx, ty] = insch[i];
+      if (Math.hypot(px - (tx * TT + 20), py - (ty * TT + 24)) < 46) return { type: 'inschrift', idx: i };
     }
     for (const f of (G.state.fragMap || {})[G.state.room] || []) {
       if (G.state.fragmente.includes(f.id)) continue;
       if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
     }
-    const sh = (area().shrines || {})[G.state.room];
-    if (sh && Math.hypot(px - (sh.x + 40), py - (sh.y + 40)) < 78) return { type: 'shrine' };
+    const shDef = (area().shrines || {})[G.state.room];
+    if (shDef) {
+      const sp = spotOf(area().npcSpots, 0);
+      const sx = sp ? sp[0] * TT : 3 * TT, sy = sp ? sp[1] * TT : 3 * TT;
+      if (Math.hypot(px - (sx + 20), py - (sy + 24)) < 78) return { type: 'shrine' };
+    }
     const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
     for (const tr of (area().triggers || {})[G.state.room] || []) {
       if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
@@ -2394,6 +2710,7 @@ G.OverworldScene = () => {
   return {
     enter() {
       ensureFragments();
+      ensureFauna();
       spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
     },
     update(dt) {
@@ -2453,6 +2770,13 @@ G.OverworldScene = () => {
           rescueIfStuck();
           vx = 0; vy = 0;          // Restgeschwindigkeit verwerfen
           transition = null; G.save();
+          // Beim ersten Betreten den Ankunftstext zeigen
+          const st = G.STORY && G.STORY[G.state.room];
+          const key = 'ank:' + G.state.room;
+          if (st && st.ankunft && !G.state.gelesen[key]) {
+            G.state.gelesen[key] = 1; G.save();
+            G.pushScene(G.OrtScene(st.ort || (room() && room().name) || '', st.ankunft));
+          }
         }
         G.updateAnim(anim, dt, 0, 0, false);
         return;
@@ -2481,6 +2805,8 @@ G.OverworldScene = () => {
         if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
       }
 
+      ensureFauna();
+      G.updateFauna(fauna, dt, t, G.state.px + 13, G.state.py + 26);
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
@@ -2513,6 +2839,13 @@ G.OverworldScene = () => {
         const it = nearest();
         if (it) {
           if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
+          else if (it.type === 'inschrift') {
+            const st = G.STORY && G.STORY[G.state.room];
+            const ins = st && st.inschriften && st.inschriften[it.idx % st.inschriften.length];
+            const key = G.state.room + ':' + it.idx;
+            if (!G.state.gelesen[key]) { G.state.gelesen[key] = 1; G.state.stats.inschriften = (G.state.stats.inschriften || 0) + 1; G.save(); }
+            G.pushScene(G.InschriftScene(ins || { titel: 'Verwitterter Stein', text: 'Die Zeichen sind nicht mehr zu lesen.' }));
+          }
           else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
           else if (it.type === 'shrine') { G.pushScene(G.SpiegelScene()); }
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
@@ -2549,10 +2882,20 @@ G.OverworldScene = () => {
           if (!G.state.fragmente.includes(f.id)) G.drawFragment(c, f.x, f.y, p, t, i * 1.7);
         });
         // Schrein
-        const sh = (area().shrines || {})[G.state.room];
-        if (sh) G.drawShrine(c, sh.x, sh.y, p, t);
+        if ((area().shrines || {})[G.state.room]) {
+          const sp = spotOf(area().npcSpots, 0);
+          if (sp) G.drawShrine(c, sp[0] * TT - 20, sp[1] * TT - 20, p, t);
+        }
         // NPCs
-        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => G.drawNpc(c, n.x * TT, n.y * TT, p, n.v, t, i));
+        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => {
+          const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
+          if (sp) G.drawNpc(c, sp[0] * TT, sp[1] * TT, p, n.v, t, i);
+        });
+        // Inschriften
+        ((area().inschriftSpots || {})[G.state.room] || []).forEach(([tx, ty], i) => {
+          const key = G.state.room + ':' + i;
+          G.drawInschrift(c, tx * TT, ty * TT, p, t, !!G.state.gelesen[key]);
+        });
 
         // Ladenflackern
         if (G.state.area === 'stadt' && G.state.room === '1,2' && Math.sin(t * 6.5) > 0.55) {
@@ -2561,6 +2904,7 @@ G.OverworldScene = () => {
         }
 
         G.drawParticles(c);
+        G.drawFauna(c, fauna, p, t);
 
         // Begleiter hinter dem Spieler
         if (G.state.phase === 'arkana' && G.state.sig) {
@@ -2572,10 +2916,12 @@ G.OverworldScene = () => {
         const glow = G.state.phase === 'prolog' ? G.PAL.amber.main : null;
         G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, glow);
 
+        // Licht der Fackeln, Kristalle und Leylinien über allem
+        G.drawLight(c, room(), p, t);
         c.restore();
       }
 
-      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.48);
+      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.44);
 
       // ---- HUD ----
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
@@ -2593,7 +2939,7 @@ G.OverworldScene = () => {
       }
       const it = !transition && nearest();
       if (it) {
-        const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN' }[it.type];
+        const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN', inschrift: 'LESEN' }[it.type];
         c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
         c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 44, G.W - 28, 40); c.globalAlpha = 1;
         c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(14, G.HUD_Y + 44, G.W - 28, 40);
@@ -3445,6 +3791,253 @@ G.GESAMTBILD = {
   schluss: 'Nichts davon ist ein Urteil über dich. Das hier ist ein Spiegel aus Mustern, und ein Spiegel zeigt nur, was du in dem Moment mitgebracht hast. Nichts an dir ist festgeschrieben. Was du behältst, was du verwirfst und was du ab morgen anders machst, entscheidest nur du.',
 
 };
+
+// ===== 06_story.js =====
+'use strict';
+// Story: Inschriften, Funde und Stimmen an den Orten der Welt
+G.STORY = {
+
+  // ===== ZENTRUM: die Gegenwart =====
+
+  '2,2': {
+    ort: 'Aschenstadt',
+    inschriften: [
+      { titel: 'Verkohlte Tafel', text: 'Hier stand das Große Archiv. Zwölf Säle, vier Treppen, ein Dach aus Kupfer. Heute steht davon eine Wand. An ihr lehnt niemand mehr.' },
+      { titel: 'Eingeritzt', text: 'Sie nennen es Ordnung. Ich habe die Karren gezählt. Vierzehn Karren voll Papier, weg vom Feuer, nicht ins Feuer. Wo sind sie hin. Hier bricht der Stein ab.' },
+      { titel: 'Amtlicher Aushang, halb abgerissen', text: 'Erlass des Index, siebtes Jahr nach dem Brand. Das Sammeln von Fragmenten ist Sorgfaltsbruch. Wer sammelt, wird entschrieben.' },
+    ],
+    ankunft: 'Asche knirscht unter dir wie trockener Schnee. Es riecht nach nassem Stein und altem Rauch, und irgendwo klappert ein Fensterladen, den niemand geöffnet hat.',
+  },
+
+  '2,1': {
+    ort: 'Spiegelhof',
+    inschriften: [
+      { titel: 'Am Sockel der ersten Säule', text: 'Neun Spiegel. Neun Namen. Die Namen wurden abgeschliffen, die Spiegel blieben. Der Index hat vergessen, dass Glas sich erinnert.' },
+      { titel: 'Mit einem Nagel geschrieben', text: 'Meine Schwester Ilva stand am vierten Spiegel. Ich sehe ihr Gesicht noch, aber ich weiß ihren Nachnamen nicht mehr. So funktioniert das Entschreiben.' },
+      { titel: 'Anweisung, teils ausgekratzt', text: 'Bei Befragung im Hof den Spiegel abdecken. Der Befragte darf sich nicht sehen. Wer sich sieht, erinnert sich. Der Rest ist ausgekratzt.' },
+    ],
+    ankunft: 'Ein Ring aus Säulen, dazwischen Glas, das dich mit einer halben Sekunde Verspätung nachmacht. Der Wind geht hier im Kreis.',
+  },
+
+  '2,3': {
+    ort: 'Markt der Mustersucher',
+    inschriften: [
+      { titel: 'Schild über dem Stand von Bram', text: 'Ich tausche gegen Fragmente, nicht gegen Münzen. Wer nur Münzen hat, bekommt Suppe. Wer Suppe hat, bekommt Gesellschaft.' },
+      { titel: 'Auf einer Kistenwand', text: 'Regel eins. Nichts erfinden. Ein erfundenes Fragment vergiftet hundert echte. Wir sind nicht der Index, aber wir sind auch keine Lügner.' },
+      { titel: 'Zettel, angenagelt', text: 'Gesucht: Seite 4 bis 11 der Wetterrolle. Biete zwei Kerzen und die Karte vom Sumpf. Fragt nach Tova. Sie hustet, sie ist trotzdem da.' },
+    ],
+    ankunft: 'Zum ersten Mal Stimmen, die durcheinanderreden. Fett zischt in einer Pfanne, jemand feilscht laut, jemand lacht kurz und hört schnell wieder auf.',
+  },
+
+  // ===== MITTLERE EBENE: die Vergangenheit =====
+
+  '1,1': {
+    ort: 'Verbrannte Bibliothek',
+    inschriften: [
+      { titel: 'In ein Regalbrett gebrannt', text: 'Gang sieben stand noch, als das Feuer schon aus war. Am nächsten Morgen war Gang sieben leer. Feuer trägt keine Bücher davon.' },
+      { titel: 'Kohlestrich an der Mauer', text: 'Ich war Schreiber. Ich habe die Fackeln gehalten, weil man es mir sagte. Ich schreibe das hier, damit es einer liest. Mehr kann ich nicht mehr tun.' },
+      { titel: 'Fragment eines Verzeichnisses', text: 'Bestand vor dem Brand: elftausend Rollen. Bestand nach dem Brand laut Index: null. Bestand laut meiner Zählung im dritten Jahr nach dem Brand: hier endet das Blatt.' },
+    ],
+    ankunft: 'Regalgassen ohne Decke. Der Boden ist weich von aufgeweichtem Papier, und jeder Schritt klingt, als trätest du in etwas, das mal wichtig war.',
+  },
+
+  '1,2': {
+    ort: 'Wurzelhain',
+    inschriften: [
+      { titel: 'In die Rinde geschnitten, alt verwachsen', text: 'Diese Bäume standen, bevor die Stadt stand. Sie haben den Brand gesehen. Sie sagen nichts, aber ihre Ringe sind in dem Jahr schmal.' },
+      { titel: 'Steinplatte zwischen Wurzeln', text: 'Hier trafen sich die Archivare, bevor sie der Index wurden. Damals waren sie zwanzig Leute mit einer Sorge. Keine Uniform, kein Grau.' },
+      { titel: 'Frisch geritzt', text: 'Wir kommen her, weil hier keine Wand steht, an die man einen Erlass nageln kann.' },
+    ],
+    ankunft: 'Wurzeln so dick wie Balken, dazwischen kalte feuchte Luft. Es riecht nach Pilzen und nasser Erde, und das Licht kommt nur in Flecken durch.',
+  },
+
+  '3,1': {
+    ort: 'Kristallkaverne',
+    inschriften: [
+      { titel: 'Auf einer Kristallflanke, eingelassen', text: 'Ruf hinein, was du weißt. Der Stein gibt es zurück, aber nicht so, wie du es gesagt hast. Er nimmt die Angst raus. Was dann bleibt, ist der Kern.' },
+      { titel: 'Notiz einer Mustersucherin', text: 'Ich habe den Namen des Mannes hineingerufen, der die Fackel warf. Der Kristall gab drei Namen zurück. Es waren nie nur einer.' },
+      { titel: 'Alte Marke, halb überwachsen', text: 'Lager des Index, zweites Jahr nach dem Brand. Verwahrt hier, was nicht vernichtet werden soll. Jemand hat unter die Zeile gekritzelt: also gab es das.' },
+    ],
+    ankunft: 'Dein Atem kommt als Ton zurück, nicht als Echo. Die Kristalle stehen schräg wie umgefallene Säulen und werfen dein Licht in falsche Richtungen.',
+  },
+
+  '3,2': {
+    ort: 'Sandtor',
+    inschriften: [
+      { titel: 'Linker Obelisk', text: 'Ab hier zählt keine Karte mehr. Wer weitergeht, geht ohne Aufzeichnung. Genau deshalb gingen manche weiter.' },
+      { titel: 'Rechter Obelisk, Zeilen fehlen', text: 'Im vierten Jahr nach dem Brand zogen die Wagen des Index hier durch. Nach Westen, schwer beladen. Zurück kamen sie leer. Was danach steht, ist abgeschlagen.' },
+      { titel: 'Kleine Tafel am Boden', text: 'Für Ilva, die hier umkehrte. Sie sagte, sie habe genug gesehen. Zwei Wochen später kannte sie ihren eigenen Namen nicht mehr.' },
+    ],
+    ankunft: 'Zwei Obelisken, dazwischen nur Wind. Der Sand liegt schon auf den Steinplatten, dünn und geduldig, als warte er das Ende der Stadt ab.',
+  },
+
+  '1,3': {
+    ort: 'Mondgarten',
+    inschriften: [
+      { titel: 'Auf dem Rand des Beckens', text: 'Was hier wächst, öffnet sich nachts und rechnet dabei. Die Gärtner lasen die Gezeiten an den Blüten ab. Der Index nannte das Aberglaube und ließ es zuschütten.' },
+      { titel: 'Umgestürzter Stein', text: 'Wir haben vierzig Jahre lang notiert, wann was blüht. Die Rolle lag im Archiv. Die Rolle ist weg. Die Blüten machen trotzdem weiter.' },
+      { titel: 'Auf ein Holzschild gebrannt', text: 'Zwei Nachtwächter reichen. Wer zu dritt kommt, kommt nicht wegen der Blumen.' },
+    ],
+    ankunft: 'Weiße Blüten, die sich öffnen, als hätten sie auf dich gewartet. Es riecht süß und ein bisschen faul, und Wasser tropft in gleichmäßigen Abständen.',
+  },
+
+  '3,3': {
+    ort: 'Glutschlund',
+    inschriften: [
+      { titel: 'In den Brückenkopf geschlagen', text: 'Von hier kam das Feuer nicht. Das Feuer kam von oben, aus der Stadt, mit Fackeln in Händen, die vorher Bücher gehalten haben.' },
+      { titel: 'Verrostetes Schild', text: 'Ablieferstelle. Erstes Jahr nach dem Brand. Was hier hinuntergeht, kommt nicht zurück. Darunter, in anderer Schrift: nicht alles ging hinunter.' },
+      { titel: 'Mit Ruß geschrieben', text: 'Ich habe gesehen, wie einer der Grauen eine Rolle in den Mantel steckte, statt sie zu werfen. Er hat mich gesehen. Er hat nichts gesagt.' },
+    ],
+    ankunft: 'Heiße Luft steigt dir ins Gesicht, trocken und metallisch. Unter den Brettern der Brücke ist nur roter Schein und ein Ton wie ein sehr langsamer Atem.',
+  },
+
+  // ===== RAND: die Tiefenschicht =====
+
+  '2,0': {
+    ort: 'Sternenwarte',
+    inschriften: [
+      { titel: 'Am Fuß des Rohrs', text: 'Die Kuppel wurde von innen geschwärzt. Sechs Anstriche. Ein Loch blieb, handbreit, über dem Nordrand. Kein Anstrich vergisst so sorgfältig.' },
+      { titel: 'Logbuch, letzte lesbare Seite', text: 'Neuntes Jahr nach dem Brand. Ich beobachte weiter, obwohl es verboten ist. Wenn niemand mehr hochsieht, kann man den Leuten jeden Himmel erzählen. Das ist der Punkt.' },
+      { titel: 'Randnotiz von fremder Hand', text: 'Archivar Sedra hat das Loch gelassen. Er hat es nie zugegeben. Er hat auch nie den Pinsel weitergereicht.' },
+    ],
+    ankunft: 'Kalte Kuppel, schwarz von innen. Durch ein einziges Loch fällt ein Strahl auf den Boden und wandert, langsam, wie ein Zeiger.',
+  },
+
+  '1,0': {
+    ort: 'Halle der stillen Spiegel',
+    inschriften: [
+      { titel: 'In das Eis geritzt', text: 'In diesen Flächen steht je ein Moment still. Ein Marktplatz. Ein Mann mit einer Fackel. Ein Kind, das nicht wegsieht. Niemand hat sie hierhergestellt.' },
+      { titel: 'Auf einer Bank', text: 'Die Archivare kamen her, um sich anzusehen, was sie getan haben. Anfangs jährlich. Dann alle drei Jahre. Dann gar nicht mehr.' },
+      { titel: 'Halb abgesplitterte Platte', text: 'Vor dem Brand verkaufte einer Prophezeiungen aus geraubten Seiten. Elf Familien gaben alles her. Vier Kinder starben im Winter danach. Hier bricht das Eis.' },
+    ],
+    ankunft: 'Eiskalte Luft, die in den Zähnen sitzt. Die Flächen an den Wänden sind keine Spiegel. Sie zeigen dich nicht. Sie zeigen andere, die nicht mehr gehen.',
+  },
+
+  '3,0': {
+    ort: 'Echokammer',
+    inschriften: [
+      { titel: 'Erste Windung', text: 'Die Spirale hält Stimmen fest, nicht Worte. Man hört den Ton, in dem etwas gesagt wurde. Der Ton lügt seltener als der Satz.' },
+      { titel: 'Dritte Windung', text: 'Hier spricht eine Frau, die einen Erlass vorliest. Ihre Stimme bricht bei dem Wort entschrieben. Sie liest ihn trotzdem zu Ende.' },
+      { titel: 'Innerste Windung, kaum lesbar', text: 'Und eine Männerstimme, sehr leise: wir haben zu schnell entschieden. Danach nur noch Rauschen.' },
+    ],
+    ankunft: 'Der Gang windet sich enger, und mit jedem Schritt hörst du deine eigenen Schritte von vorhin. Die Luft ist still und riecht nach kaltem Stein.',
+  },
+
+  '0,2': {
+    ort: 'Nebelsumpf',
+    inschriften: [
+      { titel: 'Pfahl, schief im Wasser', text: 'Hier versank, was man nicht verbrennen wollte und nicht behalten durfte. Kisten, beschwert mit Steinen. Manche liegen flach genug.' },
+      { titel: 'Auf einem Bootsrand', text: 'Im fünften Jahr nach dem Brand zog Bram eine Kiste hoch. Innen: Rechnungsbücher eines Wunderhändlers. Namen von Leuten, die ihm alles gegeben hatten.' },
+      { titel: 'Halb im Schlamm', text: 'Nicht alles, was der Index versenkt hat, war Wissen. Manches war Beweis. Der Rest ist nicht mehr zu lesen.' },
+    ],
+    ankunft: 'Wasser bis an den Rand der Inselchen, Nebel bis an die Knie. Es blubbert irgendwo, ohne dass etwas zu sehen ist, und es riecht nach faulem Holz.',
+  },
+
+  '0,1': {
+    ort: 'Ufer der Vergessenen',
+    inschriften: [
+      { titel: 'Auf der ersten Steglatte', text: 'Wer bis hier kam, wollte nicht gerettet werden. Er wollte aufhören, jemand zu sein. Das ist etwas anderes.' },
+      { titel: 'Reihe von Kerben im Geländer', text: 'Eine Kerbe pro Ankunft. Ich habe bei zweihundertdreißig aufgehört zu zählen. Nicht weil es weniger wurden.' },
+      { titel: 'Angebundener Zettel, verblasst', text: 'An den, der das findet: mein Name war Sedra. Ich habe den Himmel geschwärzt. Ich habe ein Loch gelassen. Beides war ich. Frag mich nicht, was schwerer wiegt.' },
+    ],
+    ankunft: 'Ein Steg, der ins Graue läuft. Wellen schlagen leise gegen die Pfähle, und am Ufer liegen Schuhe, ordentlich nebeneinander gestellt.',
+  },
+
+  '0,3': {
+    ort: 'Stille Bucht',
+    inschriften: [
+      { titel: 'Auf dem inneren Eisring', text: 'Hier ist es so ruhig, dass man den eigenen Puls hört. Die Archivare nannten diesen Ort die Prüfung. Wer hier nichts denkt, hat nichts zu verbergen.' },
+      { titel: 'Ins Eis gedrückt, weich geworden', text: 'Ich saß drei Nächte hier. In der dritten habe ich verstanden, dass ich nicht Angst vor dem Wissen hatte, sondern vor den Leuten, die es benutzen.' },
+      { titel: 'Kleiner Stein am Rand', text: 'Für die elf Familien. Wir haben es zu spaet gemerkt. Danach haben wir alles falsch gemacht, aber wir haben es gemerkt.' },
+    ],
+    ankunft: 'Ringe aus Eis, ineinander gelegt, und kein Ton. Nicht Wind, nicht Wasser. Nur deine Ohren, die etwas suchen und nichts finden.',
+  },
+
+  '4,1': {
+    ort: 'Wandernde Dünen',
+    inschriften: [
+      { titel: 'Freigewehter Grenzstein', text: 'Der Sand vergisst jede Spur innerhalb einer Nacht. Der Index hat lange geglaubt, das sei ein Vorbild. Sie haben nur nie gefragt, wohin der Sand geht.' },
+      { titel: 'Beschriftete Blechplatte', text: 'Route der schweren Wagen, viertes Jahr nach dem Brand. Ziel: Kammer unter dem Feld. Nicht Vernichtung. Verwahrung. Unterschrift unleserlich.' },
+      { titel: 'Mit dem Finger geschrieben, halb verweht', text: 'Wenn du das noch lesen kannst, bist du schnell genug hier.' },
+    ],
+    ankunft: 'Der Sand läuft dir über die Schuhe wie Wasser. Hinter dir verschwindet dein eigener Weg, während du noch hinsiehst.',
+  },
+
+  '4,2': {
+    ort: 'Die stumme Pyramide',
+    inschriften: [
+      { titel: 'Über dem Eingang', text: 'Sie ist leer. Sie war immer leer. Wer eine Kammer baut, ohne etwas hineinzulegen, baut kein Grab. Er baut eine Frage.' },
+      { titel: 'Innen, auf halber Höhe', text: 'Die Erbauer wussten schon, was Menschen mit halben Antworten tun. Also gaben sie gar keine. Der Index hat das gelesen und die falsche Lehre gezogen.' },
+      { titel: 'Ganz oben, sehr klein', text: 'Nichts zu sagen ist auch eine Art zu lügen. Wir haben es trotzdem getan. Verzeiht uns, wenn ihr klüger seid.' },
+    ],
+    ankunft: 'Ein Raum ohne Inhalt, größer als er von außen wirkt. Deine Schritte kommen von allen vier Wänden gleichzeitig zurück.',
+  },
+
+  '4,3': {
+    ort: 'Obsidianfeld',
+    inschriften: [
+      { titel: 'In eine Glasplatte geritzt', text: 'Das hier war Hitze, die zu schnell kalt wurde. So sieht eine Entscheidung aus, die niemand noch einmal durchdacht hat.' },
+      { titel: 'Auf einer aufgerichteten Scherbe', text: 'Der Orden hat sich hier gegründet. In einer Nacht. Nach einer Katastrophe. Alle wichtigen Fehler wurden nachts nach Katastrophen gemacht.' },
+      { titel: 'Bodenplatte, Ecke fehlt', text: 'Erster Satz der Ordnung: Wissen ohne Rahmen tötet. Zweiter Satz: also nehmen wir das Wissen. Dritter Satz fehlt. Es hat nie einen dritten Satz gegeben.' },
+    ],
+    ankunft: 'Schwarzes Glas bis zum Horizont, das dein Bild in tausend schiefe Stücke schneidet. Unter den Sohlen knackt es bei jedem Schritt.',
+  },
+
+  '3,4': {
+    ort: 'Adern des Glutschlunds',
+    inschriften: [
+      { titel: 'An einer Engstelle', text: 'Diese Gänge hat niemand gegraben. Sie waren da. Der Index hat sie nur benutzt, um Dinge dahin zu bringen, wo keiner nachsieht.' },
+      { titel: 'Kreidezeichen, verwischt', text: 'Zählung im achten Jahr nach dem Brand: hundertneunzehn Kisten unten, vierzig oben, sechs verschwunden. Die sechs sind das Interessante.' },
+      { titel: 'Kritzelei in einer Nische', text: 'Ich bin Archivarin. Ich trage Kisten runter und ich schreibe auf, was drin ist. Beides gleichzeitig ist verboten. Ich mache trotzdem beides.' },
+    ],
+    ankunft: 'Die Gänge werden so eng, dass du dich drehen musst. Es ist heiß, die Wände sind warm wie Haut, und irgendwo tropft etwas Schweres.',
+  },
+
+  '2,4': {
+    ort: 'Die Tiefe',
+    inschriften: [
+      { titel: 'Erster Monolith', text: 'Hier steht, was gerettet wurde. Nicht vom Feuer. Vor den Menschen. Der Index hat es nicht verbrannt. Er hat es weggetragen und daneben gestanden.' },
+      { titel: 'Zweiter Monolith', text: 'Wir haben gesehen, was mit halbem Wissen geschieht. Erfundene Zeichen, verkaufte Rettung, Familien ohne Winter. Wir haben die Ursache bekämpft statt der Lüge.' },
+      { titel: 'Dritter Monolith, unfertig', text: 'Wenn einer das liest, hat unsere Ordnung versagt. Gut. Nimm alles mit. Aber nimm auch das mit: wir waren nicht dumm. Wir hatten Angst. Der Stein endet mitten im Wort.' },
+    ],
+    ankunft: 'Unter der letzten Treppe stehen Steine in einem Kreis, höher als das Tor, durch das du kamst. Die Luft ist völlig unbewegt und schmeckt nach Eisen.',
+  },
+
+};
+
+// Stimmen des Index, erscheinen zufällig beim Erkunden, je nach Fortschritt
+G.INDEX_STIMMEN = {
+  frueh: [
+    'Aufzeichnung läuft. Ihr Aufenthalt in diesem Bereich ist nicht vorgesehen.',
+    'Sammeln ist Sorgfaltsbruch. Legen Sie ab, was Sie tragen, und gehen Sie zurück.',
+    'Wissen ohne Rahmen tötet. Das ist kein Spruch. Das ist ein Ergebnis.',
+    'Sie halten Bruchstücke. Bruchstücke ergeben Geschichten, und Geschichten ergeben Schaden.',
+    'Erlass vierzehn: Wer Muster sieht, meldet sich. Wer sich nicht meldet, wird gemeldet.',
+  ],
+  mitte: [
+    'Sie haben jetzt genug, um sich sicher zu fühlen. Genau da fängt es an, gefährlich zu werden.',
+    'Wir kennen Ihren Weg. Nicht Ihren Namen. Noch nicht. Kehren Sie um, dann bleibt das so.',
+    'Es gab vor Ihnen andere. Sie haben auch gesammelt. Fragen Sie in der Stadt nach ihnen. Man wird Sie ansehen und nichts sagen.',
+    'Was Sie da lesen, hat schon einmal Menschen umgebracht. Nicht das Papier. Die Leute, die es benutzt haben.',
+    'Wir haben nicht angefangen. Wir haben aufgeräumt. Den Unterschied merkt man erst, wenn beides gleich aussieht.',
+  ],
+  spaet: [
+    'Sie sind zu weit unten. Hier hört unsere Ordnung auf, und wir wussten das immer.',
+    'Fragen Sie nicht, ob wir recht hatten. Fragen Sie, was wir gesehen haben, bevor wir das beschlossen.',
+    'Manche von uns haben Dinge behalten statt sie zu verbrennen. Das war Ungehorsam. Es war auch das Einzige, was blieb.',
+    'Sedra hat ein Loch in der Kuppel gelassen. Wir haben es gesehen. Wir haben es gelassen.',
+    'Wenn Sie das alles zusammensetzen, werden Sie uns hassen. Setzen Sie es trotzdem zusammen. Dann hassen Sie wenigstens das Richtige.',
+  ],
+};
+
+// Was die Mustersucher sagen, wenn der Spieler viel gesammelt hat
+G.SUCHER_STIMMEN = [
+  'Du trägst mehr, als Bram in zwei Jahren zusammenbekommen hat. Setz dich, iss was, dann red weiter.',
+  'Tova sagt, du sollst nichts sortieren, solange du müde bist. Müdigkeit erfindet Zusammenhänge.',
+  'Wir feiern hier nicht, wenn einer viel findet. Wir prüfen es. Das ist unsere Art zu feiern.',
+  'Pass auf mit dem, was du unten geholt hast. Es macht die Grauen kleiner, als du sie haben willst.',
+  'Irgendwann wirst du merken, dass der schwerste Teil nicht das Sammeln ist. Es ist, ehrlich zu bleiben, was du noch nicht weißt.',
+];
 
 </script>
 </body>

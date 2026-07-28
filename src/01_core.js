@@ -373,6 +373,7 @@ G.load = () => {
       ...base, ...s,
       stats: { ...base.stats, ...(s.stats || {}) },
       fragmente: Array.isArray(s.fragmente) ? s.fragmente : [],
+      gelesen: (s.gelesen && typeof s.gelesen === 'object') ? s.gelesen : {},
       flags: (s.flags && typeof s.flags === 'object') ? s.flags : {},
     };
     if (typeof merged.px !== 'number' || !Number.isFinite(merged.px)) merged.px = base.px;
