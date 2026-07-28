@@ -2,7 +2,7 @@
 // ============================================================
 // ARKANA Scenes (Hochformat 360x640)
 // ============================================================
-const TT = 24;
+const TT = 40;
 
 // ------------------------------------------------------------
 // Titel
@@ -50,7 +50,7 @@ G.TitleScene = () => {
       const SY = G.SAFE_Y;
       G.textGlow(c, '⚡', G.W / 2, SY + 168, p.main, 34);
       G.textGlow(c, 'ARKANA', G.W / 2, SY + 226, p.bright, 46);
-      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 12, 'center');
+      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 18, 'center');
 
       opts.forEach((o, i) => {
         const y = SY + 400 + i * 40;
@@ -62,8 +62,8 @@ G.TitleScene = () => {
         }
         G.text(c, o, G.W / 2, y, on ? p.textBright : p.textDim, 16, 'center');
       });
-      G.text(c, 'Wischen oder Pfeiltasten zum Bewegen', G.W / 2, G.H - 62, p.textDim, 11, 'center');
-      G.text(c, 'OK bestätigt · MENÜ öffnet den Codex', G.W / 2, G.H - 44, p.textDim, 11, 'center');
+      G.text(c, 'Wischen oder Pfeiltasten zum Bewegen', G.W / 2, G.H - 62, p.textDim, 14, 'center');
+      G.text(c, 'OK bestätigt · MENÜ öffnet den Codex', G.W / 2, G.H - 44, p.textDim, 14, 'center');
       G.vignette(c, 0.5);
     },
   };
@@ -95,7 +95,7 @@ G.IntroScene = () => {
       const startY = G.H / 2 - lines.length * 13;
       lines.forEach((l, i) => G.text(c, l, G.W / 2, startY + i * 26, p.textBright, 15, 'center'));
       c.globalAlpha = 1;
-      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 90, p.textDim, 13, 'center');
+      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 90, p.textDim, 16, 'center');
       G.vignette(c, 0.6);
     },
   };
@@ -106,7 +106,6 @@ G.IntroScene = () => {
 // ------------------------------------------------------------
 G.DialogScene = (lines, onDone) => {
   let li = 0; let chars = 0; let t = 0;
-  const BOX_Y = G.H - 210, BOX_H = 150;
   return {
     translucent: true,
     update(dt) {
@@ -118,6 +117,7 @@ G.DialogScene = (lines, onDone) => {
     },
     draw(c) {
       const p = G.pal;
+      const BOX_H = 168, BOX_Y = G.H - 230;
       c.fillStyle = p.bgVoid; c.globalAlpha = 0.93;
       c.fillRect(14, BOX_Y, G.W - 28, BOX_H); c.globalAlpha = 1;
       c.strokeStyle = p.dim; c.lineWidth = 2;
@@ -126,8 +126,8 @@ G.DialogScene = (lines, onDone) => {
       c.fillRect(14, BOX_Y, 4, BOX_H);
       if (li < lines.length) {
         const shown = lines[li].slice(0, Math.floor(chars));
-        const wrapped = G.wrapText(c, shown, G.W - 60, 14);
-        wrapped.slice(0, 6).forEach((l, i) => G.text(c, l, 30, BOX_Y + 18 + i * 21, p.textBright, 14));
+        const wrapped = G.wrapText(c, shown, G.W - 64, 17);
+        wrapped.slice(0, 6).forEach((l, i) => G.text(c, l, 32, BOX_Y + 20 + i * 24, p.textBright, 17));
         if (chars >= lines[li].length && Math.floor(t * 2) % 2 === 0) {
           G.text(c, '▼', G.W - 36, BOX_Y + BOX_H - 26, p.main, 14);
         }
@@ -153,7 +153,7 @@ G.FragmentScene = (frag) => {
           if (sel === 0) G.state.stats.geglaubt++; else G.state.stats.geprueft++;
           G.state.fragmente.push(frag.id);
           for (let i = 0; i < 16; i++) {
-            G.spawnParticle({ x: G.W / 2, y: 200, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90,
+            G.spawnParticle({ x: G.W / 2, y: G.H / 2, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90,
               life: 0.8, fade: 0.8, color: G.pal.bright, size: 2 });
           }
           G.save(); G.popScene();
@@ -173,15 +173,15 @@ G.FragmentScene = (frag) => {
         c.fillRect(bx, by, 14, 3); c.fillRect(bx, by, 3, 14);
       });
       G.textGlow(c, '✦', G.W / 2, y0 + 24, p.main, 26);
-      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 12, 'center');
-      const tl = G.wrapText(c, frag.titel, G.W - 80, 16);
+      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
+      const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
       tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
-      const wrapped = G.wrapText(c, frag.text, G.W - 76, 13);
-      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 13));
+      const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
+      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
       if (stage === 0) {
-        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 13, 'center');
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 16, 'center');
       } else {
-        G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 13, 'center');
+        G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 19, 'center');
         const bw = 118;
         [['GLAUBEN', G.W / 2 - 66], ['PRÜFEN', G.W / 2 + 66]].forEach(([label, bx], i) => {
           const on = sel === i;
@@ -210,7 +210,7 @@ G.CodexScene = () => {
       if (G.input.pressed('cancel')) { G.popScene(); return; }
       if (G.input.pressed('up')) sel = Math.max(0, sel - 1);
       if (G.input.pressed('down')) sel = Math.min(Math.max(items.length - 1, 0), sel + 1);
-      if (G.input.pressed('left') || G.input.pressed('right')) { tab = 1 - tab; }
+      if ((G.input.pressed('left') || G.input.pressed('right')) && G.state.sig) tab = 1 - tab;
       if (G.input.pressed('action') && items.length && tab === 0) reading = items[sel];
     },
     draw(c) {
@@ -220,12 +220,12 @@ G.CodexScene = () => {
 
       if (reading) {
         G.text(c, '✦', 30, G.SAFE_Y + 30, p.main, 18);
-        const tl = G.wrapText(c, reading.titel, G.W - 80, 16);
+        const tl = G.wrapText(c, reading.titel, G.W - 80, 19);
         tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, G.SAFE_Y + 34 + i * 20, p.main, 16, 'center'));
-        const wrapped = G.wrapText(c, reading.text, G.W - 70, 14);
-        wrapped.slice(0, Math.floor((G.H - 200) / 22)).forEach((l, i) => G.text(c, l, 35, G.SAFE_Y + 100 + i * 22, p.text, 14));
-        G.text(c, reading.modul.replace(/_/g, ' '), G.W / 2, G.H - 70, p.textDim, 11, 'center');
-        G.text(c, '[ OK ] zurück', G.W / 2, G.H - 46, p.textDim, 12, 'center');
+        const wrapped = G.wrapText(c, reading.text, G.W - 70, 17);
+        wrapped.slice(0, Math.floor((G.H - 200) / 22)).forEach((l, i) => G.text(c, l, 35, G.SAFE_Y + 100 + i * 22, p.text, 17));
+        G.text(c, reading.modul.replace(/_/g, ' '), G.W / 2, G.H - 70, p.textDim, 14, 'center');
+        G.text(c, '[ OK ] zurück', G.W / 2, G.H - 46, p.textDim, 15, 'center');
         return;
       }
 
@@ -236,7 +236,7 @@ G.CodexScene = () => {
         const on = tab === i;
         if (on) { c.fillStyle = p.main; c.globalAlpha = 0.2; c.fillRect(bx, ty, 144, 26); c.globalAlpha = 1; }
         c.strokeStyle = on ? p.main : p.textDim; c.lineWidth = 1; c.strokeRect(bx, ty, 144, 26);
-        G.text(c, label, bx + 72, ty + 6, on ? p.textBright : p.textDim, 12, 'center');
+        G.text(c, label, bx + 72, ty + 6, on ? p.textBright : p.textDim, 15, 'center');
       });
 
       if (tab === 1 && s) {
@@ -252,10 +252,10 @@ G.CodexScene = () => {
           G.text(c, String(v), G.W - 34, y + 12, p.textBright, 15, 'right');
           c.fillStyle = p.card; c.fillRect(34, y + 30, G.W - 68, 1);
         });
-        G.text(c, `Geglaubt ${G.state.stats.geglaubt} · Geprüft ${G.state.stats.geprueft}`, G.W / 2, G.H - 74, p.text, 12, 'center');
+        G.text(c, `Geglaubt ${G.state.stats.geglaubt} · Geprüft ${G.state.stats.geprueft}`, G.W / 2, G.H - 74, p.text, 18, 'center');
       } else {
         const items = list();
-        G.text(c, `${items.length} von ${G.FRAGMENTS.length} Fragmenten`, G.W / 2, G.SAFE_Y + 100, p.text, 13, 'center');
+        G.text(c, `${items.length} von ${G.FRAGMENTS.length} Fragmenten`, G.W / 2, G.SAFE_Y + 100, p.text, 19, 'center');
         if (!items.length) {
           G.text(c, 'Noch nichts gesammelt.', G.W / 2, G.H / 2 - 20, p.textDim, 14, 'center');
         } else {
@@ -270,7 +270,7 @@ G.CodexScene = () => {
           });
         }
       }
-      G.text(c, `[◀▶] Reiter   [MENÜ] schließen`, G.W / 2, G.H - 46, p.textDim, 11, 'center');
+      G.text(c, `[◀▶] Reiter   [MENÜ] schließen`, G.W / 2, G.H - 46, p.textDim, 14, 'center');
     },
   };
 };
@@ -311,7 +311,15 @@ G.OverworldScene = () => {
   const room = () => area().rooms[G.state.room];
 
   function ensureFragments() {
-    if (G.state.area !== 'asche' || G.state.fragMap) return;
+    // Fragmente aus einem alten Spielstand koennen auf IDs zeigen, die es
+    // nach einem Neubau der Knowledge Base nicht mehr gibt. Die fliegen raus.
+    if (G.state.fragMap) {
+      for (const rm in G.state.fragMap) {
+        G.state.fragMap[rm] = G.state.fragMap[rm].filter(
+          (e) => e && G.FRAGMENTS.some((f) => f.id === e.id));
+      }
+    }
+    if (G.state.area !== 'asche' || G.state.fragMap || !G.state.sig) return;
     const rng = G.mulberry32(G.state.sig.seed);
     const pool = [...G.FRAGMENTS];
     const map = {};
@@ -325,32 +333,73 @@ G.OverworldScene = () => {
     G.state.fragMap = map;
   }
 
+  // Kollision nur ueber die Fussflaeche, damit Kopf und Schultern
+  // vor Waenden liegen duerfen. Figur ist 26 breit, 42 hoch.
   function canStand(nx, ny) {
     const r = room();
-    const pts = [[nx + 4, ny + 18], [nx + 16, ny + 18], [nx + 4, ny + 27], [nx + 16, ny + 27]];
+    const pts = [[nx + 7, ny + 30], [nx + 19, ny + 30], [nx + 7, ny + 39], [nx + 19, ny + 39]];
     for (const [px, py] of pts) if (G.isSolid(r, px, py)) return false;
     return true;
   }
 
+  // Wechselt nur, wenn der Zielraum an dieser Seite auch wirklich einen
+  // Durchgang hat. Sonst laeuft man in eine Wand und steckt fest.
   function roomShift(dx, dy) {
     const [rx, ry] = G.state.room.split(',').map(Number);
     const key = `${rx + dx},${ry + dy}`;
-    if (!area().rooms[key]) return false;
+    const dest = area().rooms[key];
+    if (!dest) return false;
+    const probe = { px: G.state.px, py: G.state.py };
+    if (dx === 1) { probe.px = TT + 6; probe.py = clampVal(probe.py, 'y'); }
+    else if (dx === -1) { probe.px = G.W - TT - 26; probe.py = clampVal(probe.py, 'y'); }
+    else if (dy === 1) { probe.py = TT + 2; probe.px = clampVal(probe.px, 'x'); }
+    else { probe.py = G.FIELD_H - TT - 44; probe.px = clampVal(probe.px, 'x'); }
+    const pts = [[probe.px + 7, probe.py + 30], [probe.px + 19, probe.py + 30],
+                 [probe.px + 7, probe.py + 39], [probe.px + 19, probe.py + 39]];
+    if (pts.some(([x, y]) => G.isSolid(dest, x, y))) return false;
     transition = { dx, dy, prog: 0, from: G.state.room, to: key };
     return true;
   }
 
+  // Klemmt einen Wert in den Durchgang der jeweiligen Kantenmitte.
+  function clampVal(v, axis) {
+    const mid = axis === 'y' ? Math.floor(G.ROOM_H / 2) : Math.floor(G.ROOM_W / 2);
+    const lo = (mid - 1) * TT + 2;
+    const hi = (mid + 1) * TT + TT - (axis === 'y' ? 30 : 28);
+    return Math.max(lo, Math.min(hi, v));
+  }
+  function clampCross(axis) {
+    if (axis === 'y') G.state.py = clampVal(G.state.py, 'y');
+    else G.state.px = clampVal(G.state.px, 'x');
+  }
+
+  // Sicherheitsnetz: steht die Figur trotzdem in einer Wand, suche
+  // spiralfoermig den naechsten begehbaren Punkt. Damit kann man
+  // grundsaetzlich nicht mehr feststecken.
+  function rescueIfStuck() {
+    if (canStand(G.state.px, G.state.py)) return;
+    for (let r = 4; r <= 140; r += 4) {
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * 6.283;
+        const nx = G.state.px + Math.cos(ang) * r;
+        const ny = G.state.py + Math.sin(ang) * r;
+        if (nx < 0 || ny < 0 || nx > G.W - 26 || ny > G.FIELD_H - 42) continue;
+        if (canStand(nx, ny)) { G.state.px = nx; G.state.py = ny; return; }
+      }
+    }
+  }
+
   function nearest() {
-    const px = G.state.px + 10, py = G.state.py + 20;
+    const px = G.state.px + 13, py = G.state.py + 32;
     for (const n of (area().npcs || {})[G.state.room] || []) {
-      if (Math.hypot(px - (n.x * TT + 10), py - (n.y * TT + 20)) < 40) return { type: 'npc', npc: n };
+      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
     }
     for (const f of (G.state.fragMap || {})[G.state.room] || []) {
       if (G.state.fragmente.includes(f.id)) continue;
-      if (Math.hypot(px - (f.x + 12), py - (f.y + 12)) < 32) return { type: 'frag', frag: f };
+      if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
     }
     const sh = (area().shrines || {})[G.state.room];
-    if (sh && Math.hypot(px - (sh.x + 24), py - (sh.y + 24)) < 56) return { type: 'shrine' };
+    if (sh && Math.hypot(px - (sh.x + 40), py - (sh.y + 40)) < 78) return { type: 'shrine' };
     const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
     for (const tr of (area().triggers || {})[G.state.room] || []) {
       if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
@@ -361,7 +410,7 @@ G.OverworldScene = () => {
   return {
     enter() {
       ensureFragments();
-      spiritPos.x = G.state.px - 18; spiritPos.y = G.state.py - 6;
+      spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
     },
     update(dt) {
       t += dt;
@@ -383,11 +432,17 @@ G.OverworldScene = () => {
       if (transition) {
         transition.prog += dt * 2.6;
         if (transition.prog >= 1) {
+          const dx = transition.dx, dy = transition.dy;
           G.state.room = transition.to;
-          if (transition.dx === 1) G.state.px = 4;
-          if (transition.dx === -1) G.state.px = G.W - 24;
-          if (transition.dy === 1) G.state.py = 4;
-          if (transition.dy === -1) G.state.py = G.FIELD_H - 34;
+          // Sicher INNERHALB des Raums absetzen, nicht in der Randkachel.
+          // Die Querachse wird in den Durchgang geklemmt, sonst bleibt
+          // die Figur an der Ecke des Durchgangs haengen.
+          if (dx === 1) { G.state.px = TT + 6; clampCross('y'); }
+          if (dx === -1) { G.state.px = G.W - TT - 26; clampCross('y'); }
+          if (dy === 1) { G.state.py = TT + 2; clampCross('x'); }
+          if (dy === -1) { G.state.py = G.FIELD_H - TT - 44; clampCross('x'); }
+          rescueIfStuck();
+          vx = 0; vy = 0;          // Restgeschwindigkeit verwerfen
           transition = null; G.save();
         }
         G.updateAnim(anim, dt, 0, 0, false);
@@ -408,15 +463,21 @@ G.OverworldScene = () => {
       }
 
       const nx = G.state.px + vx * dt, ny = G.state.py + vy * dt;
-      if (canStand(nx, G.state.py)) G.state.px = nx; else vx *= 0.2;
-      if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
+      // Steht die Figur bereits in einer Wand, Bewegung ungeprueft zulassen,
+      // damit sie sich immer herausschieben kann.
+      const trapped = !canStand(G.state.px, G.state.py);
+      if (trapped) { G.state.px = nx; G.state.py = ny; }
+      else {
+        if (canStand(nx, G.state.py)) G.state.px = nx; else vx *= 0.2;
+        if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
+      }
 
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
         // Staub beim Aufsetzen
         for (let i = 0; i < 2; i++) {
-          G.spawnParticle({ x: G.state.px + 8 + Math.random() * 6, y: G.state.py + 27,
+          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8, y: G.state.py + 38,
             vx: (Math.random() - 0.5) * 26, vy: -8 - Math.random() * 12,
             life: 0.45, fade: 0.45, grav: 60, color: G.pal.dim, size: 1, alpha: 0.6 });
         }
@@ -424,7 +485,7 @@ G.OverworldScene = () => {
 
       // Begleiter folgt weich
       if (G.state.phase === 'arkana') {
-        const tx = G.state.px - 20 - anim.facing * 6, ty = G.state.py - 8;
+        const tx = G.state.px - 26 - anim.facing * 8, ty = G.state.py - 4;
         spiritPos.x += (tx - spiritPos.x) * Math.min(1, dt * 3.4);
         spiritPos.y += (ty - spiritPos.y) * Math.min(1, dt * 3.0);
         if (Math.floor(t * 20) % 2 === 0) {
@@ -434,10 +495,10 @@ G.OverworldScene = () => {
       }
 
       // Raumwechsel
-      if (G.state.px < -6) { if (!roomShift(-1, 0)) { G.state.px = -6; vx = 0; } }
-      if (G.state.px > G.W - 14) { if (!roomShift(1, 0)) { G.state.px = G.W - 14; vx = 0; } }
-      if (G.state.py < -6) { if (!roomShift(0, -1)) { G.state.py = -6; vy = 0; } }
-      if (G.state.py > G.FIELD_H - 26) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 26; vy = 0; } }
+      if (G.state.px < -8) { if (!roomShift(-1, 0)) { G.state.px = -8; vx = 0; } }
+      if (G.state.px > G.W - 18) { if (!roomShift(1, 0)) { G.state.px = G.W - 18; vx = 0; } }
+      if (G.state.py < -14) { if (!roomShift(0, -1)) { G.state.py = -14; vy = 0; } }
+      if (G.state.py > G.FIELD_H - 34) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 34; vy = 0; } }
 
       if (G.input.pressed('action')) {
         const it = nearest();
@@ -448,7 +509,7 @@ G.OverworldScene = () => {
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
         }
       }
-      if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
+      else if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
     },
 
     draw(c) {
@@ -509,23 +570,23 @@ G.OverworldScene = () => {
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
       const areaName = G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ASCHENSTADT';
-      G.text(c, areaName, 18, G.HUD_Y + 14, p.textDim, 12);
+      G.text(c, areaName, 20, G.HUD_Y + 16, p.textDim, 15);
       if (G.state.phase === 'arkana') {
-        G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 18, G.HUD_Y + 14, p.main, 14, 'right');
-        if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 18, G.HUD_Y + 36, p.textDim, 11, 'right');
+        G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
+        if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 20, G.HUD_Y + 40, p.textDim, 14, 'right');
       } else {
         const clock = Math.floor(t) % 14 < 3 ? '3:33' : '3:2' + (Math.floor(t) % 9);
-        G.text(c, clock, G.W - 18, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 14, 'right');
+        G.text(c, clock, G.W - 20, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 18, 'right');
       }
       const it = !transition && nearest();
       if (it) {
         const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN' }[it.type];
         c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
-        c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 40, G.W - 28, 32); c.globalAlpha = 1;
-        c.strokeStyle = p.main; c.lineWidth = 1; c.strokeRect(14, G.HUD_Y + 40, G.W - 28, 32);
-        G.text(c, `OK  ${label}`, G.W / 2, G.HUD_Y + 49, p.textBright, 14, 'center');
+        c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 44, G.W - 28, 40); c.globalAlpha = 1;
+        c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(14, G.HUD_Y + 44, G.W - 28, 40);
+        G.text(c, `OK  ${label}`, G.W / 2, G.HUD_Y + 56, p.textBright, 18, 'center');
       } else {
-        G.text(c, 'MENÜ öffnet den Codex', G.W / 2, G.HUD_Y + 52, p.textDim, 11, 'center');
+        G.text(c, 'MENÜ öffnet den Codex', G.W / 2, G.HUD_Y + 56, p.textDim, 14, 'center');
       }
     },
   };
@@ -535,7 +596,7 @@ G.OverworldScene = () => {
 // Terminal: der Sog
 // ------------------------------------------------------------
 G.TerminalScene = () => {
-  let stage = 'boot'; let t = 0; let bootLine = 0;
+  let stage = 'boot'; let t = 0; let bootLine = 0; let inputLock = 0;
   let name = ''; let zsel = 0; let age = 25; let sig = null; let opage = 0;
   const bootLines = ['> SIGNAL GEFUNDEN', '> PROTOKOLL: ARKANA v22', '> DIE WELT HINTER DER WELT WARTET', '> IDENTIFIKATION ERFORDERLICH...'];
   const form = document.getElementById('nameform');
@@ -552,6 +613,9 @@ G.TerminalScene = () => {
       name = v.slice(0, 16);
       form.classList.remove('show'); input.blur();
       G.input.clearAll();
+      // Kurze Sperre, sonst rasen die Auto-Repeat-Enter durch die
+      // naechsten beiden Auswahlen hindurch.
+      inputLock = 0.35;
       stage = 'zodiac';
     };
     okBtn.onclick = done;
@@ -568,6 +632,7 @@ G.TerminalScene = () => {
   return {
     update(dt) {
       t += dt;
+      if (inputLock > 0) { inputLock -= dt; G.input.clearAll(); return; }
       if (stage === 'boot') {
         if (t > (bootLine + 1) * 0.6) bootLine++;
         if (bootLine >= bootLines.length) { stage = 'name'; askName(); }
@@ -594,7 +659,7 @@ G.TerminalScene = () => {
         }
         if (t > 2.8) {
           G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
-          G.state.room = '1,1'; G.state.px = 168; G.state.py = 200;
+          G.state.room = '1,1'; G.state.px = 167; G.state.py = 330;
           G.pal = G.PAL.amber; G.particles.length = 0; G.save();
           G.replaceScene(G.OverworldScene());
           G.pushScene(G.DialogScene([
@@ -619,8 +684,8 @@ G.TerminalScene = () => {
         if (Math.floor(t * 2) % 2 === 0) { c.fillStyle = p.main; c.fillRect(34, G.H - 120, 12, 20); }
       } else if (stage === 'zodiac') {
         const SY = G.SAFE_Y;
-        G.text(c, '> UNTER WELCHEM ZEICHEN', G.W / 2, SY + 60, p.main, 14, 'center');
-        G.text(c, 'WURDEST DU GEBOREN?', G.W / 2, SY + 82, p.main, 14, 'center');
+        G.text(c, '> UNTER WELCHEM ZEICHEN', G.W / 2, SY + 60, p.main, 17, 'center');
+        G.text(c, 'WURDEST DU GEBOREN?', G.W / 2, SY + 82, p.main, 17, 'center');
         G.ZODIAC.forEach((z, i) => {
           const col = i % 3, row = Math.floor(i / 3);
           const x = 70 + col * 110, y = SY + 140 + row * 96;
@@ -630,20 +695,20 @@ G.TerminalScene = () => {
             c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(x - 46, y - 16, 92, 78);
           }
           G.text(c, z.sym, x, y - 6, on ? p.bright : p.textDim, 34, 'center');
-          G.text(c, z.name, x, y + 40, on ? p.textBright : p.textDim, 11, 'center');
+          G.text(c, z.name, x, y + 40, on ? p.textBright : p.textDim, 14, 'center');
         });
         const z = G.ZODIAC[zsel];
         G.textGlow(c, `${z.element}  ·  ${z.planet}`, G.W / 2, SY + 542, p.text, 16);
-        G.text(c, '[ OK ] bestätigen', G.W / 2, SY + 580, p.textDim, 12, 'center');
+        G.text(c, '[ OK ] bestätigen', G.W / 2, SY + 580, p.textDim, 15, 'center');
       } else if (stage === 'age') {
         const SY2 = G.SAFE_Y;
-        G.text(c, '> WIE VIELE JAHRE TRÄGST DU?', G.W / 2, SY2 + 150, p.main, 14, 'center');
+        G.text(c, '> WIE VIELE JAHRE TRÄGST DU?', G.W / 2, SY2 + 150, p.main, 17, 'center');
         G.text(c, '◀', G.W / 2 - 96, SY2 + 260, p.text, 28, 'center');
         G.textGlow(c, String(age), G.W / 2, SY2 + 230, p.bright, 76);
         G.text(c, '▶', G.W / 2 + 96, SY2 + 260, p.text, 28, 'center');
         G.text(c, G.saturnPhase(age).name, G.W / 2, SY2 + 356, p.text, 18, 'center');
-        G.text(c, G.saturnPhase(age).text, G.W / 2, SY2 + 384, p.textDim, 13, 'center');
-        G.text(c, '[◀▶] ändern   [ OK ] bestätigen', G.W / 2, SY2 + 500, p.textDim, 12, 'center');
+        G.text(c, G.saturnPhase(age).text, G.W / 2, SY2 + 384, p.textDim, 16, 'center');
+        G.text(c, '[◀▶] ändern   [ OK ] bestätigen', G.W / 2, SY2 + 500, p.textDim, 15, 'center');
       } else if (stage === 'oracle') {
         const pages = opages();
         const lines = pages[Math.min(opage, pages.length - 1)].split('\n');
@@ -652,7 +717,7 @@ G.TerminalScene = () => {
           const big = i === 0 || (l.length < 4 && l.trim());
           G.text(c, l, G.W / 2, startY + i * 34, i === 0 ? p.bright : p.text, big ? 22 : 15, 'center');
         });
-        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 100, p.textDim, 13, 'center');
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 100, p.textDim, 16, 'center');
       } else if (stage === 'sog') {
         const pr = Math.min(t / 2.8, 1);
         c.save(); c.translate(G.W / 2, G.H / 2);

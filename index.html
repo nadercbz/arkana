@@ -113,9 +113,9 @@ const G = {};
 G.W = 360;
 G.H_BASE = 640;          // 9:16 Referenz
 G.H = G.H_BASE;
-G.TILE = 24;
-G.ROOM_W = 15; G.ROOM_H = 22;
-G.FIELD_H = G.ROOM_H * G.TILE; // 528
+G.TILE = 40;             // groessere Kacheln = naeher dran
+G.ROOM_W = 9; G.ROOM_H = 14;
+G.FIELD_H = G.ROOM_H * G.TILE; // 560
 G.HUD_Y = G.FIELD_H;
 G.HUD_H = G.H - G.FIELD_H;
 G.SAFE_Y = 0;            // Offset, um Vollbild-Menüs vertikal zu zentrieren
@@ -365,9 +365,14 @@ G.doShake = (mag, dur) => { G.shake.mag = mag; G.shake.t = dur; };
     }
     ctx.restore();
   }
-  function frame() { tick(); requestAnimationFrame(frame); }
+  function frame() {
+    // Eine Exception darf die rAF-Kette nicht abreissen, sonst friert
+    // das Bild dauerhaft ein und man kommt nicht mal ins Menue zurueck.
+    try { tick(); } catch (e) { console.error('Frame-Fehler:', e); }
+    finally { requestAnimationFrame(frame); }
+  }
   requestAnimationFrame(frame);
-  setInterval(() => { if (performance.now() - lastTick > 50) tick(); }, 33);
+  setInterval(() => { try { if (performance.now() - lastTick > 50) tick(); } catch (e) { /* siehe oben */ } }, 33);
   G._tick = tick;
 })();
 
@@ -425,7 +430,29 @@ G.hashStr = (s) => {
 // --- Spielstand ---
 G.state = null;
 G.save = () => { try { localStorage.setItem('arkana_save', JSON.stringify(G.state)); } catch (e) { /* ignoriert */ } };
-G.load = () => { try { const r = localStorage.getItem('arkana_save'); return r ? JSON.parse(r) : null; } catch (e) { return null; } };
+G.load = () => {
+  // Spielstaende aus aelteren Versionen duerfen das Spiel nicht kaputt
+  // machen. Deshalb gegen einen frischen Zustand mergen und pruefen.
+  try {
+    const raw = localStorage.getItem('arkana_save');
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== 'object') return null;
+    if (!s.area || !G.MAPS[s.area] || !G.MAPS[s.area].rooms[s.room]) return null;
+    const base = G.newState();
+    const merged = {
+      ...base, ...s,
+      stats: { ...base.stats, ...(s.stats || {}) },
+      fragmente: Array.isArray(s.fragmente) ? s.fragmente : [],
+      flags: (s.flags && typeof s.flags === 'object') ? s.flags : {},
+    };
+    if (typeof merged.px !== 'number' || !Number.isFinite(merged.px)) merged.px = base.px;
+    if (typeof merged.py !== 'number' || !Number.isFinite(merged.py)) merged.py = base.py;
+    // In Arkana ohne Signatur waere der Zustand unbrauchbar
+    if (merged.phase === 'arkana' && !merged.sig) return null;
+    return merged;
+  } catch (e) { return null; }
+};
 G.clearSave = () => { try { localStorage.removeItem('arkana_save'); } catch (e) { /* ignoriert */ } };
 
 // ===== 02_world.js =====
@@ -434,100 +461,126 @@ G.clearSave = () => { try { localStorage.removeItem('arkana_save'); } catch (e) 
 // ARKANA World: 24px Tiles, organische Charakter-Animation
 // ============================================================
 
-const T = 24; // Tile-Größe
+const T = 40; // Tile-Größe, passt zu G.TILE
 
 // ------------------------------------------------------------
-// TILES. Prozedural gezeichnet, mehrere Schattierungen pro Tile.
+// TILES für 40px. Prozedural gezeichnet, mehrere Schattierungen.
 // ------------------------------------------------------------
-function noise2(x, y) { // deterministisches Pseudo-Rauschen pro Tile
+function noise2(x, y) {
   let h = (x * 374761393 + y * 668265263) >>> 0;
   h = (h ^ (h >>> 13)) >>> 0; h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 G.TILES = {
-  // Leerer Grund
+  // Leerer Grund mit feiner Körnung
   '.': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty);
-    if (n > 0.72) { c.fillStyle = p.bgDeep; c.fillRect(x + Math.floor(n * 18), y + Math.floor((n * 37) % 20), 2, 1); }
-    if (n < 0.12) { c.fillStyle = p.card; c.fillRect(x + 5, y + 14, 3, 1); }
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + Math.floor(n * 30), y + Math.floor((n * 61) % 34), 3, 2);
+    c.fillRect(x + Math.floor((n * 91) % 32), y + Math.floor((n * 47) % 30) + 4, 2, 2);
+    if (n < 0.18) { c.fillStyle = p.card; c.fillRect(x + 8, y + 24, 6, 2); }
+    if (n > 0.86) { c.fillStyle = p.card; c.fillRect(x + 22, y + 11, 5, 2); }
   } },
-  // Boden mit Struktur
+  // Innenboden, Dielen
   ',': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty);
     c.fillStyle = p.bgDeep;
-    c.fillRect(x + 3 + Math.floor(n * 10), y + 5, 3, 1);
-    c.fillRect(x + 14, y + 12 + Math.floor(n * 6), 2, 1);
-    c.fillRect(x + 8, y + 19, 4, 1);
+    c.fillRect(x, y + 13, T, 1); c.fillRect(x, y + 27, T, 1);
+    c.fillRect(x + Math.floor(n * 24) + 6, y, 1, 13);
+    c.fillRect(x + Math.floor((n * 53) % 26) + 6, y + 14, 1, 13);
+    c.fillStyle = p.card;
+    c.fillRect(x + 5 + Math.floor(n * 14), y + 6, 5, 1);
   } },
-  // Mauer, mit Fugen und Kantenlicht
+  // Mauer mit Steinfugen und Kantenlicht
   '#': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     const n = noise2(tx, ty);
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 3);
-    c.fillStyle = p.cardHi; c.fillRect(x, y, T, 1);
-    c.fillStyle = p.bgDeep; c.fillRect(x, y + T - 3, T, 3);
-    // Steinfugen, versetzt je Reihe
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 4);
+    c.fillStyle = p.cardHi; c.fillRect(x, y, T, 2);
+    c.fillStyle = p.bgDeep; c.fillRect(x, y + T - 4, T, 4);
     c.fillStyle = p.bgDeep;
-    const off = (ty % 2) * 12;
-    c.fillRect(x + ((off + 11) % T), y + 3, 1, 9);
-    c.fillRect(x, y + 11, T, 1);
-    c.fillRect(x + ((off + 5) % T), y + 12, 1, 9);
-    if (n > 0.8) { c.fillStyle = p.cardHi; c.fillRect(x + 4, y + 15, 3, 2); }
+    // zwei Steinreihen, versetzt
+    c.fillRect(x, y + 19, T, 2);
+    const off = (ty % 2) * 20;
+    c.fillRect(x + ((off + 19) % T), y + 4, 2, 15);
+    c.fillRect(x + ((off + 9) % T), y + 21, 2, 15);
+    c.fillStyle = p.cardLight;
+    c.fillRect(x + 1, y + 21, T - 2, 1);
+    if (n > 0.82) { c.fillStyle = p.cardHi; c.fillRect(x + 6, y + 26, 5, 3); }
+    if (n < 0.15) { c.fillStyle = p.bgDeep; c.fillRect(x + 24, y + 8, 6, 4); }
   } },
-  // Fenster / toter Bildschirm
+  // Fenster, kaltes Flackern dahinter
   'W': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 2);
-    c.fillStyle = p.bgVoid; c.fillRect(x + 4, y + 4, 16, 13);
-    const flick = 0.25 + 0.2 * Math.sin(t * 3 + noise2(tx, ty) * 9);
-    c.globalAlpha = flick; c.fillStyle = p.glow; c.fillRect(x + 5, y + 5, 14, 5); c.globalAlpha = 1;
-    c.fillStyle = p.dim; c.fillRect(x + 4, y + 17, 16, 1);
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 3);
+    c.fillStyle = p.bgVoid; c.fillRect(x + 6, y + 7, 28, 22);
+    const flick = 0.22 + 0.18 * Math.sin(t * 3 + noise2(tx, ty) * 9);
+    c.globalAlpha = flick; c.fillStyle = '#8fa8c8';
+    c.fillRect(x + 8, y + 9, 24, 10);
+    c.globalAlpha = flick * 0.5; c.fillRect(x + 8, y + 20, 24, 6);
+    c.globalAlpha = 1;
+    c.fillStyle = p.dim;
+    c.fillRect(x + 6, y + 7, 28, 2); c.fillRect(x + 6, y + 28, 28, 2);
+    c.fillRect(x + 19, y + 7, 2, 22);
   } },
-  // Nebel / Wasser, animiert
+  // Nebel und Wasser, animiert
   '~': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bgDeep; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty) * 6;
-    c.fillStyle = p.dim; c.globalAlpha = 0.6;
-    const o1 = Math.sin(t * 1.2 + n) * 4, o2 = Math.cos(t * 0.9 + n) * 4;
-    c.fillRect(x + 3 + o1, y + 6, 8, 1);
-    c.fillRect(x + 11 + o2, y + 14, 7, 1);
-    c.globalAlpha = 0.3; c.fillRect(x + 6 + o2, y + 19, 6, 1);
+    c.fillStyle = p.dim; c.globalAlpha = 0.55;
+    const o1 = Math.sin(t * 1.2 + n) * 6, o2 = Math.cos(t * 0.9 + n) * 6;
+    c.fillRect(x + 5 + o1, y + 9, 14, 2);
+    c.fillRect(x + 18 + o2, y + 22, 12, 2);
+    c.globalAlpha = 0.3;
+    c.fillRect(x + 9 + o2, y + 32, 11, 2);
+    c.fillRect(x + 22 + o1, y + 4, 9, 1);
     c.globalAlpha = 1;
   } },
-  // Baum / Pfeiler mit Krone
+  // Baum mit Krone und Stamm
   'T': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
-    const sway = Math.sin(t * 0.8 + noise2(tx, ty) * 7) * 1.2;
-    c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 15, 6, 9);        // Stamm-Schatten
-    c.fillStyle = p.dim; c.fillRect(x + 10, y + 14, 4, 10);          // Stamm
-    c.fillStyle = p.card; c.fillRect(x + 3 + sway, y + 2, 18, 13);   // Krone
-    c.fillStyle = p.cardLight; c.fillRect(x + 5 + sway, y + 3, 14, 6);
-    c.fillStyle = p.cardHi; c.fillRect(x + 7 + sway, y + 4, 8, 2);
-    c.fillStyle = p.bgDeep; c.fillRect(x + 4 + sway, y + 12, 16, 2);
+    const sway = Math.sin(t * 0.8 + noise2(tx, ty) * 7) * 1.6;
+    c.globalAlpha = 0.3; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 20, y + 36, 11, 3.5, 0, 0, 6.283); c.fill();
+    c.globalAlpha = 1;
+    c.fillStyle = p.bgDeep; c.fillRect(x + 16, y + 24, 9, 13);
+    c.fillStyle = p.dim; c.fillRect(x + 17, y + 23, 6, 13);
+    c.fillStyle = p.card; c.fillRect(x + 5 + sway, y + 3, 30, 22);
+    c.fillStyle = p.cardLight; c.fillRect(x + 8 + sway, y + 5, 24, 11);
+    c.fillStyle = p.cardHi; c.fillRect(x + 12 + sway, y + 6, 13, 4);
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + 6 + sway, y + 21, 28, 3);
+    c.fillRect(x + 5 + sway, y + 12, 4, 3);
   } },
-  // Pflaster / Weg
+  // Pflaster
   '=': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x + 1, y + 1, T - 2, 1);
-    c.fillStyle = p.bg; c.fillRect(x, y + T - 1, T, 1); c.fillRect(x + T - 1, y, 1, T);
-    if (noise2(tx, ty) > 0.75) { c.fillStyle = p.bgDeep; c.fillRect(x + 6, y + 9, 5, 2); }
+    c.fillStyle = p.cardLight; c.fillRect(x + 2, y + 2, T - 4, 2);
+    c.fillStyle = p.bg;
+    c.fillRect(x, y + T - 2, T, 2); c.fillRect(x + T - 2, y, 2, T);
+    c.fillRect(x, y + 19, T, 1); c.fillRect(x + 19, y, 1, T);
+    if (noise2(tx, ty) > 0.7) { c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 24, 8, 3); }
   } },
-  // Tür, begehbar
+  // Tür
   'D': { solid: false, draw: (c, x, y, p, t) => {
     c.fillStyle = p.bgVoid; c.fillRect(x, y, T, T);
-    c.fillStyle = p.dim; c.fillRect(x + 2, y, 2, T); c.fillRect(x + T - 4, y, 2, T); c.fillRect(x + 2, y, T - 4, 2);
-    const a = 0.15 + 0.12 * Math.sin(t * 2);
-    c.globalAlpha = a; c.fillStyle = p.main; c.fillRect(x + 4, y + 2, T - 8, T - 2); c.globalAlpha = 1;
+    c.fillStyle = p.dim;
+    c.fillRect(x + 3, y, 3, T); c.fillRect(x + T - 6, y, 3, T); c.fillRect(x + 3, y, T - 6, 3);
+    const a = 0.14 + 0.11 * Math.sin(t * 2);
+    c.globalAlpha = a; c.fillStyle = p.main; c.fillRect(x + 6, y + 3, T - 12, T - 3);
+    c.globalAlpha = 1;
+    c.fillStyle = p.glow; c.fillRect(x + T - 12, y + 20, 3, 3);
   } },
-  // Leylinie, pulsierender Pfad
+  // Leylinie
   '*': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const pulse = 0.35 + 0.3 * Math.sin(t * 2.5 - (tx + ty) * 0.5);
-    c.globalAlpha = pulse * 0.4; c.fillStyle = p.main; c.fillRect(x + 6, y, 12, T);
-    c.globalAlpha = pulse; c.fillStyle = p.glow; c.fillRect(x + 10, y, 4, T);
+    c.globalAlpha = pulse * 0.35; c.fillStyle = p.main; c.fillRect(x + 9, y, 22, T);
+    c.globalAlpha = pulse * 0.8; c.fillStyle = p.glow; c.fillRect(x + 16, y, 8, T);
+    c.globalAlpha = pulse; c.fillStyle = p.textBright; c.fillRect(x + 19, y, 2, T);
     c.globalAlpha = 1;
   } },
 };
@@ -608,37 +661,71 @@ G.updateAnim = (an, dt, vx, vy, moving) => {
   return an.stepFlash && !wasDown;
 };
 
-// Zeichnet die Figur.
-// Sprite-Box 20x30. Aufbau von hinten nach vorn:
-// Schatten, Umhang, hinteres Bein, Torso, vorderes Bein, Arme, Kopf.
-// Die Silhouette bleibt bewusst schmal, damit die Figur lesbar bleibt.
+// ------------------------------------------------------------
+// MENSCH. Sprite-Box 26 breit, 42 hoch. Füße bei py+40.
+// Aufbau: Haar, Kopf, Hals, Rumpf, Arme, Beine, Stiefel.
+// Die Bewegung entsteht aus einem echten Gehzyklus: jeder Fuß
+// steht eine halbe Periode am Boden und schwingt eine halbe
+// Periode durch die Luft. Daraus werden Knie, Hüfte, Schultern
+// und Kopf abgeleitet. Nichts davon sind feste Einzelbilder.
+// ------------------------------------------------------------
+
+// Fußposition im Gehzyklus. t läuft 0..1.
+// Rückgabe: x seitlicher Versatz, y Höhe über dem Boden (negativ = angehoben)
+function footCycle(t, stride, lift) {
+  t = ((t % 1) + 1) % 1;
+  if (t < 0.5) {
+    // Standphase: Fuß klebt am Boden und wandert nach hinten
+    const k = t / 0.5;
+    return { x: stride * (1 - 2 * k), y: 0, planted: true };
+  }
+  // Schwungphase: Fuß hebt ab, zieht nach vorn, setzt wieder auf
+  const k = (t - 0.5) / 0.5;
+  return { x: stride * (-1 + 2 * k), y: -lift * Math.sin(k * Math.PI), planted: false };
+}
+
 G.drawPlayer = (c, px, py, an, p, cols, glow) => {
   const R = Math.round;
-  const w = Math.sin(an.phase * Math.PI * 2);   // Schrittschwingung
-  const w2 = Math.sin(an.phase * Math.PI * 4);  // doppelte Frequenz
   const sp = an.speed;
   const side = (an.dir === 'left' || an.dir === 'right');
   const face = an.dir === 'left' ? -1 : 1;
+  const back = (an.dir === 'up');
 
-  const bob = -Math.abs(w2) * 1.6 * sp;                    // Auf und Ab
-  const breath = Math.sin(an.breathe) * 0.5 * (1 - sp);     // Atmen im Stand
-  const sway = w * 0.9 * sp;                                // Wiegen
+  // Hautton, bewusst neutral gehalten
+  const skin = '#c98f63', skinSh = '#9c6b45', skinHi = '#e0ab7d';
+  const hair = '#3a2418', hairHi = '#57351f';
+  const shirt = cols.robe, shirtHi = cols.robeHi, shirtDark = cols.robeDark || '#1a1410';
+  const trim = cols.trim, core = cols.core;
+  const pants = '#2e2a33', pantsHi = '#413c48';
+  const boot = '#1a1512';
+
+  // --- Gehzyklus ---
+  const stride = 4.2 * sp;
+  const lift = 3.4 * sp;
+  const fA = footCycle(an.phase, stride, lift);          // vorderes/linkes Bein
+  const fB = footCycle(an.phase + 0.5, stride, lift);    // hinteres/rechtes Bein
+
+  // Körper sinkt bei jedem Aufsetzen leicht ein, steigt in der Mitte
+  const bob = -Math.abs(Math.sin(an.phase * Math.PI * 2)) * 1.5 * sp + 0.8 * sp;
+  const breath = Math.sin(an.breathe) * 0.6 * (1 - sp);
+  // Gewichtsverlagerung im Stand
+  const idleShift = Math.sin(an.breathe * 0.5) * 0.7 * (1 - sp);
+  // Hüfte kippt zur Standbeinseite, Schultern gegenläufig
+  const hipTilt = Math.sin(an.phase * Math.PI * 2) * 1.3 * sp;
+  const shoulderTilt = -hipTilt * 0.75;
+
   const sq = an.squash;
-  const sY = 1 - sq * 0.14, sX = 1 + sq * 0.10;
+  const sY = 1 - sq * 0.12, sX = 1 + sq * 0.09;
 
   const baseY = py + bob + breath;
-  const cx = px + 10 + sway * 0.5;
-  const footY = py + 29;
-
-  const robe = cols.robe, robeHi = cols.robeHi, trim = cols.trim, core = cols.core;
-  const robeDark = cols.robeDark || '#1a1410';
-  const dark = '#090503';
+  const cx = px + 13 + idleShift;
+  const footY = py + 40;
 
   // --- Schatten ---
-  c.globalAlpha = 0.34 - sp * 0.08;
+  c.globalAlpha = 0.36 - sp * 0.08;
   c.fillStyle = '#000';
   c.beginPath();
-  c.ellipse(px + 10, footY, (6.5 + sp * 1.5) * sX, 2.4, 0, 0, 6.283);
+  c.ellipse(px + 13, footY + 1, (8 + sp * 2) * sX, 3, 0, 0, 6.283);
   c.fill();
   c.globalAlpha = 1;
 
@@ -646,197 +733,236 @@ G.drawPlayer = (c, px, py, an, p, cols, glow) => {
   if (glow) {
     c.globalAlpha = 0.13 + 0.05 * Math.sin(an.breathe * 1.3);
     c.fillStyle = glow;
-    c.beginPath(); c.ellipse(px + 10, baseY + 16, 13, 17, 0, 0, 6.283); c.fill();
+    c.beginPath(); c.ellipse(px + 13, baseY + 22, 16, 23, 0, 0, 6.283); c.fill();
     c.globalAlpha = 1;
   }
 
-  // --- Umhang, hinter allem, kaum breiter als der Körper ---
-  // Er weht entgegen der Laufrichtung und flattert am Saum.
-  const clx = an.cloakX, cly = an.cloakY;
-  const capeTop = baseY + 11, capeH = 15 * sY;
-  c.fillStyle = robeDark;
+  // Ein Bein zeichnen: Oberschenkel, Knie, Unterschenkel, Stiefel
+  function drawLeg(f, hipX, shade, shadeHi) {
+    const hipY = baseY + 25 + hipTilt * (hipX > 0 ? 1 : -1) * 0.5;
+    const fx = cx + hipX + (side ? f.x * face : f.x * 0.35);
+    const fy = footY + f.y;
+    // Knie liegt zwischen Hüfte und Fuß, wird beim Anheben nach vorn gedrückt
+    const kneeX = (cx + hipX) * 0.45 + fx * 0.55 + (side ? -f.y * 0.35 * face : 0);
+    const kneeY = (hipY + fy) / 2 - Math.max(0, -f.y) * 0.3;
+    c.strokeStyle = shade; c.lineWidth = 5; c.lineCap = 'butt';
+    c.beginPath(); c.moveTo(R(cx + hipX), R(hipY)); c.lineTo(R(kneeX), R(kneeY)); c.stroke();
+    c.strokeStyle = shadeHi; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(R(kneeX), R(kneeY)); c.lineTo(R(fx), R(fy - 2)); c.stroke();
+    // Stiefel
+    c.fillStyle = boot;
+    c.fillRect(R(fx - 3), R(fy - 3), side ? 7 : 6, 4);
+    if (side) c.fillRect(R(fx - 3 + (face > 0 ? 3 : -2)), R(fy - 2), 3, 3);
+  }
+
+  // Einen Arm zeichnen: Oberarm, Ellbogen, Unterarm, Hand
+  function drawArm(swing, shX, sleeve, skinTone) {
+    const shY = baseY + 18 + shoulderTilt * (shX > 0 ? 1 : -1) * 0.4;
+    const handX = cx + shX + (side ? swing * face * 1.1 : swing * 0.5);
+    const handY = shY + 12 - Math.abs(swing) * 0.25;
+    const elbowX = (cx + shX) * 0.5 + handX * 0.5 + (side ? -swing * 0.25 * face : 0);
+    const elbowY = shY + 6.5;
+    c.strokeStyle = sleeve; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(R(cx + shX), R(shY)); c.lineTo(R(elbowX), R(elbowY)); c.stroke();
+    c.strokeStyle = skinTone; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(R(elbowX), R(elbowY)); c.lineTo(R(handX), R(handY)); c.stroke();
+    c.fillStyle = skinTone; c.fillRect(R(handX - 1.5), R(handY - 1), 3, 3);
+  }
+
+  const armSwing = -Math.sin(an.phase * Math.PI * 2) * 4.6 * sp;
+
+  // ---- Hinteres Bein und hinterer Arm zuerst (verdeckt) ----
   if (side) {
-    // Seitlich: schmale Fahne, die knapp hinter der Schulter weg steht
-    const back = -face;
-    const drift = Math.max(-4, Math.min(4, clx * 0.55));
-    c.beginPath();
-    c.moveTo(R(cx + back * 1.5), R(capeTop));
-    c.lineTo(R(cx + back * 3.5 + drift), R(capeTop + capeH * 0.65));
-    c.lineTo(R(cx + back * 3 + drift), R(capeTop + capeH));
-    c.lineTo(R(cx + back * 0.5), R(capeTop + capeH - 2));
-    c.closePath(); c.fill();
+    drawLeg(fB, -1, '#221f26', '#2e2a33');
+    drawArm(-armSwing, -1, shirtDark, skinSh);
   } else {
-    const wob = w * 0.9 * sp;
-    const drift = Math.max(-3, Math.min(3, clx * 0.7));
-    c.beginPath();
-    c.moveTo(R(cx - 4), R(capeTop));
-    c.lineTo(R(cx - 6 + drift + wob), R(capeTop + capeH));
-    c.lineTo(R(cx + 6 + drift + wob), R(capeTop + capeH));
-    c.lineTo(R(cx + 4), R(capeTop));
-    c.closePath(); c.fill();
-  }
-  // Saum, flattert leicht nach
-  c.fillStyle = robe;
-  for (let i = 0; i < 3; i++) {
-    const fx = cx - 4 + i * 3.5 + Math.max(-3, Math.min(3, clx * 0.7));
-    const fy = capeTop + capeH - 2 + Math.sin(an.phase * 6.283 + i * 1.3) * 1.2 * sp;
-    c.fillRect(R(fx), R(fy), 3, 2);
+    drawLeg(fB, 4, pants, pantsHi);
+    drawArm(-armSwing, 7, shirtDark, skinSh);
   }
 
-  // --- Beine ---
-  // In Robenfarbe, damit sie gegen den dunklen Boden lesbar bleiben.
-  const legA = w * 2.4 * sp;      // vorderes Bein
-  const legB = -w * 2.4 * sp;     // hinteres Bein
-  const liftA = Math.max(0, w) * 1.7 * sp;
-  const liftB = Math.max(0, -w) * 1.7 * sp;
-  const legTop = baseY + 21;
-  const legH = 8;
-  function leg(offX, lift, shade) {
-    const lx = R(cx + offX), ly = R(legTop - lift), lh = R(legH - lift * 0.6);
-    c.fillStyle = shade; c.fillRect(lx, ly, 3, lh);
-    c.fillStyle = dark; c.fillRect(lx, ly + lh - 2, 3, 2); // Stiefel
-  }
-  // hinteres Bein zuerst, etwas dunkler
-  leg(side ? -1.5 + legB * face : 1.5, liftB, robe);
+  // ---- Rumpf ----
+  const bodyW = R(15 * sX), bodyH = R(12 * sY);
+  const bodyX = R(cx - bodyW / 2 + shoulderTilt * 0.3), bodyY = R(baseY + 15);
+  c.fillStyle = shirt; c.fillRect(bodyX, bodyY, bodyW, bodyH);
+  // Schulterpartie heller
+  c.fillStyle = shirtHi; c.fillRect(bodyX + 1, bodyY + 1, bodyW - 2, 5);
+  // Seitenschatten
+  c.fillStyle = shirtDark;
+  c.fillRect(bodyX, bodyY, 2, bodyH);
+  c.fillRect(bodyX + bodyW - 2, bodyY, 2, bodyH);
+  // Gürtel, schmal und dunkel. Nur die Schnalle setzt einen Akzent.
+  c.fillStyle = '#241c14'; c.fillRect(bodyX, bodyY + bodyH - 2, bodyW, 2);
+  if (!back) { c.fillStyle = trim; c.fillRect(R(cx - 2), bodyY + bodyH - 2, 4, 2); }
 
-  // --- Torso ---
-  const bodyW = R(11 * sX), bodyH = R(13 * sY);
-  const bodyX = R(cx - bodyW / 2), bodyY = R(baseY + 11);
-  c.fillStyle = robe; c.fillRect(bodyX, bodyY, bodyW, bodyH);
-  c.fillStyle = robeHi; c.fillRect(bodyX + 1, bodyY + 1, bodyW - 2, 4);
-  c.fillStyle = dark; c.fillRect(bodyX, bodyY + bodyH - 1, bodyW, 1);
-  // Gürtel, nur ein kurzer Akzent
-  c.fillStyle = trim; c.fillRect(bodyX + 2, bodyY + 8, bodyW - 4, 1);
-
-  // --- Leuchtender Kern in der Brust ---
-  const pulse = 0.5 + 0.5 * Math.sin(an.breathe * 1.7);
-  c.globalAlpha = pulse * 0.35; c.fillStyle = core;
-  c.fillRect(bodyX + R(bodyW / 2) - 2, bodyY + 3, 4, 4);
-  c.globalAlpha = pulse; c.fillRect(bodyX + R(bodyW / 2) - 1, bodyY + 4, 2, 2);
-  c.globalAlpha = 1;
-
-  // --- vorderes Bein, heller als das hintere ---
-  leg(side ? -1.5 + legA * face : -4.5, liftA, robeHi);
-
-  // --- Arme ---
-  // Bei Frontansicht liegen sie eng am Körper, sonst wirken sie wie Stummel.
-  const armS = -w * 2.0 * sp;
-  if (side) {
-    c.fillStyle = robeHi;
-    c.fillRect(R(cx - 1 + armS * face), R(baseY + 13), 3, 7);
-    c.fillStyle = trim; c.fillRect(R(cx - 1 + armS * face), R(baseY + 19), 3, 1);
-  } else {
-    c.fillStyle = dark;
-    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 2, 8);
-    c.fillRect(R(bodyX + bodyW - 1), R(baseY + 13 - armS * 0.5), 2, 8);
-    c.fillStyle = robeHi;
-    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 1, 7);
-    c.fillRect(R(bodyX + bodyW), R(baseY + 13 - armS * 0.5), 1, 7);
-  }
-
-  // --- Kopf mit Kapuze ---
-  const hx = R(cx - 4 + an.hoodX + an.facing * 0.8);
-  const hy = R(baseY + 2 + bob * 0.2);
-  // Kapuze als Silhouette
-  c.fillStyle = robe;
-  c.fillRect(hx - 1, hy + 1, 10, 8);
-  c.fillRect(hx, hy, 8, 2);
-  c.fillStyle = robeHi; c.fillRect(hx + 1, hy, 6, 2);
-  // Gesichtsöffnung
-  c.fillStyle = dark;
-  if (an.dir === 'up') {
-    c.fillRect(hx, hy + 2, 8, 5);   // Rückansicht, keine Öffnung
-  } else if (side) {
-    c.fillRect(hx + (face > 0 ? 3 : 1), hy + 3, 5, 4);
-  } else {
-    c.fillRect(hx + 1, hy + 3, 6, 4);
-  }
-  // Augen
-  if (an.dir !== 'up' && an.blinking <= 0) {
-    c.fillStyle = core; c.globalAlpha = 0.95;
-    if (side) c.fillRect(hx + (face > 0 ? 5 : 2), hy + 4, 2, 2);
-    else { c.fillRect(hx + 2, hy + 4, 2, 2); c.fillRect(hx + 5, hy + 4, 2, 2); }
+  // Anhänger mit dem leuchtenden Kern (die Signatur)
+  if (!back) {
+    const pulse = 0.5 + 0.5 * Math.sin(an.breathe * 1.7);
+    c.globalAlpha = pulse * 0.32; c.fillStyle = core;
+    c.fillRect(R(cx - 3), bodyY + 3, 6, 6);
+    c.globalAlpha = pulse; c.fillStyle = core;
+    c.fillRect(R(cx - 1), bodyY + 5, 2, 3);
     c.globalAlpha = 1;
   }
-  // Kapuzenzipfel hinten
-  c.fillStyle = robe;
-  if (side) c.fillRect(R(hx + (face > 0 ? -2 : 8)), hy + 2, 2, 4);
+
+  // ---- Vorderes Bein und vorderer Arm ----
+  if (side) {
+    drawLeg(fA, 1, pants, pantsHi);
+    drawArm(armSwing, 1, shirt, skin);
+  } else {
+    drawLeg(fA, -4, pants, pantsHi);
+    drawArm(armSwing, -7, shirt, skin);
+  }
+
+  // ---- Hals ----
+  c.fillStyle = skinSh; c.fillRect(R(cx - 2), R(baseY + 13), 4, 3);
+
+  // ---- Kopf ----
+  // Der Kopf hängt der Bewegung minimal nach, das wirkt lebendig.
+  const hx = R(cx - 6 + an.hoodX * 0.8 + an.facing * 1.2);
+  const hy = R(baseY + 2 + bob * 0.3);
+  // Gesicht
+  c.fillStyle = skin; c.fillRect(hx + 1, hy + 3, 11, 10);
+  c.fillStyle = skinHi; c.fillRect(hx + 2, hy + 4, 9, 3);
+  c.fillStyle = skinSh; c.fillRect(hx + 1, hy + 11, 11, 2);
+  // Ohren
+  if (!back) {
+    c.fillStyle = skinSh;
+    if (side) { c.fillRect(R(hx + (face > 0 ? 3 : 8)), hy + 7, 2, 3); }
+    else { c.fillRect(hx, hy + 7, 2, 3); c.fillRect(hx + 11, hy + 7, 2, 3); }
+  }
+
+  // Haar mit Federbewegung: es schwingt beim Laufen mit
+  const hairSway = an.hoodX * 1.6;
+  c.fillStyle = hair;
+  c.fillRect(hx, hy, 13, 5);                               // Deckhaar
+  c.fillRect(hx - 1, hy + 2, 3, 7);                        // Seite links
+  c.fillRect(hx + 11, hy + 2, 3, 7);                       // Seite rechts
+  c.fillStyle = hairHi; c.fillRect(hx + 2, hy + 1, 8, 2);  // Glanz
+  // Hinterkopf-Schopf, folgt verzögert
+  c.fillStyle = hair;
+  if (side) c.fillRect(R(hx + (face > 0 ? -2 : 12) + hairSway * 0.5), hy + 3, 3, 6);
+  else c.fillRect(R(hx + 3 + hairSway), hy - 1, 7, 3);
+
+  if (back) {
+    // Rückansicht: nur Hinterkopf, kein Gesicht
+    c.fillStyle = hair; c.fillRect(hx + 1, hy + 3, 11, 8);
+    c.fillStyle = hairHi; c.fillRect(hx + 3, hy + 4, 7, 2);
+  } else if (an.blinking <= 0) {
+    // Augen
+    c.fillStyle = '#1a1008';
+    if (side) {
+      c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 7, 2, 2);
+    } else {
+      c.fillRect(hx + 3, hy + 7, 2, 2);
+      c.fillRect(hx + 8, hy + 7, 2, 2);
+    }
+    // Lichtpunkt in den Augen, in der Elementfarbe
+    c.globalAlpha = 0.55; c.fillStyle = core;
+    if (side) c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 7, 1, 1);
+    else { c.fillRect(hx + 3, hy + 7, 1, 1); c.fillRect(hx + 8, hy + 7, 1, 1); }
+    c.globalAlpha = 1;
+  } else {
+    // Blinzeln
+    c.fillStyle = skinSh;
+    if (side) c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 8, 2, 1);
+    else { c.fillRect(hx + 3, hy + 8, 2, 1); c.fillRect(hx + 8, hy + 8, 2, 1); }
+  }
+
+  // Mund, nur in der Frontansicht angedeutet
+  if (an.dir === 'down') { c.fillStyle = skinSh; c.fillRect(hx + 5, hy + 10, 3, 1); }
 };
 
 // ------------------------------------------------------------
-// NPC: eigene, ruhigere Animation
+// NPC: menschlich, ruhigere Animation
 // ------------------------------------------------------------
 G.drawNpc = (c, px, py, p, variant, t, seed) => {
-  const x = Math.round(px), y = Math.round(py);
+  const R = Math.round;
   const ph = t * 1.1 + (seed || 0) * 2.3;
-  const breath = Math.sin(ph) * 0.7;
-  const tones = [p.textDim, p.dim, p.text, p.accent];
-  const tone = tones[variant % tones.length];
+  const breath = Math.sin(ph) * 0.8;
+  const shift = Math.sin(ph * 0.4) * 0.8;
+  const skin = '#b0805a', skinSh = '#8a6244';
+  const hairs = ['#2e2018', '#4a3524', '#1f1a16', '#5c4632'];
+  const shirts = [p.textDim, p.dim, p.card, p.accent];
+  const hair = hairs[variant % hairs.length];
+  const shirt = shirts[variant % shirts.length];
 
-  c.globalAlpha = 0.3; c.fillStyle = '#000';
-  c.beginPath(); c.ellipse(x + 10, y + 28, 7, 2.5, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(px + 13, py + 41, 8, 3, 0, 0, 6.283); c.fill();
   c.globalAlpha = 1;
 
-  const by = y + breath;
-  c.fillStyle = '#0a0604'; c.fillRect(x + 5, by + 22, 4, 6); c.fillRect(x + 12, by + 22, 4, 6);
-  c.fillStyle = tone; c.fillRect(x + 4, by + 9, 13, 14);
-  c.fillStyle = p.cardLight; c.fillRect(x + 5, by + 10, 11, 4);
-  c.fillStyle = p.textDim; c.fillRect(x + 5, by + 1, 11, 9);
-  c.fillStyle = '#0a0604'; c.fillRect(x + 6, by + 4, 9, 5);
+  const by = py + breath, cx = px + 13 + shift;
+  // Beine
+  c.strokeStyle = '#2a262f'; c.lineWidth = 5;
+  c.beginPath(); c.moveTo(R(cx - 4), R(by + 27)); c.lineTo(R(cx - 4), R(by + 38)); c.stroke();
+  c.beginPath(); c.moveTo(R(cx + 4), R(by + 27)); c.lineTo(R(cx + 4), R(by + 38)); c.stroke();
+  c.fillStyle = '#17130f';
+  c.fillRect(R(cx - 7), R(by + 37), 6, 4); c.fillRect(R(cx + 1), R(by + 37), 6, 4);
+  // Arme
+  c.strokeStyle = shirt; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(R(cx - 7), R(by + 17)); c.lineTo(R(cx - 8), R(by + 27)); c.stroke();
+  c.beginPath(); c.moveTo(R(cx + 7), R(by + 17)); c.lineTo(R(cx + 8), R(by + 27)); c.stroke();
+  c.fillStyle = skin;
+  c.fillRect(R(cx - 9), R(by + 26), 3, 3); c.fillRect(R(cx + 7), R(by + 26), 3, 3);
+  // Rumpf
+  c.fillStyle = shirt; c.fillRect(R(cx - 7), R(by + 15), 14, 14);
+  c.fillStyle = p.cardLight; c.fillRect(R(cx - 6), R(by + 16), 12, 4);
+  // Kopf
+  const hx = R(cx - 6), hy = R(by + 3);
+  c.fillStyle = skinSh; c.fillRect(R(cx - 2), R(by + 13), 4, 3);
+  c.fillStyle = skin; c.fillRect(hx + 1, hy + 3, 11, 10);
+  c.fillStyle = hair;
+  c.fillRect(hx, hy, 13, 5); c.fillRect(hx - 1, hy + 2, 3, 7); c.fillRect(hx + 11, hy + 2, 3, 7);
+  c.fillStyle = '#1a1008'; c.fillRect(hx + 3, hy + 7, 2, 2); c.fillRect(hx + 8, hy + 7, 2, 2);
 
-  // Variante 0 starrt auf einen Bildschirm: kaltes Flackern vorm Gesicht
+  // Variante 0 starrt auf einen Bildschirm
   if (variant === 0) {
     const f = 0.4 + 0.35 * Math.sin(t * 9 + (seed || 0));
     c.globalAlpha = f; c.fillStyle = '#8fa8c8';
-    c.fillRect(x + 6, by + 12, 9, 6);
-    c.globalAlpha = f * 0.4; c.fillRect(x + 4, by + 3, 13, 8);
+    c.fillRect(R(cx - 5), R(by + 20), 10, 7);
+    c.globalAlpha = f * 0.35; c.fillRect(hx, hy + 2, 13, 10);
     c.globalAlpha = 1;
   }
 };
 
 // ------------------------------------------------------------
-// Begleiter-Geist: schwebt, zieht eine Spur
+// Begleiter-Geist
 // ------------------------------------------------------------
 G.drawSpirit = (c, px, py, p, t, color, trail) => {
-  // Spur
   if (trail) {
     for (let i = trail.length - 1; i >= 0; i--) {
-      const tr = trail[i];
-      c.globalAlpha = (i / trail.length) * 0.28;
+      c.globalAlpha = (i / trail.length) * 0.26;
       c.fillStyle = color;
-      c.fillRect(Math.round(tr.x), Math.round(tr.y), 3, 3);
+      c.fillRect(Math.round(trail[i].x), Math.round(trail[i].y), 4, 4);
     }
   }
-  const x = px + Math.sin(t * 1.9) * 3.2;
-  const y = py + Math.cos(t * 2.6) * 3.8;
+  const x = px + Math.sin(t * 1.9) * 4, y = py + Math.cos(t * 2.6) * 4.6;
   const pulse = 0.7 + 0.3 * Math.sin(t * 4);
-  c.globalAlpha = 0.16 * pulse; c.fillStyle = color;
-  c.beginPath(); c.arc(x + 3, y + 3, 9, 0, 6.283); c.fill();
-  c.globalAlpha = 0.45 * pulse;
-  c.beginPath(); c.arc(x + 3, y + 3, 5, 0, 6.283); c.fill();
+  c.globalAlpha = 0.15 * pulse; c.fillStyle = color;
+  c.beginPath(); c.arc(x + 4, y + 4, 13, 0, 6.283); c.fill();
+  c.globalAlpha = 0.42 * pulse;
+  c.beginPath(); c.arc(x + 4, y + 4, 7, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  c.fillRect(Math.round(x + 1), Math.round(y + 1), 4, 4);
-  c.fillStyle = '#fff'; c.globalAlpha = 0.8;
-  c.fillRect(Math.round(x + 2), Math.round(y + 2), 2, 2);
+  c.fillRect(Math.round(x + 1), Math.round(y + 1), 6, 6);
+  c.globalAlpha = 0.85; c.fillStyle = '#fff';
+  c.fillRect(Math.round(x + 3), Math.round(y + 3), 2, 2);
   c.globalAlpha = 1;
 };
 
 // ------------------------------------------------------------
-// Fragment: rotierender Splitter mit Lichthof
+// Fragment
 // ------------------------------------------------------------
 G.drawFragment = (c, px, py, p, t, seed) => {
-  const x = px + 12, y = py + 12 + Math.sin(t * 1.6 + (seed || 0)) * 2.5;
+  const x = px + 20, y = py + 20 + Math.sin(t * 1.6 + (seed || 0)) * 3.5;
   const a = 0.55 + 0.45 * Math.sin(t * 3 + (seed || 0) * 2);
-  c.globalAlpha = a * 0.18; c.fillStyle = p.bright;
-  c.beginPath(); c.arc(x, y, 13, 0, 6.283); c.fill();
-  c.globalAlpha = a * 0.4;
-  c.beginPath(); c.arc(x, y, 7, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.16; c.fillStyle = p.bright;
+  c.beginPath(); c.arc(x, y, 20, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.35;
+  c.beginPath(); c.arc(x, y, 11, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  // Rotierender Rhombus
   const r = t * 1.4 + (seed || 0);
   c.save(); c.translate(x, y); c.rotate(r);
-  c.fillStyle = p.bright; c.fillRect(-2, -7, 4, 14); c.fillRect(-7, -2, 14, 4);
-  c.fillStyle = p.textBright; c.fillRect(-2, -2, 4, 4);
+  c.fillStyle = p.bright; c.fillRect(-3, -11, 6, 22); c.fillRect(-11, -3, 22, 6);
+  c.fillStyle = p.textBright; c.fillRect(-3, -3, 6, 6);
   c.restore();
 };
 
@@ -846,24 +972,21 @@ G.drawFragment = (c, px, py, p, t, seed) => {
 G.drawShrine = (c, px, py, p, t) => {
   const x = Math.round(px), y = Math.round(py);
   c.globalAlpha = 0.3; c.fillStyle = '#000';
-  c.beginPath(); c.ellipse(x + 24, y + 46, 24, 6, 0, 0, 6.283); c.fill();
+  c.beginPath(); c.ellipse(x + 40, y + 76, 36, 8, 0, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  // Sockel
-  c.fillStyle = p.card; c.fillRect(x + 4, y + 24, 40, 22);
-  c.fillStyle = p.cardLight; c.fillRect(x + 6, y + 26, 36, 4);
-  c.fillStyle = p.bgDeep; c.fillRect(x + 10, y + 32, 28, 12);
-  // Spiegelfläche
+  c.fillStyle = p.card; c.fillRect(x + 8, y + 40, 64, 36);
+  c.fillStyle = p.cardLight; c.fillRect(x + 11, y + 43, 58, 5);
+  c.fillStyle = p.bgDeep; c.fillRect(x + 17, y + 52, 46, 20);
   const a = 0.45 + 0.35 * Math.sin(t * 1.8);
-  c.globalAlpha = a * 0.3; c.fillStyle = p.main;
-  c.beginPath(); c.arc(x + 24, y + 14, 22, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.28; c.fillStyle = p.main;
+  c.beginPath(); c.arc(x + 40, y + 24, 36, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  c.fillStyle = p.bgVoid; c.fillRect(x + 12, y + 2, 24, 24);
-  c.fillStyle = p.dim; c.fillRect(x + 12, y + 2, 24, 2); c.fillRect(x + 12, y + 24, 24, 2);
-  c.fillRect(x + 12, y + 2, 2, 24); c.fillRect(x + 34, y + 2, 2, 24);
-  c.globalAlpha = a; c.fillStyle = p.glow;
-  c.fillRect(x + 16, y + 6, 16, 16);
-  c.globalAlpha = a * 0.7; c.fillStyle = p.textBright;
-  c.fillRect(x + 20, y + 10, 8, 8);
+  c.fillStyle = p.bgVoid; c.fillRect(x + 20, y + 4, 40, 40);
+  c.fillStyle = p.dim;
+  c.fillRect(x + 20, y + 4, 40, 3); c.fillRect(x + 20, y + 41, 40, 3);
+  c.fillRect(x + 20, y + 4, 3, 40); c.fillRect(x + 57, y + 4, 3, 40);
+  c.globalAlpha = a; c.fillStyle = p.glow; c.fillRect(x + 26, y + 10, 28, 28);
+  c.globalAlpha = a * 0.7; c.fillStyle = p.textBright; c.fillRect(x + 33, y + 17, 14, 14);
   c.globalAlpha = 1;
 };
 
@@ -973,7 +1096,7 @@ G.makeSignature = (name, zodiacIdx, age) => {
 G.newState = () => ({
   sig: null,
   phase: 'prolog',
-  area: 'stadt', room: '1,1', px: 168, py: 260,
+  area: 'stadt', room: '1,1', px: 167, py: 250,
   flags: {},
   fragmente: [],
   stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0 },
@@ -981,36 +1104,30 @@ G.newState = () => ({
 
 // ============================================================
 // KARTEN-BAUKASTEN
-// Räume sind 15 Zeichen breit, 22 hoch. Der Baukasten sorgt
-// dafür, dass Ränder, Durchgänge und Maße immer stimmen.
+// Räume sind 9 Zeichen breit, 14 hoch (je 40px = 360x560).
+// Der Baukasten garantiert korrekte Maße und Durchgänge.
 // ============================================================
-const RW = 15, RH = 22;
+const RW = 9, RH = 14;
+const MX = 4, MY = 7;   // Mitte, dort liegen die Durchgänge
 
-// exits: {n:true, s:true, w:true, o:true} = Durchgang in die Richtung
 function room(exits, fill = '.', wall = '#') {
   const g = [];
   for (let y = 0; y < RH; y++) {
     const row = [];
     for (let x = 0; x < RW; x++) {
-      const border = (x === 0 || x === RW - 1 || y === 0 || y === RH - 1);
-      row.push(border ? wall : fill);
+      row.push((x === 0 || x === RW - 1 || y === 0 || y === RH - 1) ? wall : fill);
     }
     g.push(row);
   }
-  // Durchgänge in die Mitte der jeweiligen Kante, 3 Felder breit
-  const mx = Math.floor(RW / 2), my = Math.floor(RH / 2);
-  if (exits.n) for (let x = mx - 1; x <= mx + 1; x++) g[0][x] = fill;
-  if (exits.s) for (let x = mx - 1; x <= mx + 1; x++) g[RH - 1][x] = fill;
-  if (exits.w) for (let y = my - 1; y <= my + 1; y++) g[y][0] = fill;
-  if (exits.o) for (let y = my - 1; y <= my + 1; y++) g[y][RW - 1] = fill;
+  // Durchgänge, 3 Felder breit, in der Kantenmitte
+  if (exits.n) for (let x = MX - 1; x <= MX + 1; x++) g[0][x] = fill;
+  if (exits.s) for (let x = MX - 1; x <= MX + 1; x++) g[RH - 1][x] = fill;
+  if (exits.w) for (let y = MY - 1; y <= MY + 1; y++) g[y][0] = fill;
+  if (exits.o) for (let y = MY - 1; y <= MY + 1; y++) g[y][RW - 1] = fill;
   return g;
 }
-
-// Rechteck oder Linie in einen Raum stempeln
 function put(g, x, y, ch) { if (g[y] && g[y][x] !== undefined) g[y][x] = ch; }
-function rect(g, x1, y1, x2, y2, ch) {
-  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) put(g, x, y, ch);
-}
+function rect(g, x1, y1, x2, y2, ch) { for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) put(g, x, y, ch); }
 function hline(g, y, x1, x2, ch) { for (let x = x1; x <= x2; x++) put(g, x, y, ch); }
 function vline(g, x, y1, y2, ch) { for (let y = y1; y <= y2; y++) put(g, x, y, ch); }
 function toStrings(g) { return g.map((r) => r.join('')); }
@@ -1021,64 +1138,60 @@ function toStrings(g) { return g.map((r) => r.join('')); }
 function buildStadt() {
   const rooms = {};
 
-  // Zentrum: Straßenkreuzung
+  // Zentrum: Kreuzung
   let g = room({ n: true, s: true, w: true, o: true });
-  hline(g, 7, 1, 13, '='); hline(g, 8, 1, 13, '=');
-  hline(g, 14, 1, 13, '='); hline(g, 15, 1, 13, '=');
-  vline(g, 6, 1, 20, '='); vline(g, 7, 1, 20, '=');
-  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 18, 'T'); put(g, 12, 18, 'T');
-  rect(g, 9, 2, 12, 3, 'W');
+  hline(g, 4, 1, 7, '='); hline(g, 9, 1, 7, '=');
+  vline(g, 3, 1, 12, '='); vline(g, 5, 1, 12, '=');
+  put(g, 1, 2, 'T'); put(g, 7, 2, 'T'); put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,1'] = toStrings(g);
 
-  // Westen: Platz mit Bänken
+  // Westen: Platz
   g = room({ o: true });
-  rect(g, 3, 5, 11, 6, '=');
-  rect(g, 3, 15, 11, 16, '=');
-  put(g, 4, 9, 'T'); put(g, 10, 9, 'T'); put(g, 7, 12, 'T');
+  hline(g, 3, 2, 6, '='); hline(g, 10, 2, 6, '=');
+  put(g, 2, 6, 'T'); put(g, 6, 6, 'T');
   rooms['0,1'] = toStrings(g);
 
   // Osten: Gasse mit Häuserfront
   g = room({ w: true, s: true });
-  rect(g, 2, 2, 6, 6, '#'); rect(g, 3, 3, 5, 5, 'W');
-  rect(g, 9, 2, 13, 6, '#'); rect(g, 10, 3, 12, 5, 'W');
-  vline(g, 7, 1, 20, '=');
-  put(g, 3, 16, 'T'); put(g, 11, 16, 'T');
+  rect(g, 1, 1, 3, 4, '#'); rect(g, 2, 2, 2, 3, 'W');
+  rect(g, 5, 1, 7, 4, '#'); rect(g, 6, 2, 6, 3, 'W');
+  vline(g, 4, 1, 12, '=');
+  put(g, 2, 10, 'T'); put(g, 6, 10, 'T');
   rooms['2,1'] = toStrings(g);
 
   // Norden: Park am Wasser
   g = room({ s: true });
-  rect(g, 1, 1, 13, 5, '~');
-  put(g, 3, 9, 'T'); put(g, 11, 9, 'T'); put(g, 5, 14, 'T'); put(g, 9, 14, 'T');
-  hline(g, 11, 1, 13, '=');
+  rect(g, 1, 1, 7, 3, '~');
+  put(g, 2, 6, 'T'); put(g, 6, 6, 'T'); put(g, 4, 10, 'T');
+  hline(g, 8, 1, 7, '=');
   rooms['1,0'] = toStrings(g);
 
-  // Süden: die alte Ladenzeile
+  // Süden: Ladenzeile mit dem flackernden Laden
   g = room({ n: true, o: true });
-  // Ladenblock mit Tür in der Mitte
-  rect(g, 4, 8, 10, 13, '#');
-  rect(g, 5, 9, 9, 11, 'W');
-  put(g, 7, 13, 'D');
-  put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rect(g, 2, 5, 6, 8, '#');
+  rect(g, 3, 6, 5, 7, 'W');
+  put(g, 4, 8, 'D');
+  put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,2'] = toStrings(g);
 
-  // Südost: Sackgasse
-  g = room({ w: true });
-  rect(g, 3, 3, 11, 4, '#');
-  put(g, 4, 12, 'T'); put(g, 10, 12, 'T');
+  // Südost: Sackgasse, von Westen und von Norden erreichbar
+  g = room({ w: true, n: true });
+  rect(g, 2, 5, 6, 6, '#');
+  put(g, 3, 10, 'T'); put(g, 5, 10, 'T');
   rooms['2,2'] = toStrings(g);
 
   return {
     pal: 'gray',
     rooms,
     npcs: {
-      '1,1': [ { x: 4, y: 10, v: 0, dlg: 'stadt_pendler' }, { x: 10, y: 17, v: 1, dlg: 'stadt_meckerer' } ],
-      '0,1': [ { x: 7, y: 8, v: 0, dlg: 'stadt_scroller' } ],
-      '2,1': [ { x: 9, y: 12, v: 2, dlg: 'stadt_alte_frau' } ],
-      '1,0': [ { x: 7, y: 16, v: 1, dlg: 'stadt_parkmann' } ],
-      '1,2': [ { x: 4, y: 17, v: 3, dlg: 'stadt_kind' } ],
-      '2,2': [ { x: 7, y: 15, v: 1, dlg: 'stadt_obdachloser' } ],
+      '1,1': [ { x: 2, y: 6, v: 0, dlg: 'stadt_pendler' }, { x: 6, y: 10, v: 1, dlg: 'stadt_meckerer' } ],
+      '0,1': [ { x: 4, y: 6, v: 0, dlg: 'stadt_scroller' } ],
+      '2,1': [ { x: 6, y: 7, v: 2, dlg: 'stadt_alte_frau' } ],
+      '1,0': [ { x: 4, y: 5, v: 1, dlg: 'stadt_parkmann' } ],
+      '1,2': [ { x: 2, y: 11, v: 3, dlg: 'stadt_kind' } ],
+      '2,2': [ { x: 4, y: 8, v: 1, dlg: 'stadt_obdachloser' } ],
     },
-    triggers: { '1,2': [ { x1: 6, y1: 13, x2: 8, y2: 13, event: 'laden' } ] },
+    triggers: { '1,2': [ { x1: 3, y1: 8, x2: 5, y2: 8, event: 'laden' } ] },
     ambient: 'regen',
   };
 }
@@ -1091,75 +1204,72 @@ function buildAsche() {
 
   // Zentrum: Ruine des Archivs
   let g = room({ n: true, s: true, w: true, o: true });
-  rect(g, 5, 7, 9, 12, '#');
-  rect(g, 6, 8, 8, 11, ',');
-  put(g, 7, 12, 'D');
-  vline(g, 7, 13, 20, '*');
-  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rect(g, 3, 2, 5, 5, '#');
+  rect(g, 4, 3, 4, 4, ',');
+  put(g, 4, 5, 'D');
+  vline(g, 4, 9, 12, '*');
+  put(g, 1, 2, 'T'); put(g, 7, 2, 'T'); put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,1'] = toStrings(g);
 
   // Westen: Nebelufer
   g = room({ o: true });
-  rect(g, 1, 1, 5, 8, '~');
-  put(g, 8, 6, 'T'); put(g, 4, 14, 'T'); put(g, 10, 16, 'T');
-  hline(g, 10, 6, 13, '=');
+  rect(g, 1, 1, 3, 5, '~');
+  put(g, 5, 4, 'T'); put(g, 2, 10, 'T'); put(g, 6, 11, 'T');
+  hline(g, 8, 4, 7, '=');
   rooms['0,1'] = toStrings(g);
 
   // Osten: Markt der Mustersucher
   g = room({ w: true, n: true });
-  rect(g, 4, 6, 10, 7, '=');
-  rect(g, 4, 13, 10, 14, '=');
-  put(g, 3, 3, 'T'); put(g, 11, 3, 'T');
-  put(g, 3, 18, 'T'); put(g, 11, 18, 'T');
+  hline(g, 4, 2, 6, '='); hline(g, 10, 2, 6, '=');
+  put(g, 2, 2, 'T'); put(g, 6, 2, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
   rooms['2,1'] = toStrings(g);
 
   // Norden: Spiegelhof mit dem Schrein
   g = room({ s: true });
-  rect(g, 3, 5, 11, 15, '#');
-  rect(g, 4, 6, 10, 14, ',');
-  hline(g, 15, 6, 8, ',');   // Zugang von unten
-  vline(g, 7, 16, 20, '*');
+  rect(g, 1, 1, 7, 10, '#');
+  rect(g, 2, 2, 6, 9, ',');
+  hline(g, 10, 3, 5, ',');   // Zugang von unten
   rooms['1,0'] = toStrings(g);
 
-  // Nordost: Leylinien-Feld
-  g = room({ s: true, w: true });
-  vline(g, 4, 1, 20, '*'); vline(g, 10, 1, 20, '*');
-  put(g, 7, 5, 'T'); put(g, 7, 16, 'T');
+  // Nordost: Leylinien-Feld. Kein Westausgang, der Spiegelhof hat dort keinen.
+  g = room({ s: true });
+  vline(g, 2, 1, 12, '*'); vline(g, 6, 1, 12, '*');
+  put(g, 4, 3, 'T'); put(g, 4, 10, 'T');
   rooms['2,0'] = toStrings(g);
 
   // Süden: Ascheweg
   g = room({ n: true, o: true });
-  vline(g, 7, 1, 12, '*');
-  rect(g, 3, 14, 11, 15, '=');
-  put(g, 2, 5, 'T'); put(g, 12, 5, 'T'); put(g, 4, 18, 'T'); put(g, 10, 18, 'T');
+  vline(g, 4, 1, 8, '*');
+  hline(g, 10, 2, 6, '=');
+  put(g, 1, 3, 'T'); put(g, 7, 3, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
   rooms['1,2'] = toStrings(g);
 
   // Südost: stille Kammer
   g = room({ w: true });
-  rect(g, 4, 6, 10, 13, '#');
-  rect(g, 5, 7, 9, 12, ',');
-  put(g, 7, 13, 'D');
+  rect(g, 2, 4, 6, 9, '#');
+  rect(g, 3, 5, 5, 8, ',');
+  put(g, 4, 9, 'D');
   rooms['2,2'] = toStrings(g);
 
   return {
     pal: 'amber',
     rooms,
     npcs: {
-      '1,1': [ { x: 3, y: 15, v: 2, dlg: 'asche_wache' } ],
-      '0,1': [ { x: 10, y: 12, v: 3, dlg: 'asche_sucherin' } ],
-      '2,1': [ { x: 7, y: 9, v: 1, dlg: 'asche_haendler' } ],
-      '1,2': [ { x: 11, y: 9, v: 2, dlg: 'asche_kind' } ],
-      '2,2': [ { x: 7, y: 16, v: 3, dlg: 'asche_alter' } ],
+      '1,1': [ { x: 2, y: 10, v: 2, dlg: 'asche_wache' } ],
+      '0,1': [ { x: 6, y: 7, v: 3, dlg: 'asche_sucherin' } ],
+      '2,1': [ { x: 4, y: 6, v: 1, dlg: 'asche_haendler' } ],
+      '1,2': [ { x: 6, y: 6, v: 2, dlg: 'asche_kind' } ],
+      '2,2': [ { x: 4, y: 11, v: 3, dlg: 'asche_alter' } ],
     },
-    shrines: { '1,0': { x: 5 * 24, y: 8 * 24 } },
+    shrines: { '1,0': { x: 2 * 40, y: 3 * 40 } },
     fragSpots: {
-      '1,1': [ [3, 6], [11, 14] ],
-      '0,1': [ [9, 3], [3, 17] ],
-      '2,1': [ [7, 4], [5, 17] ],
-      '1,2': [ [3, 8], [11, 16] ],
-      '2,0': [ [7, 9], [2, 14], [12, 6] ],
-      '2,2': [ [3, 4], [11, 18] ],
-      '1,0': [ [9, 18] ],
+      '1,1': [ [2, 2], [6, 10] ],
+      '0,1': [ [6, 2], [2, 12] ],
+      '2,1': [ [4, 2], [3, 12] ],
+      '1,2': [ [2, 5], [6, 11] ],
+      '2,0': [ [4, 6], [1, 11], [7, 4] ],
+      '2,2': [ [2, 2], [6, 12] ],
+      '1,0': [ [2, 12] ],
     },
     ambient: 'asche',
   };
@@ -1190,7 +1300,7 @@ G.DIALOGE = {
 // ============================================================
 // ARKANA Scenes (Hochformat 360x640)
 // ============================================================
-const TT = 24;
+const TT = 40;
 
 // ------------------------------------------------------------
 // Titel
@@ -1238,7 +1348,7 @@ G.TitleScene = () => {
       const SY = G.SAFE_Y;
       G.textGlow(c, '⚡', G.W / 2, SY + 168, p.main, 34);
       G.textGlow(c, 'ARKANA', G.W / 2, SY + 226, p.bright, 46);
-      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 12, 'center');
+      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 18, 'center');
 
       opts.forEach((o, i) => {
         const y = SY + 400 + i * 40;
@@ -1250,8 +1360,8 @@ G.TitleScene = () => {
         }
         G.text(c, o, G.W / 2, y, on ? p.textBright : p.textDim, 16, 'center');
       });
-      G.text(c, 'Wischen oder Pfeiltasten zum Bewegen', G.W / 2, G.H - 62, p.textDim, 11, 'center');
-      G.text(c, 'OK bestätigt · MENÜ öffnet den Codex', G.W / 2, G.H - 44, p.textDim, 11, 'center');
+      G.text(c, 'Wischen oder Pfeiltasten zum Bewegen', G.W / 2, G.H - 62, p.textDim, 14, 'center');
+      G.text(c, 'OK bestätigt · MENÜ öffnet den Codex', G.W / 2, G.H - 44, p.textDim, 14, 'center');
       G.vignette(c, 0.5);
     },
   };
@@ -1283,7 +1393,7 @@ G.IntroScene = () => {
       const startY = G.H / 2 - lines.length * 13;
       lines.forEach((l, i) => G.text(c, l, G.W / 2, startY + i * 26, p.textBright, 15, 'center'));
       c.globalAlpha = 1;
-      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 90, p.textDim, 13, 'center');
+      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 90, p.textDim, 16, 'center');
       G.vignette(c, 0.6);
     },
   };
@@ -1294,7 +1404,6 @@ G.IntroScene = () => {
 // ------------------------------------------------------------
 G.DialogScene = (lines, onDone) => {
   let li = 0; let chars = 0; let t = 0;
-  const BOX_Y = G.H - 210, BOX_H = 150;
   return {
     translucent: true,
     update(dt) {
@@ -1306,6 +1415,7 @@ G.DialogScene = (lines, onDone) => {
     },
     draw(c) {
       const p = G.pal;
+      const BOX_H = 168, BOX_Y = G.H - 230;
       c.fillStyle = p.bgVoid; c.globalAlpha = 0.93;
       c.fillRect(14, BOX_Y, G.W - 28, BOX_H); c.globalAlpha = 1;
       c.strokeStyle = p.dim; c.lineWidth = 2;
@@ -1314,8 +1424,8 @@ G.DialogScene = (lines, onDone) => {
       c.fillRect(14, BOX_Y, 4, BOX_H);
       if (li < lines.length) {
         const shown = lines[li].slice(0, Math.floor(chars));
-        const wrapped = G.wrapText(c, shown, G.W - 60, 14);
-        wrapped.slice(0, 6).forEach((l, i) => G.text(c, l, 30, BOX_Y + 18 + i * 21, p.textBright, 14));
+        const wrapped = G.wrapText(c, shown, G.W - 64, 17);
+        wrapped.slice(0, 6).forEach((l, i) => G.text(c, l, 32, BOX_Y + 20 + i * 24, p.textBright, 17));
         if (chars >= lines[li].length && Math.floor(t * 2) % 2 === 0) {
           G.text(c, '▼', G.W - 36, BOX_Y + BOX_H - 26, p.main, 14);
         }
@@ -1341,7 +1451,7 @@ G.FragmentScene = (frag) => {
           if (sel === 0) G.state.stats.geglaubt++; else G.state.stats.geprueft++;
           G.state.fragmente.push(frag.id);
           for (let i = 0; i < 16; i++) {
-            G.spawnParticle({ x: G.W / 2, y: 200, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90,
+            G.spawnParticle({ x: G.W / 2, y: G.H / 2, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90,
               life: 0.8, fade: 0.8, color: G.pal.bright, size: 2 });
           }
           G.save(); G.popScene();
@@ -1361,15 +1471,15 @@ G.FragmentScene = (frag) => {
         c.fillRect(bx, by, 14, 3); c.fillRect(bx, by, 3, 14);
       });
       G.textGlow(c, '✦', G.W / 2, y0 + 24, p.main, 26);
-      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 12, 'center');
-      const tl = G.wrapText(c, frag.titel, G.W - 80, 16);
+      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
+      const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
       tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
-      const wrapped = G.wrapText(c, frag.text, G.W - 76, 13);
-      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 13));
+      const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
+      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
       if (stage === 0) {
-        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 13, 'center');
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 16, 'center');
       } else {
-        G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 13, 'center');
+        G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 19, 'center');
         const bw = 118;
         [['GLAUBEN', G.W / 2 - 66], ['PRÜFEN', G.W / 2 + 66]].forEach(([label, bx], i) => {
           const on = sel === i;
@@ -1398,7 +1508,7 @@ G.CodexScene = () => {
       if (G.input.pressed('cancel')) { G.popScene(); return; }
       if (G.input.pressed('up')) sel = Math.max(0, sel - 1);
       if (G.input.pressed('down')) sel = Math.min(Math.max(items.length - 1, 0), sel + 1);
-      if (G.input.pressed('left') || G.input.pressed('right')) { tab = 1 - tab; }
+      if ((G.input.pressed('left') || G.input.pressed('right')) && G.state.sig) tab = 1 - tab;
       if (G.input.pressed('action') && items.length && tab === 0) reading = items[sel];
     },
     draw(c) {
@@ -1408,12 +1518,12 @@ G.CodexScene = () => {
 
       if (reading) {
         G.text(c, '✦', 30, G.SAFE_Y + 30, p.main, 18);
-        const tl = G.wrapText(c, reading.titel, G.W - 80, 16);
+        const tl = G.wrapText(c, reading.titel, G.W - 80, 19);
         tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, G.SAFE_Y + 34 + i * 20, p.main, 16, 'center'));
-        const wrapped = G.wrapText(c, reading.text, G.W - 70, 14);
-        wrapped.slice(0, Math.floor((G.H - 200) / 22)).forEach((l, i) => G.text(c, l, 35, G.SAFE_Y + 100 + i * 22, p.text, 14));
-        G.text(c, reading.modul.replace(/_/g, ' '), G.W / 2, G.H - 70, p.textDim, 11, 'center');
-        G.text(c, '[ OK ] zurück', G.W / 2, G.H - 46, p.textDim, 12, 'center');
+        const wrapped = G.wrapText(c, reading.text, G.W - 70, 17);
+        wrapped.slice(0, Math.floor((G.H - 200) / 22)).forEach((l, i) => G.text(c, l, 35, G.SAFE_Y + 100 + i * 22, p.text, 17));
+        G.text(c, reading.modul.replace(/_/g, ' '), G.W / 2, G.H - 70, p.textDim, 14, 'center');
+        G.text(c, '[ OK ] zurück', G.W / 2, G.H - 46, p.textDim, 15, 'center');
         return;
       }
 
@@ -1424,7 +1534,7 @@ G.CodexScene = () => {
         const on = tab === i;
         if (on) { c.fillStyle = p.main; c.globalAlpha = 0.2; c.fillRect(bx, ty, 144, 26); c.globalAlpha = 1; }
         c.strokeStyle = on ? p.main : p.textDim; c.lineWidth = 1; c.strokeRect(bx, ty, 144, 26);
-        G.text(c, label, bx + 72, ty + 6, on ? p.textBright : p.textDim, 12, 'center');
+        G.text(c, label, bx + 72, ty + 6, on ? p.textBright : p.textDim, 15, 'center');
       });
 
       if (tab === 1 && s) {
@@ -1440,10 +1550,10 @@ G.CodexScene = () => {
           G.text(c, String(v), G.W - 34, y + 12, p.textBright, 15, 'right');
           c.fillStyle = p.card; c.fillRect(34, y + 30, G.W - 68, 1);
         });
-        G.text(c, `Geglaubt ${G.state.stats.geglaubt} · Geprüft ${G.state.stats.geprueft}`, G.W / 2, G.H - 74, p.text, 12, 'center');
+        G.text(c, `Geglaubt ${G.state.stats.geglaubt} · Geprüft ${G.state.stats.geprueft}`, G.W / 2, G.H - 74, p.text, 18, 'center');
       } else {
         const items = list();
-        G.text(c, `${items.length} von ${G.FRAGMENTS.length} Fragmenten`, G.W / 2, G.SAFE_Y + 100, p.text, 13, 'center');
+        G.text(c, `${items.length} von ${G.FRAGMENTS.length} Fragmenten`, G.W / 2, G.SAFE_Y + 100, p.text, 19, 'center');
         if (!items.length) {
           G.text(c, 'Noch nichts gesammelt.', G.W / 2, G.H / 2 - 20, p.textDim, 14, 'center');
         } else {
@@ -1458,7 +1568,7 @@ G.CodexScene = () => {
           });
         }
       }
-      G.text(c, `[◀▶] Reiter   [MENÜ] schließen`, G.W / 2, G.H - 46, p.textDim, 11, 'center');
+      G.text(c, `[◀▶] Reiter   [MENÜ] schließen`, G.W / 2, G.H - 46, p.textDim, 14, 'center');
     },
   };
 };
@@ -1499,7 +1609,15 @@ G.OverworldScene = () => {
   const room = () => area().rooms[G.state.room];
 
   function ensureFragments() {
-    if (G.state.area !== 'asche' || G.state.fragMap) return;
+    // Fragmente aus einem alten Spielstand koennen auf IDs zeigen, die es
+    // nach einem Neubau der Knowledge Base nicht mehr gibt. Die fliegen raus.
+    if (G.state.fragMap) {
+      for (const rm in G.state.fragMap) {
+        G.state.fragMap[rm] = G.state.fragMap[rm].filter(
+          (e) => e && G.FRAGMENTS.some((f) => f.id === e.id));
+      }
+    }
+    if (G.state.area !== 'asche' || G.state.fragMap || !G.state.sig) return;
     const rng = G.mulberry32(G.state.sig.seed);
     const pool = [...G.FRAGMENTS];
     const map = {};
@@ -1513,32 +1631,73 @@ G.OverworldScene = () => {
     G.state.fragMap = map;
   }
 
+  // Kollision nur ueber die Fussflaeche, damit Kopf und Schultern
+  // vor Waenden liegen duerfen. Figur ist 26 breit, 42 hoch.
   function canStand(nx, ny) {
     const r = room();
-    const pts = [[nx + 4, ny + 18], [nx + 16, ny + 18], [nx + 4, ny + 27], [nx + 16, ny + 27]];
+    const pts = [[nx + 7, ny + 30], [nx + 19, ny + 30], [nx + 7, ny + 39], [nx + 19, ny + 39]];
     for (const [px, py] of pts) if (G.isSolid(r, px, py)) return false;
     return true;
   }
 
+  // Wechselt nur, wenn der Zielraum an dieser Seite auch wirklich einen
+  // Durchgang hat. Sonst laeuft man in eine Wand und steckt fest.
   function roomShift(dx, dy) {
     const [rx, ry] = G.state.room.split(',').map(Number);
     const key = `${rx + dx},${ry + dy}`;
-    if (!area().rooms[key]) return false;
+    const dest = area().rooms[key];
+    if (!dest) return false;
+    const probe = { px: G.state.px, py: G.state.py };
+    if (dx === 1) { probe.px = TT + 6; probe.py = clampVal(probe.py, 'y'); }
+    else if (dx === -1) { probe.px = G.W - TT - 26; probe.py = clampVal(probe.py, 'y'); }
+    else if (dy === 1) { probe.py = TT + 2; probe.px = clampVal(probe.px, 'x'); }
+    else { probe.py = G.FIELD_H - TT - 44; probe.px = clampVal(probe.px, 'x'); }
+    const pts = [[probe.px + 7, probe.py + 30], [probe.px + 19, probe.py + 30],
+                 [probe.px + 7, probe.py + 39], [probe.px + 19, probe.py + 39]];
+    if (pts.some(([x, y]) => G.isSolid(dest, x, y))) return false;
     transition = { dx, dy, prog: 0, from: G.state.room, to: key };
     return true;
   }
 
+  // Klemmt einen Wert in den Durchgang der jeweiligen Kantenmitte.
+  function clampVal(v, axis) {
+    const mid = axis === 'y' ? Math.floor(G.ROOM_H / 2) : Math.floor(G.ROOM_W / 2);
+    const lo = (mid - 1) * TT + 2;
+    const hi = (mid + 1) * TT + TT - (axis === 'y' ? 30 : 28);
+    return Math.max(lo, Math.min(hi, v));
+  }
+  function clampCross(axis) {
+    if (axis === 'y') G.state.py = clampVal(G.state.py, 'y');
+    else G.state.px = clampVal(G.state.px, 'x');
+  }
+
+  // Sicherheitsnetz: steht die Figur trotzdem in einer Wand, suche
+  // spiralfoermig den naechsten begehbaren Punkt. Damit kann man
+  // grundsaetzlich nicht mehr feststecken.
+  function rescueIfStuck() {
+    if (canStand(G.state.px, G.state.py)) return;
+    for (let r = 4; r <= 140; r += 4) {
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * 6.283;
+        const nx = G.state.px + Math.cos(ang) * r;
+        const ny = G.state.py + Math.sin(ang) * r;
+        if (nx < 0 || ny < 0 || nx > G.W - 26 || ny > G.FIELD_H - 42) continue;
+        if (canStand(nx, ny)) { G.state.px = nx; G.state.py = ny; return; }
+      }
+    }
+  }
+
   function nearest() {
-    const px = G.state.px + 10, py = G.state.py + 20;
+    const px = G.state.px + 13, py = G.state.py + 32;
     for (const n of (area().npcs || {})[G.state.room] || []) {
-      if (Math.hypot(px - (n.x * TT + 10), py - (n.y * TT + 20)) < 40) return { type: 'npc', npc: n };
+      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
     }
     for (const f of (G.state.fragMap || {})[G.state.room] || []) {
       if (G.state.fragmente.includes(f.id)) continue;
-      if (Math.hypot(px - (f.x + 12), py - (f.y + 12)) < 32) return { type: 'frag', frag: f };
+      if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
     }
     const sh = (area().shrines || {})[G.state.room];
-    if (sh && Math.hypot(px - (sh.x + 24), py - (sh.y + 24)) < 56) return { type: 'shrine' };
+    if (sh && Math.hypot(px - (sh.x + 40), py - (sh.y + 40)) < 78) return { type: 'shrine' };
     const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
     for (const tr of (area().triggers || {})[G.state.room] || []) {
       if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
@@ -1549,7 +1708,7 @@ G.OverworldScene = () => {
   return {
     enter() {
       ensureFragments();
-      spiritPos.x = G.state.px - 18; spiritPos.y = G.state.py - 6;
+      spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
     },
     update(dt) {
       t += dt;
@@ -1571,11 +1730,17 @@ G.OverworldScene = () => {
       if (transition) {
         transition.prog += dt * 2.6;
         if (transition.prog >= 1) {
+          const dx = transition.dx, dy = transition.dy;
           G.state.room = transition.to;
-          if (transition.dx === 1) G.state.px = 4;
-          if (transition.dx === -1) G.state.px = G.W - 24;
-          if (transition.dy === 1) G.state.py = 4;
-          if (transition.dy === -1) G.state.py = G.FIELD_H - 34;
+          // Sicher INNERHALB des Raums absetzen, nicht in der Randkachel.
+          // Die Querachse wird in den Durchgang geklemmt, sonst bleibt
+          // die Figur an der Ecke des Durchgangs haengen.
+          if (dx === 1) { G.state.px = TT + 6; clampCross('y'); }
+          if (dx === -1) { G.state.px = G.W - TT - 26; clampCross('y'); }
+          if (dy === 1) { G.state.py = TT + 2; clampCross('x'); }
+          if (dy === -1) { G.state.py = G.FIELD_H - TT - 44; clampCross('x'); }
+          rescueIfStuck();
+          vx = 0; vy = 0;          // Restgeschwindigkeit verwerfen
           transition = null; G.save();
         }
         G.updateAnim(anim, dt, 0, 0, false);
@@ -1596,15 +1761,21 @@ G.OverworldScene = () => {
       }
 
       const nx = G.state.px + vx * dt, ny = G.state.py + vy * dt;
-      if (canStand(nx, G.state.py)) G.state.px = nx; else vx *= 0.2;
-      if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
+      // Steht die Figur bereits in einer Wand, Bewegung ungeprueft zulassen,
+      // damit sie sich immer herausschieben kann.
+      const trapped = !canStand(G.state.px, G.state.py);
+      if (trapped) { G.state.px = nx; G.state.py = ny; }
+      else {
+        if (canStand(nx, G.state.py)) G.state.px = nx; else vx *= 0.2;
+        if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
+      }
 
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
         // Staub beim Aufsetzen
         for (let i = 0; i < 2; i++) {
-          G.spawnParticle({ x: G.state.px + 8 + Math.random() * 6, y: G.state.py + 27,
+          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8, y: G.state.py + 38,
             vx: (Math.random() - 0.5) * 26, vy: -8 - Math.random() * 12,
             life: 0.45, fade: 0.45, grav: 60, color: G.pal.dim, size: 1, alpha: 0.6 });
         }
@@ -1612,7 +1783,7 @@ G.OverworldScene = () => {
 
       // Begleiter folgt weich
       if (G.state.phase === 'arkana') {
-        const tx = G.state.px - 20 - anim.facing * 6, ty = G.state.py - 8;
+        const tx = G.state.px - 26 - anim.facing * 8, ty = G.state.py - 4;
         spiritPos.x += (tx - spiritPos.x) * Math.min(1, dt * 3.4);
         spiritPos.y += (ty - spiritPos.y) * Math.min(1, dt * 3.0);
         if (Math.floor(t * 20) % 2 === 0) {
@@ -1622,10 +1793,10 @@ G.OverworldScene = () => {
       }
 
       // Raumwechsel
-      if (G.state.px < -6) { if (!roomShift(-1, 0)) { G.state.px = -6; vx = 0; } }
-      if (G.state.px > G.W - 14) { if (!roomShift(1, 0)) { G.state.px = G.W - 14; vx = 0; } }
-      if (G.state.py < -6) { if (!roomShift(0, -1)) { G.state.py = -6; vy = 0; } }
-      if (G.state.py > G.FIELD_H - 26) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 26; vy = 0; } }
+      if (G.state.px < -8) { if (!roomShift(-1, 0)) { G.state.px = -8; vx = 0; } }
+      if (G.state.px > G.W - 18) { if (!roomShift(1, 0)) { G.state.px = G.W - 18; vx = 0; } }
+      if (G.state.py < -14) { if (!roomShift(0, -1)) { G.state.py = -14; vy = 0; } }
+      if (G.state.py > G.FIELD_H - 34) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 34; vy = 0; } }
 
       if (G.input.pressed('action')) {
         const it = nearest();
@@ -1636,7 +1807,7 @@ G.OverworldScene = () => {
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
         }
       }
-      if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
+      else if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
     },
 
     draw(c) {
@@ -1697,23 +1868,23 @@ G.OverworldScene = () => {
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
       const areaName = G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ASCHENSTADT';
-      G.text(c, areaName, 18, G.HUD_Y + 14, p.textDim, 12);
+      G.text(c, areaName, 20, G.HUD_Y + 16, p.textDim, 15);
       if (G.state.phase === 'arkana') {
-        G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 18, G.HUD_Y + 14, p.main, 14, 'right');
-        if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 18, G.HUD_Y + 36, p.textDim, 11, 'right');
+        G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
+        if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 20, G.HUD_Y + 40, p.textDim, 14, 'right');
       } else {
         const clock = Math.floor(t) % 14 < 3 ? '3:33' : '3:2' + (Math.floor(t) % 9);
-        G.text(c, clock, G.W - 18, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 14, 'right');
+        G.text(c, clock, G.W - 20, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 18, 'right');
       }
       const it = !transition && nearest();
       if (it) {
         const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN' }[it.type];
         c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
-        c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 40, G.W - 28, 32); c.globalAlpha = 1;
-        c.strokeStyle = p.main; c.lineWidth = 1; c.strokeRect(14, G.HUD_Y + 40, G.W - 28, 32);
-        G.text(c, `OK  ${label}`, G.W / 2, G.HUD_Y + 49, p.textBright, 14, 'center');
+        c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 44, G.W - 28, 40); c.globalAlpha = 1;
+        c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(14, G.HUD_Y + 44, G.W - 28, 40);
+        G.text(c, `OK  ${label}`, G.W / 2, G.HUD_Y + 56, p.textBright, 18, 'center');
       } else {
-        G.text(c, 'MENÜ öffnet den Codex', G.W / 2, G.HUD_Y + 52, p.textDim, 11, 'center');
+        G.text(c, 'MENÜ öffnet den Codex', G.W / 2, G.HUD_Y + 56, p.textDim, 14, 'center');
       }
     },
   };
@@ -1723,7 +1894,7 @@ G.OverworldScene = () => {
 // Terminal: der Sog
 // ------------------------------------------------------------
 G.TerminalScene = () => {
-  let stage = 'boot'; let t = 0; let bootLine = 0;
+  let stage = 'boot'; let t = 0; let bootLine = 0; let inputLock = 0;
   let name = ''; let zsel = 0; let age = 25; let sig = null; let opage = 0;
   const bootLines = ['> SIGNAL GEFUNDEN', '> PROTOKOLL: ARKANA v22', '> DIE WELT HINTER DER WELT WARTET', '> IDENTIFIKATION ERFORDERLICH...'];
   const form = document.getElementById('nameform');
@@ -1740,6 +1911,9 @@ G.TerminalScene = () => {
       name = v.slice(0, 16);
       form.classList.remove('show'); input.blur();
       G.input.clearAll();
+      // Kurze Sperre, sonst rasen die Auto-Repeat-Enter durch die
+      // naechsten beiden Auswahlen hindurch.
+      inputLock = 0.35;
       stage = 'zodiac';
     };
     okBtn.onclick = done;
@@ -1756,6 +1930,7 @@ G.TerminalScene = () => {
   return {
     update(dt) {
       t += dt;
+      if (inputLock > 0) { inputLock -= dt; G.input.clearAll(); return; }
       if (stage === 'boot') {
         if (t > (bootLine + 1) * 0.6) bootLine++;
         if (bootLine >= bootLines.length) { stage = 'name'; askName(); }
@@ -1782,7 +1957,7 @@ G.TerminalScene = () => {
         }
         if (t > 2.8) {
           G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
-          G.state.room = '1,1'; G.state.px = 168; G.state.py = 200;
+          G.state.room = '1,1'; G.state.px = 167; G.state.py = 330;
           G.pal = G.PAL.amber; G.particles.length = 0; G.save();
           G.replaceScene(G.OverworldScene());
           G.pushScene(G.DialogScene([
@@ -1807,8 +1982,8 @@ G.TerminalScene = () => {
         if (Math.floor(t * 2) % 2 === 0) { c.fillStyle = p.main; c.fillRect(34, G.H - 120, 12, 20); }
       } else if (stage === 'zodiac') {
         const SY = G.SAFE_Y;
-        G.text(c, '> UNTER WELCHEM ZEICHEN', G.W / 2, SY + 60, p.main, 14, 'center');
-        G.text(c, 'WURDEST DU GEBOREN?', G.W / 2, SY + 82, p.main, 14, 'center');
+        G.text(c, '> UNTER WELCHEM ZEICHEN', G.W / 2, SY + 60, p.main, 17, 'center');
+        G.text(c, 'WURDEST DU GEBOREN?', G.W / 2, SY + 82, p.main, 17, 'center');
         G.ZODIAC.forEach((z, i) => {
           const col = i % 3, row = Math.floor(i / 3);
           const x = 70 + col * 110, y = SY + 140 + row * 96;
@@ -1818,20 +1993,20 @@ G.TerminalScene = () => {
             c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(x - 46, y - 16, 92, 78);
           }
           G.text(c, z.sym, x, y - 6, on ? p.bright : p.textDim, 34, 'center');
-          G.text(c, z.name, x, y + 40, on ? p.textBright : p.textDim, 11, 'center');
+          G.text(c, z.name, x, y + 40, on ? p.textBright : p.textDim, 14, 'center');
         });
         const z = G.ZODIAC[zsel];
         G.textGlow(c, `${z.element}  ·  ${z.planet}`, G.W / 2, SY + 542, p.text, 16);
-        G.text(c, '[ OK ] bestätigen', G.W / 2, SY + 580, p.textDim, 12, 'center');
+        G.text(c, '[ OK ] bestätigen', G.W / 2, SY + 580, p.textDim, 15, 'center');
       } else if (stage === 'age') {
         const SY2 = G.SAFE_Y;
-        G.text(c, '> WIE VIELE JAHRE TRÄGST DU?', G.W / 2, SY2 + 150, p.main, 14, 'center');
+        G.text(c, '> WIE VIELE JAHRE TRÄGST DU?', G.W / 2, SY2 + 150, p.main, 17, 'center');
         G.text(c, '◀', G.W / 2 - 96, SY2 + 260, p.text, 28, 'center');
         G.textGlow(c, String(age), G.W / 2, SY2 + 230, p.bright, 76);
         G.text(c, '▶', G.W / 2 + 96, SY2 + 260, p.text, 28, 'center');
         G.text(c, G.saturnPhase(age).name, G.W / 2, SY2 + 356, p.text, 18, 'center');
-        G.text(c, G.saturnPhase(age).text, G.W / 2, SY2 + 384, p.textDim, 13, 'center');
-        G.text(c, '[◀▶] ändern   [ OK ] bestätigen', G.W / 2, SY2 + 500, p.textDim, 12, 'center');
+        G.text(c, G.saturnPhase(age).text, G.W / 2, SY2 + 384, p.textDim, 16, 'center');
+        G.text(c, '[◀▶] ändern   [ OK ] bestätigen', G.W / 2, SY2 + 500, p.textDim, 15, 'center');
       } else if (stage === 'oracle') {
         const pages = opages();
         const lines = pages[Math.min(opage, pages.length - 1)].split('\n');
@@ -1840,7 +2015,7 @@ G.TerminalScene = () => {
           const big = i === 0 || (l.length < 4 && l.trim());
           G.text(c, l, G.W / 2, startY + i * 34, i === 0 ? p.bright : p.text, big ? 22 : 15, 'center');
         });
-        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 100, p.textDim, 13, 'center');
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 100, p.textDim, 16, 'center');
       } else if (stage === 'sog') {
         const pr = Math.min(t / 2.8, 1);
         c.save(); c.translate(G.W / 2, G.H / 2);

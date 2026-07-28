@@ -3,100 +3,126 @@
 // ARKANA World: 24px Tiles, organische Charakter-Animation
 // ============================================================
 
-const T = 24; // Tile-Größe
+const T = 40; // Tile-Größe, passt zu G.TILE
 
 // ------------------------------------------------------------
-// TILES. Prozedural gezeichnet, mehrere Schattierungen pro Tile.
+// TILES für 40px. Prozedural gezeichnet, mehrere Schattierungen.
 // ------------------------------------------------------------
-function noise2(x, y) { // deterministisches Pseudo-Rauschen pro Tile
+function noise2(x, y) {
   let h = (x * 374761393 + y * 668265263) >>> 0;
   h = (h ^ (h >>> 13)) >>> 0; h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
 G.TILES = {
-  // Leerer Grund
+  // Leerer Grund mit feiner Körnung
   '.': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty);
-    if (n > 0.72) { c.fillStyle = p.bgDeep; c.fillRect(x + Math.floor(n * 18), y + Math.floor((n * 37) % 20), 2, 1); }
-    if (n < 0.12) { c.fillStyle = p.card; c.fillRect(x + 5, y + 14, 3, 1); }
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + Math.floor(n * 30), y + Math.floor((n * 61) % 34), 3, 2);
+    c.fillRect(x + Math.floor((n * 91) % 32), y + Math.floor((n * 47) % 30) + 4, 2, 2);
+    if (n < 0.18) { c.fillStyle = p.card; c.fillRect(x + 8, y + 24, 6, 2); }
+    if (n > 0.86) { c.fillStyle = p.card; c.fillRect(x + 22, y + 11, 5, 2); }
   } },
-  // Boden mit Struktur
+  // Innenboden, Dielen
   ',': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty);
     c.fillStyle = p.bgDeep;
-    c.fillRect(x + 3 + Math.floor(n * 10), y + 5, 3, 1);
-    c.fillRect(x + 14, y + 12 + Math.floor(n * 6), 2, 1);
-    c.fillRect(x + 8, y + 19, 4, 1);
+    c.fillRect(x, y + 13, T, 1); c.fillRect(x, y + 27, T, 1);
+    c.fillRect(x + Math.floor(n * 24) + 6, y, 1, 13);
+    c.fillRect(x + Math.floor((n * 53) % 26) + 6, y + 14, 1, 13);
+    c.fillStyle = p.card;
+    c.fillRect(x + 5 + Math.floor(n * 14), y + 6, 5, 1);
   } },
-  // Mauer, mit Fugen und Kantenlicht
+  // Mauer mit Steinfugen und Kantenlicht
   '#': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     const n = noise2(tx, ty);
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 3);
-    c.fillStyle = p.cardHi; c.fillRect(x, y, T, 1);
-    c.fillStyle = p.bgDeep; c.fillRect(x, y + T - 3, T, 3);
-    // Steinfugen, versetzt je Reihe
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 4);
+    c.fillStyle = p.cardHi; c.fillRect(x, y, T, 2);
+    c.fillStyle = p.bgDeep; c.fillRect(x, y + T - 4, T, 4);
     c.fillStyle = p.bgDeep;
-    const off = (ty % 2) * 12;
-    c.fillRect(x + ((off + 11) % T), y + 3, 1, 9);
-    c.fillRect(x, y + 11, T, 1);
-    c.fillRect(x + ((off + 5) % T), y + 12, 1, 9);
-    if (n > 0.8) { c.fillStyle = p.cardHi; c.fillRect(x + 4, y + 15, 3, 2); }
+    // zwei Steinreihen, versetzt
+    c.fillRect(x, y + 19, T, 2);
+    const off = (ty % 2) * 20;
+    c.fillRect(x + ((off + 19) % T), y + 4, 2, 15);
+    c.fillRect(x + ((off + 9) % T), y + 21, 2, 15);
+    c.fillStyle = p.cardLight;
+    c.fillRect(x + 1, y + 21, T - 2, 1);
+    if (n > 0.82) { c.fillStyle = p.cardHi; c.fillRect(x + 6, y + 26, 5, 3); }
+    if (n < 0.15) { c.fillStyle = p.bgDeep; c.fillRect(x + 24, y + 8, 6, 4); }
   } },
-  // Fenster / toter Bildschirm
+  // Fenster, kaltes Flackern dahinter
   'W': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 2);
-    c.fillStyle = p.bgVoid; c.fillRect(x + 4, y + 4, 16, 13);
-    const flick = 0.25 + 0.2 * Math.sin(t * 3 + noise2(tx, ty) * 9);
-    c.globalAlpha = flick; c.fillStyle = p.glow; c.fillRect(x + 5, y + 5, 14, 5); c.globalAlpha = 1;
-    c.fillStyle = p.dim; c.fillRect(x + 4, y + 17, 16, 1);
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 3);
+    c.fillStyle = p.bgVoid; c.fillRect(x + 6, y + 7, 28, 22);
+    const flick = 0.22 + 0.18 * Math.sin(t * 3 + noise2(tx, ty) * 9);
+    c.globalAlpha = flick; c.fillStyle = '#8fa8c8';
+    c.fillRect(x + 8, y + 9, 24, 10);
+    c.globalAlpha = flick * 0.5; c.fillRect(x + 8, y + 20, 24, 6);
+    c.globalAlpha = 1;
+    c.fillStyle = p.dim;
+    c.fillRect(x + 6, y + 7, 28, 2); c.fillRect(x + 6, y + 28, 28, 2);
+    c.fillRect(x + 19, y + 7, 2, 22);
   } },
-  // Nebel / Wasser, animiert
+  // Nebel und Wasser, animiert
   '~': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bgDeep; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty) * 6;
-    c.fillStyle = p.dim; c.globalAlpha = 0.6;
-    const o1 = Math.sin(t * 1.2 + n) * 4, o2 = Math.cos(t * 0.9 + n) * 4;
-    c.fillRect(x + 3 + o1, y + 6, 8, 1);
-    c.fillRect(x + 11 + o2, y + 14, 7, 1);
-    c.globalAlpha = 0.3; c.fillRect(x + 6 + o2, y + 19, 6, 1);
+    c.fillStyle = p.dim; c.globalAlpha = 0.55;
+    const o1 = Math.sin(t * 1.2 + n) * 6, o2 = Math.cos(t * 0.9 + n) * 6;
+    c.fillRect(x + 5 + o1, y + 9, 14, 2);
+    c.fillRect(x + 18 + o2, y + 22, 12, 2);
+    c.globalAlpha = 0.3;
+    c.fillRect(x + 9 + o2, y + 32, 11, 2);
+    c.fillRect(x + 22 + o1, y + 4, 9, 1);
     c.globalAlpha = 1;
   } },
-  // Baum / Pfeiler mit Krone
+  // Baum mit Krone und Stamm
   'T': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
-    const sway = Math.sin(t * 0.8 + noise2(tx, ty) * 7) * 1.2;
-    c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 15, 6, 9);        // Stamm-Schatten
-    c.fillStyle = p.dim; c.fillRect(x + 10, y + 14, 4, 10);          // Stamm
-    c.fillStyle = p.card; c.fillRect(x + 3 + sway, y + 2, 18, 13);   // Krone
-    c.fillStyle = p.cardLight; c.fillRect(x + 5 + sway, y + 3, 14, 6);
-    c.fillStyle = p.cardHi; c.fillRect(x + 7 + sway, y + 4, 8, 2);
-    c.fillStyle = p.bgDeep; c.fillRect(x + 4 + sway, y + 12, 16, 2);
+    const sway = Math.sin(t * 0.8 + noise2(tx, ty) * 7) * 1.6;
+    c.globalAlpha = 0.3; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 20, y + 36, 11, 3.5, 0, 0, 6.283); c.fill();
+    c.globalAlpha = 1;
+    c.fillStyle = p.bgDeep; c.fillRect(x + 16, y + 24, 9, 13);
+    c.fillStyle = p.dim; c.fillRect(x + 17, y + 23, 6, 13);
+    c.fillStyle = p.card; c.fillRect(x + 5 + sway, y + 3, 30, 22);
+    c.fillStyle = p.cardLight; c.fillRect(x + 8 + sway, y + 5, 24, 11);
+    c.fillStyle = p.cardHi; c.fillRect(x + 12 + sway, y + 6, 13, 4);
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + 6 + sway, y + 21, 28, 3);
+    c.fillRect(x + 5 + sway, y + 12, 4, 3);
   } },
-  // Pflaster / Weg
+  // Pflaster
   '=': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x + 1, y + 1, T - 2, 1);
-    c.fillStyle = p.bg; c.fillRect(x, y + T - 1, T, 1); c.fillRect(x + T - 1, y, 1, T);
-    if (noise2(tx, ty) > 0.75) { c.fillStyle = p.bgDeep; c.fillRect(x + 6, y + 9, 5, 2); }
+    c.fillStyle = p.cardLight; c.fillRect(x + 2, y + 2, T - 4, 2);
+    c.fillStyle = p.bg;
+    c.fillRect(x, y + T - 2, T, 2); c.fillRect(x + T - 2, y, 2, T);
+    c.fillRect(x, y + 19, T, 1); c.fillRect(x + 19, y, 1, T);
+    if (noise2(tx, ty) > 0.7) { c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 24, 8, 3); }
   } },
-  // Tür, begehbar
+  // Tür
   'D': { solid: false, draw: (c, x, y, p, t) => {
     c.fillStyle = p.bgVoid; c.fillRect(x, y, T, T);
-    c.fillStyle = p.dim; c.fillRect(x + 2, y, 2, T); c.fillRect(x + T - 4, y, 2, T); c.fillRect(x + 2, y, T - 4, 2);
-    const a = 0.15 + 0.12 * Math.sin(t * 2);
-    c.globalAlpha = a; c.fillStyle = p.main; c.fillRect(x + 4, y + 2, T - 8, T - 2); c.globalAlpha = 1;
+    c.fillStyle = p.dim;
+    c.fillRect(x + 3, y, 3, T); c.fillRect(x + T - 6, y, 3, T); c.fillRect(x + 3, y, T - 6, 3);
+    const a = 0.14 + 0.11 * Math.sin(t * 2);
+    c.globalAlpha = a; c.fillStyle = p.main; c.fillRect(x + 6, y + 3, T - 12, T - 3);
+    c.globalAlpha = 1;
+    c.fillStyle = p.glow; c.fillRect(x + T - 12, y + 20, 3, 3);
   } },
-  // Leylinie, pulsierender Pfad
+  // Leylinie
   '*': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
     c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const pulse = 0.35 + 0.3 * Math.sin(t * 2.5 - (tx + ty) * 0.5);
-    c.globalAlpha = pulse * 0.4; c.fillStyle = p.main; c.fillRect(x + 6, y, 12, T);
-    c.globalAlpha = pulse; c.fillStyle = p.glow; c.fillRect(x + 10, y, 4, T);
+    c.globalAlpha = pulse * 0.35; c.fillStyle = p.main; c.fillRect(x + 9, y, 22, T);
+    c.globalAlpha = pulse * 0.8; c.fillStyle = p.glow; c.fillRect(x + 16, y, 8, T);
+    c.globalAlpha = pulse; c.fillStyle = p.textBright; c.fillRect(x + 19, y, 2, T);
     c.globalAlpha = 1;
   } },
 };
@@ -177,37 +203,71 @@ G.updateAnim = (an, dt, vx, vy, moving) => {
   return an.stepFlash && !wasDown;
 };
 
-// Zeichnet die Figur.
-// Sprite-Box 20x30. Aufbau von hinten nach vorn:
-// Schatten, Umhang, hinteres Bein, Torso, vorderes Bein, Arme, Kopf.
-// Die Silhouette bleibt bewusst schmal, damit die Figur lesbar bleibt.
+// ------------------------------------------------------------
+// MENSCH. Sprite-Box 26 breit, 42 hoch. Füße bei py+40.
+// Aufbau: Haar, Kopf, Hals, Rumpf, Arme, Beine, Stiefel.
+// Die Bewegung entsteht aus einem echten Gehzyklus: jeder Fuß
+// steht eine halbe Periode am Boden und schwingt eine halbe
+// Periode durch die Luft. Daraus werden Knie, Hüfte, Schultern
+// und Kopf abgeleitet. Nichts davon sind feste Einzelbilder.
+// ------------------------------------------------------------
+
+// Fußposition im Gehzyklus. t läuft 0..1.
+// Rückgabe: x seitlicher Versatz, y Höhe über dem Boden (negativ = angehoben)
+function footCycle(t, stride, lift) {
+  t = ((t % 1) + 1) % 1;
+  if (t < 0.5) {
+    // Standphase: Fuß klebt am Boden und wandert nach hinten
+    const k = t / 0.5;
+    return { x: stride * (1 - 2 * k), y: 0, planted: true };
+  }
+  // Schwungphase: Fuß hebt ab, zieht nach vorn, setzt wieder auf
+  const k = (t - 0.5) / 0.5;
+  return { x: stride * (-1 + 2 * k), y: -lift * Math.sin(k * Math.PI), planted: false };
+}
+
 G.drawPlayer = (c, px, py, an, p, cols, glow) => {
   const R = Math.round;
-  const w = Math.sin(an.phase * Math.PI * 2);   // Schrittschwingung
-  const w2 = Math.sin(an.phase * Math.PI * 4);  // doppelte Frequenz
   const sp = an.speed;
   const side = (an.dir === 'left' || an.dir === 'right');
   const face = an.dir === 'left' ? -1 : 1;
+  const back = (an.dir === 'up');
 
-  const bob = -Math.abs(w2) * 1.6 * sp;                    // Auf und Ab
-  const breath = Math.sin(an.breathe) * 0.5 * (1 - sp);     // Atmen im Stand
-  const sway = w * 0.9 * sp;                                // Wiegen
+  // Hautton, bewusst neutral gehalten
+  const skin = '#c98f63', skinSh = '#9c6b45', skinHi = '#e0ab7d';
+  const hair = '#3a2418', hairHi = '#57351f';
+  const shirt = cols.robe, shirtHi = cols.robeHi, shirtDark = cols.robeDark || '#1a1410';
+  const trim = cols.trim, core = cols.core;
+  const pants = '#2e2a33', pantsHi = '#413c48';
+  const boot = '#1a1512';
+
+  // --- Gehzyklus ---
+  const stride = 4.2 * sp;
+  const lift = 3.4 * sp;
+  const fA = footCycle(an.phase, stride, lift);          // vorderes/linkes Bein
+  const fB = footCycle(an.phase + 0.5, stride, lift);    // hinteres/rechtes Bein
+
+  // Körper sinkt bei jedem Aufsetzen leicht ein, steigt in der Mitte
+  const bob = -Math.abs(Math.sin(an.phase * Math.PI * 2)) * 1.5 * sp + 0.8 * sp;
+  const breath = Math.sin(an.breathe) * 0.6 * (1 - sp);
+  // Gewichtsverlagerung im Stand
+  const idleShift = Math.sin(an.breathe * 0.5) * 0.7 * (1 - sp);
+  // Hüfte kippt zur Standbeinseite, Schultern gegenläufig
+  const hipTilt = Math.sin(an.phase * Math.PI * 2) * 1.3 * sp;
+  const shoulderTilt = -hipTilt * 0.75;
+
   const sq = an.squash;
-  const sY = 1 - sq * 0.14, sX = 1 + sq * 0.10;
+  const sY = 1 - sq * 0.12, sX = 1 + sq * 0.09;
 
   const baseY = py + bob + breath;
-  const cx = px + 10 + sway * 0.5;
-  const footY = py + 29;
-
-  const robe = cols.robe, robeHi = cols.robeHi, trim = cols.trim, core = cols.core;
-  const robeDark = cols.robeDark || '#1a1410';
-  const dark = '#090503';
+  const cx = px + 13 + idleShift;
+  const footY = py + 40;
 
   // --- Schatten ---
-  c.globalAlpha = 0.34 - sp * 0.08;
+  c.globalAlpha = 0.36 - sp * 0.08;
   c.fillStyle = '#000';
   c.beginPath();
-  c.ellipse(px + 10, footY, (6.5 + sp * 1.5) * sX, 2.4, 0, 0, 6.283);
+  c.ellipse(px + 13, footY + 1, (8 + sp * 2) * sX, 3, 0, 0, 6.283);
   c.fill();
   c.globalAlpha = 1;
 
@@ -215,197 +275,236 @@ G.drawPlayer = (c, px, py, an, p, cols, glow) => {
   if (glow) {
     c.globalAlpha = 0.13 + 0.05 * Math.sin(an.breathe * 1.3);
     c.fillStyle = glow;
-    c.beginPath(); c.ellipse(px + 10, baseY + 16, 13, 17, 0, 0, 6.283); c.fill();
+    c.beginPath(); c.ellipse(px + 13, baseY + 22, 16, 23, 0, 0, 6.283); c.fill();
     c.globalAlpha = 1;
   }
 
-  // --- Umhang, hinter allem, kaum breiter als der Körper ---
-  // Er weht entgegen der Laufrichtung und flattert am Saum.
-  const clx = an.cloakX, cly = an.cloakY;
-  const capeTop = baseY + 11, capeH = 15 * sY;
-  c.fillStyle = robeDark;
+  // Ein Bein zeichnen: Oberschenkel, Knie, Unterschenkel, Stiefel
+  function drawLeg(f, hipX, shade, shadeHi) {
+    const hipY = baseY + 25 + hipTilt * (hipX > 0 ? 1 : -1) * 0.5;
+    const fx = cx + hipX + (side ? f.x * face : f.x * 0.35);
+    const fy = footY + f.y;
+    // Knie liegt zwischen Hüfte und Fuß, wird beim Anheben nach vorn gedrückt
+    const kneeX = (cx + hipX) * 0.45 + fx * 0.55 + (side ? -f.y * 0.35 * face : 0);
+    const kneeY = (hipY + fy) / 2 - Math.max(0, -f.y) * 0.3;
+    c.strokeStyle = shade; c.lineWidth = 5; c.lineCap = 'butt';
+    c.beginPath(); c.moveTo(R(cx + hipX), R(hipY)); c.lineTo(R(kneeX), R(kneeY)); c.stroke();
+    c.strokeStyle = shadeHi; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(R(kneeX), R(kneeY)); c.lineTo(R(fx), R(fy - 2)); c.stroke();
+    // Stiefel
+    c.fillStyle = boot;
+    c.fillRect(R(fx - 3), R(fy - 3), side ? 7 : 6, 4);
+    if (side) c.fillRect(R(fx - 3 + (face > 0 ? 3 : -2)), R(fy - 2), 3, 3);
+  }
+
+  // Einen Arm zeichnen: Oberarm, Ellbogen, Unterarm, Hand
+  function drawArm(swing, shX, sleeve, skinTone) {
+    const shY = baseY + 18 + shoulderTilt * (shX > 0 ? 1 : -1) * 0.4;
+    const handX = cx + shX + (side ? swing * face * 1.1 : swing * 0.5);
+    const handY = shY + 12 - Math.abs(swing) * 0.25;
+    const elbowX = (cx + shX) * 0.5 + handX * 0.5 + (side ? -swing * 0.25 * face : 0);
+    const elbowY = shY + 6.5;
+    c.strokeStyle = sleeve; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(R(cx + shX), R(shY)); c.lineTo(R(elbowX), R(elbowY)); c.stroke();
+    c.strokeStyle = skinTone; c.lineWidth = 3;
+    c.beginPath(); c.moveTo(R(elbowX), R(elbowY)); c.lineTo(R(handX), R(handY)); c.stroke();
+    c.fillStyle = skinTone; c.fillRect(R(handX - 1.5), R(handY - 1), 3, 3);
+  }
+
+  const armSwing = -Math.sin(an.phase * Math.PI * 2) * 4.6 * sp;
+
+  // ---- Hinteres Bein und hinterer Arm zuerst (verdeckt) ----
   if (side) {
-    // Seitlich: schmale Fahne, die knapp hinter der Schulter weg steht
-    const back = -face;
-    const drift = Math.max(-4, Math.min(4, clx * 0.55));
-    c.beginPath();
-    c.moveTo(R(cx + back * 1.5), R(capeTop));
-    c.lineTo(R(cx + back * 3.5 + drift), R(capeTop + capeH * 0.65));
-    c.lineTo(R(cx + back * 3 + drift), R(capeTop + capeH));
-    c.lineTo(R(cx + back * 0.5), R(capeTop + capeH - 2));
-    c.closePath(); c.fill();
+    drawLeg(fB, -1, '#221f26', '#2e2a33');
+    drawArm(-armSwing, -1, shirtDark, skinSh);
   } else {
-    const wob = w * 0.9 * sp;
-    const drift = Math.max(-3, Math.min(3, clx * 0.7));
-    c.beginPath();
-    c.moveTo(R(cx - 4), R(capeTop));
-    c.lineTo(R(cx - 6 + drift + wob), R(capeTop + capeH));
-    c.lineTo(R(cx + 6 + drift + wob), R(capeTop + capeH));
-    c.lineTo(R(cx + 4), R(capeTop));
-    c.closePath(); c.fill();
-  }
-  // Saum, flattert leicht nach
-  c.fillStyle = robe;
-  for (let i = 0; i < 3; i++) {
-    const fx = cx - 4 + i * 3.5 + Math.max(-3, Math.min(3, clx * 0.7));
-    const fy = capeTop + capeH - 2 + Math.sin(an.phase * 6.283 + i * 1.3) * 1.2 * sp;
-    c.fillRect(R(fx), R(fy), 3, 2);
+    drawLeg(fB, 4, pants, pantsHi);
+    drawArm(-armSwing, 7, shirtDark, skinSh);
   }
 
-  // --- Beine ---
-  // In Robenfarbe, damit sie gegen den dunklen Boden lesbar bleiben.
-  const legA = w * 2.4 * sp;      // vorderes Bein
-  const legB = -w * 2.4 * sp;     // hinteres Bein
-  const liftA = Math.max(0, w) * 1.7 * sp;
-  const liftB = Math.max(0, -w) * 1.7 * sp;
-  const legTop = baseY + 21;
-  const legH = 8;
-  function leg(offX, lift, shade) {
-    const lx = R(cx + offX), ly = R(legTop - lift), lh = R(legH - lift * 0.6);
-    c.fillStyle = shade; c.fillRect(lx, ly, 3, lh);
-    c.fillStyle = dark; c.fillRect(lx, ly + lh - 2, 3, 2); // Stiefel
-  }
-  // hinteres Bein zuerst, etwas dunkler
-  leg(side ? -1.5 + legB * face : 1.5, liftB, robe);
+  // ---- Rumpf ----
+  const bodyW = R(15 * sX), bodyH = R(12 * sY);
+  const bodyX = R(cx - bodyW / 2 + shoulderTilt * 0.3), bodyY = R(baseY + 15);
+  c.fillStyle = shirt; c.fillRect(bodyX, bodyY, bodyW, bodyH);
+  // Schulterpartie heller
+  c.fillStyle = shirtHi; c.fillRect(bodyX + 1, bodyY + 1, bodyW - 2, 5);
+  // Seitenschatten
+  c.fillStyle = shirtDark;
+  c.fillRect(bodyX, bodyY, 2, bodyH);
+  c.fillRect(bodyX + bodyW - 2, bodyY, 2, bodyH);
+  // Gürtel, schmal und dunkel. Nur die Schnalle setzt einen Akzent.
+  c.fillStyle = '#241c14'; c.fillRect(bodyX, bodyY + bodyH - 2, bodyW, 2);
+  if (!back) { c.fillStyle = trim; c.fillRect(R(cx - 2), bodyY + bodyH - 2, 4, 2); }
 
-  // --- Torso ---
-  const bodyW = R(11 * sX), bodyH = R(13 * sY);
-  const bodyX = R(cx - bodyW / 2), bodyY = R(baseY + 11);
-  c.fillStyle = robe; c.fillRect(bodyX, bodyY, bodyW, bodyH);
-  c.fillStyle = robeHi; c.fillRect(bodyX + 1, bodyY + 1, bodyW - 2, 4);
-  c.fillStyle = dark; c.fillRect(bodyX, bodyY + bodyH - 1, bodyW, 1);
-  // Gürtel, nur ein kurzer Akzent
-  c.fillStyle = trim; c.fillRect(bodyX + 2, bodyY + 8, bodyW - 4, 1);
-
-  // --- Leuchtender Kern in der Brust ---
-  const pulse = 0.5 + 0.5 * Math.sin(an.breathe * 1.7);
-  c.globalAlpha = pulse * 0.35; c.fillStyle = core;
-  c.fillRect(bodyX + R(bodyW / 2) - 2, bodyY + 3, 4, 4);
-  c.globalAlpha = pulse; c.fillRect(bodyX + R(bodyW / 2) - 1, bodyY + 4, 2, 2);
-  c.globalAlpha = 1;
-
-  // --- vorderes Bein, heller als das hintere ---
-  leg(side ? -1.5 + legA * face : -4.5, liftA, robeHi);
-
-  // --- Arme ---
-  // Bei Frontansicht liegen sie eng am Körper, sonst wirken sie wie Stummel.
-  const armS = -w * 2.0 * sp;
-  if (side) {
-    c.fillStyle = robeHi;
-    c.fillRect(R(cx - 1 + armS * face), R(baseY + 13), 3, 7);
-    c.fillStyle = trim; c.fillRect(R(cx - 1 + armS * face), R(baseY + 19), 3, 1);
-  } else {
-    c.fillStyle = dark;
-    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 2, 8);
-    c.fillRect(R(bodyX + bodyW - 1), R(baseY + 13 - armS * 0.5), 2, 8);
-    c.fillStyle = robeHi;
-    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 1, 7);
-    c.fillRect(R(bodyX + bodyW), R(baseY + 13 - armS * 0.5), 1, 7);
-  }
-
-  // --- Kopf mit Kapuze ---
-  const hx = R(cx - 4 + an.hoodX + an.facing * 0.8);
-  const hy = R(baseY + 2 + bob * 0.2);
-  // Kapuze als Silhouette
-  c.fillStyle = robe;
-  c.fillRect(hx - 1, hy + 1, 10, 8);
-  c.fillRect(hx, hy, 8, 2);
-  c.fillStyle = robeHi; c.fillRect(hx + 1, hy, 6, 2);
-  // Gesichtsöffnung
-  c.fillStyle = dark;
-  if (an.dir === 'up') {
-    c.fillRect(hx, hy + 2, 8, 5);   // Rückansicht, keine Öffnung
-  } else if (side) {
-    c.fillRect(hx + (face > 0 ? 3 : 1), hy + 3, 5, 4);
-  } else {
-    c.fillRect(hx + 1, hy + 3, 6, 4);
-  }
-  // Augen
-  if (an.dir !== 'up' && an.blinking <= 0) {
-    c.fillStyle = core; c.globalAlpha = 0.95;
-    if (side) c.fillRect(hx + (face > 0 ? 5 : 2), hy + 4, 2, 2);
-    else { c.fillRect(hx + 2, hy + 4, 2, 2); c.fillRect(hx + 5, hy + 4, 2, 2); }
+  // Anhänger mit dem leuchtenden Kern (die Signatur)
+  if (!back) {
+    const pulse = 0.5 + 0.5 * Math.sin(an.breathe * 1.7);
+    c.globalAlpha = pulse * 0.32; c.fillStyle = core;
+    c.fillRect(R(cx - 3), bodyY + 3, 6, 6);
+    c.globalAlpha = pulse; c.fillStyle = core;
+    c.fillRect(R(cx - 1), bodyY + 5, 2, 3);
     c.globalAlpha = 1;
   }
-  // Kapuzenzipfel hinten
-  c.fillStyle = robe;
-  if (side) c.fillRect(R(hx + (face > 0 ? -2 : 8)), hy + 2, 2, 4);
+
+  // ---- Vorderes Bein und vorderer Arm ----
+  if (side) {
+    drawLeg(fA, 1, pants, pantsHi);
+    drawArm(armSwing, 1, shirt, skin);
+  } else {
+    drawLeg(fA, -4, pants, pantsHi);
+    drawArm(armSwing, -7, shirt, skin);
+  }
+
+  // ---- Hals ----
+  c.fillStyle = skinSh; c.fillRect(R(cx - 2), R(baseY + 13), 4, 3);
+
+  // ---- Kopf ----
+  // Der Kopf hängt der Bewegung minimal nach, das wirkt lebendig.
+  const hx = R(cx - 6 + an.hoodX * 0.8 + an.facing * 1.2);
+  const hy = R(baseY + 2 + bob * 0.3);
+  // Gesicht
+  c.fillStyle = skin; c.fillRect(hx + 1, hy + 3, 11, 10);
+  c.fillStyle = skinHi; c.fillRect(hx + 2, hy + 4, 9, 3);
+  c.fillStyle = skinSh; c.fillRect(hx + 1, hy + 11, 11, 2);
+  // Ohren
+  if (!back) {
+    c.fillStyle = skinSh;
+    if (side) { c.fillRect(R(hx + (face > 0 ? 3 : 8)), hy + 7, 2, 3); }
+    else { c.fillRect(hx, hy + 7, 2, 3); c.fillRect(hx + 11, hy + 7, 2, 3); }
+  }
+
+  // Haar mit Federbewegung: es schwingt beim Laufen mit
+  const hairSway = an.hoodX * 1.6;
+  c.fillStyle = hair;
+  c.fillRect(hx, hy, 13, 5);                               // Deckhaar
+  c.fillRect(hx - 1, hy + 2, 3, 7);                        // Seite links
+  c.fillRect(hx + 11, hy + 2, 3, 7);                       // Seite rechts
+  c.fillStyle = hairHi; c.fillRect(hx + 2, hy + 1, 8, 2);  // Glanz
+  // Hinterkopf-Schopf, folgt verzögert
+  c.fillStyle = hair;
+  if (side) c.fillRect(R(hx + (face > 0 ? -2 : 12) + hairSway * 0.5), hy + 3, 3, 6);
+  else c.fillRect(R(hx + 3 + hairSway), hy - 1, 7, 3);
+
+  if (back) {
+    // Rückansicht: nur Hinterkopf, kein Gesicht
+    c.fillStyle = hair; c.fillRect(hx + 1, hy + 3, 11, 8);
+    c.fillStyle = hairHi; c.fillRect(hx + 3, hy + 4, 7, 2);
+  } else if (an.blinking <= 0) {
+    // Augen
+    c.fillStyle = '#1a1008';
+    if (side) {
+      c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 7, 2, 2);
+    } else {
+      c.fillRect(hx + 3, hy + 7, 2, 2);
+      c.fillRect(hx + 8, hy + 7, 2, 2);
+    }
+    // Lichtpunkt in den Augen, in der Elementfarbe
+    c.globalAlpha = 0.55; c.fillStyle = core;
+    if (side) c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 7, 1, 1);
+    else { c.fillRect(hx + 3, hy + 7, 1, 1); c.fillRect(hx + 8, hy + 7, 1, 1); }
+    c.globalAlpha = 1;
+  } else {
+    // Blinzeln
+    c.fillStyle = skinSh;
+    if (side) c.fillRect(R(hx + (face > 0 ? 8 : 3)), hy + 8, 2, 1);
+    else { c.fillRect(hx + 3, hy + 8, 2, 1); c.fillRect(hx + 8, hy + 8, 2, 1); }
+  }
+
+  // Mund, nur in der Frontansicht angedeutet
+  if (an.dir === 'down') { c.fillStyle = skinSh; c.fillRect(hx + 5, hy + 10, 3, 1); }
 };
 
 // ------------------------------------------------------------
-// NPC: eigene, ruhigere Animation
+// NPC: menschlich, ruhigere Animation
 // ------------------------------------------------------------
 G.drawNpc = (c, px, py, p, variant, t, seed) => {
-  const x = Math.round(px), y = Math.round(py);
+  const R = Math.round;
   const ph = t * 1.1 + (seed || 0) * 2.3;
-  const breath = Math.sin(ph) * 0.7;
-  const tones = [p.textDim, p.dim, p.text, p.accent];
-  const tone = tones[variant % tones.length];
+  const breath = Math.sin(ph) * 0.8;
+  const shift = Math.sin(ph * 0.4) * 0.8;
+  const skin = '#b0805a', skinSh = '#8a6244';
+  const hairs = ['#2e2018', '#4a3524', '#1f1a16', '#5c4632'];
+  const shirts = [p.textDim, p.dim, p.card, p.accent];
+  const hair = hairs[variant % hairs.length];
+  const shirt = shirts[variant % shirts.length];
 
-  c.globalAlpha = 0.3; c.fillStyle = '#000';
-  c.beginPath(); c.ellipse(x + 10, y + 28, 7, 2.5, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(px + 13, py + 41, 8, 3, 0, 0, 6.283); c.fill();
   c.globalAlpha = 1;
 
-  const by = y + breath;
-  c.fillStyle = '#0a0604'; c.fillRect(x + 5, by + 22, 4, 6); c.fillRect(x + 12, by + 22, 4, 6);
-  c.fillStyle = tone; c.fillRect(x + 4, by + 9, 13, 14);
-  c.fillStyle = p.cardLight; c.fillRect(x + 5, by + 10, 11, 4);
-  c.fillStyle = p.textDim; c.fillRect(x + 5, by + 1, 11, 9);
-  c.fillStyle = '#0a0604'; c.fillRect(x + 6, by + 4, 9, 5);
+  const by = py + breath, cx = px + 13 + shift;
+  // Beine
+  c.strokeStyle = '#2a262f'; c.lineWidth = 5;
+  c.beginPath(); c.moveTo(R(cx - 4), R(by + 27)); c.lineTo(R(cx - 4), R(by + 38)); c.stroke();
+  c.beginPath(); c.moveTo(R(cx + 4), R(by + 27)); c.lineTo(R(cx + 4), R(by + 38)); c.stroke();
+  c.fillStyle = '#17130f';
+  c.fillRect(R(cx - 7), R(by + 37), 6, 4); c.fillRect(R(cx + 1), R(by + 37), 6, 4);
+  // Arme
+  c.strokeStyle = shirt; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(R(cx - 7), R(by + 17)); c.lineTo(R(cx - 8), R(by + 27)); c.stroke();
+  c.beginPath(); c.moveTo(R(cx + 7), R(by + 17)); c.lineTo(R(cx + 8), R(by + 27)); c.stroke();
+  c.fillStyle = skin;
+  c.fillRect(R(cx - 9), R(by + 26), 3, 3); c.fillRect(R(cx + 7), R(by + 26), 3, 3);
+  // Rumpf
+  c.fillStyle = shirt; c.fillRect(R(cx - 7), R(by + 15), 14, 14);
+  c.fillStyle = p.cardLight; c.fillRect(R(cx - 6), R(by + 16), 12, 4);
+  // Kopf
+  const hx = R(cx - 6), hy = R(by + 3);
+  c.fillStyle = skinSh; c.fillRect(R(cx - 2), R(by + 13), 4, 3);
+  c.fillStyle = skin; c.fillRect(hx + 1, hy + 3, 11, 10);
+  c.fillStyle = hair;
+  c.fillRect(hx, hy, 13, 5); c.fillRect(hx - 1, hy + 2, 3, 7); c.fillRect(hx + 11, hy + 2, 3, 7);
+  c.fillStyle = '#1a1008'; c.fillRect(hx + 3, hy + 7, 2, 2); c.fillRect(hx + 8, hy + 7, 2, 2);
 
-  // Variante 0 starrt auf einen Bildschirm: kaltes Flackern vorm Gesicht
+  // Variante 0 starrt auf einen Bildschirm
   if (variant === 0) {
     const f = 0.4 + 0.35 * Math.sin(t * 9 + (seed || 0));
     c.globalAlpha = f; c.fillStyle = '#8fa8c8';
-    c.fillRect(x + 6, by + 12, 9, 6);
-    c.globalAlpha = f * 0.4; c.fillRect(x + 4, by + 3, 13, 8);
+    c.fillRect(R(cx - 5), R(by + 20), 10, 7);
+    c.globalAlpha = f * 0.35; c.fillRect(hx, hy + 2, 13, 10);
     c.globalAlpha = 1;
   }
 };
 
 // ------------------------------------------------------------
-// Begleiter-Geist: schwebt, zieht eine Spur
+// Begleiter-Geist
 // ------------------------------------------------------------
 G.drawSpirit = (c, px, py, p, t, color, trail) => {
-  // Spur
   if (trail) {
     for (let i = trail.length - 1; i >= 0; i--) {
-      const tr = trail[i];
-      c.globalAlpha = (i / trail.length) * 0.28;
+      c.globalAlpha = (i / trail.length) * 0.26;
       c.fillStyle = color;
-      c.fillRect(Math.round(tr.x), Math.round(tr.y), 3, 3);
+      c.fillRect(Math.round(trail[i].x), Math.round(trail[i].y), 4, 4);
     }
   }
-  const x = px + Math.sin(t * 1.9) * 3.2;
-  const y = py + Math.cos(t * 2.6) * 3.8;
+  const x = px + Math.sin(t * 1.9) * 4, y = py + Math.cos(t * 2.6) * 4.6;
   const pulse = 0.7 + 0.3 * Math.sin(t * 4);
-  c.globalAlpha = 0.16 * pulse; c.fillStyle = color;
-  c.beginPath(); c.arc(x + 3, y + 3, 9, 0, 6.283); c.fill();
-  c.globalAlpha = 0.45 * pulse;
-  c.beginPath(); c.arc(x + 3, y + 3, 5, 0, 6.283); c.fill();
+  c.globalAlpha = 0.15 * pulse; c.fillStyle = color;
+  c.beginPath(); c.arc(x + 4, y + 4, 13, 0, 6.283); c.fill();
+  c.globalAlpha = 0.42 * pulse;
+  c.beginPath(); c.arc(x + 4, y + 4, 7, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  c.fillRect(Math.round(x + 1), Math.round(y + 1), 4, 4);
-  c.fillStyle = '#fff'; c.globalAlpha = 0.8;
-  c.fillRect(Math.round(x + 2), Math.round(y + 2), 2, 2);
+  c.fillRect(Math.round(x + 1), Math.round(y + 1), 6, 6);
+  c.globalAlpha = 0.85; c.fillStyle = '#fff';
+  c.fillRect(Math.round(x + 3), Math.round(y + 3), 2, 2);
   c.globalAlpha = 1;
 };
 
 // ------------------------------------------------------------
-// Fragment: rotierender Splitter mit Lichthof
+// Fragment
 // ------------------------------------------------------------
 G.drawFragment = (c, px, py, p, t, seed) => {
-  const x = px + 12, y = py + 12 + Math.sin(t * 1.6 + (seed || 0)) * 2.5;
+  const x = px + 20, y = py + 20 + Math.sin(t * 1.6 + (seed || 0)) * 3.5;
   const a = 0.55 + 0.45 * Math.sin(t * 3 + (seed || 0) * 2);
-  c.globalAlpha = a * 0.18; c.fillStyle = p.bright;
-  c.beginPath(); c.arc(x, y, 13, 0, 6.283); c.fill();
-  c.globalAlpha = a * 0.4;
-  c.beginPath(); c.arc(x, y, 7, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.16; c.fillStyle = p.bright;
+  c.beginPath(); c.arc(x, y, 20, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.35;
+  c.beginPath(); c.arc(x, y, 11, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  // Rotierender Rhombus
   const r = t * 1.4 + (seed || 0);
   c.save(); c.translate(x, y); c.rotate(r);
-  c.fillStyle = p.bright; c.fillRect(-2, -7, 4, 14); c.fillRect(-7, -2, 14, 4);
-  c.fillStyle = p.textBright; c.fillRect(-2, -2, 4, 4);
+  c.fillStyle = p.bright; c.fillRect(-3, -11, 6, 22); c.fillRect(-11, -3, 22, 6);
+  c.fillStyle = p.textBright; c.fillRect(-3, -3, 6, 6);
   c.restore();
 };
 
@@ -415,24 +514,21 @@ G.drawFragment = (c, px, py, p, t, seed) => {
 G.drawShrine = (c, px, py, p, t) => {
   const x = Math.round(px), y = Math.round(py);
   c.globalAlpha = 0.3; c.fillStyle = '#000';
-  c.beginPath(); c.ellipse(x + 24, y + 46, 24, 6, 0, 0, 6.283); c.fill();
+  c.beginPath(); c.ellipse(x + 40, y + 76, 36, 8, 0, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  // Sockel
-  c.fillStyle = p.card; c.fillRect(x + 4, y + 24, 40, 22);
-  c.fillStyle = p.cardLight; c.fillRect(x + 6, y + 26, 36, 4);
-  c.fillStyle = p.bgDeep; c.fillRect(x + 10, y + 32, 28, 12);
-  // Spiegelfläche
+  c.fillStyle = p.card; c.fillRect(x + 8, y + 40, 64, 36);
+  c.fillStyle = p.cardLight; c.fillRect(x + 11, y + 43, 58, 5);
+  c.fillStyle = p.bgDeep; c.fillRect(x + 17, y + 52, 46, 20);
   const a = 0.45 + 0.35 * Math.sin(t * 1.8);
-  c.globalAlpha = a * 0.3; c.fillStyle = p.main;
-  c.beginPath(); c.arc(x + 24, y + 14, 22, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.28; c.fillStyle = p.main;
+  c.beginPath(); c.arc(x + 40, y + 24, 36, 0, 6.283); c.fill();
   c.globalAlpha = 1;
-  c.fillStyle = p.bgVoid; c.fillRect(x + 12, y + 2, 24, 24);
-  c.fillStyle = p.dim; c.fillRect(x + 12, y + 2, 24, 2); c.fillRect(x + 12, y + 24, 24, 2);
-  c.fillRect(x + 12, y + 2, 2, 24); c.fillRect(x + 34, y + 2, 2, 24);
-  c.globalAlpha = a; c.fillStyle = p.glow;
-  c.fillRect(x + 16, y + 6, 16, 16);
-  c.globalAlpha = a * 0.7; c.fillStyle = p.textBright;
-  c.fillRect(x + 20, y + 10, 8, 8);
+  c.fillStyle = p.bgVoid; c.fillRect(x + 20, y + 4, 40, 40);
+  c.fillStyle = p.dim;
+  c.fillRect(x + 20, y + 4, 40, 3); c.fillRect(x + 20, y + 41, 40, 3);
+  c.fillRect(x + 20, y + 4, 3, 40); c.fillRect(x + 57, y + 4, 3, 40);
+  c.globalAlpha = a; c.fillStyle = p.glow; c.fillRect(x + 26, y + 10, 28, 28);
+  c.globalAlpha = a * 0.7; c.fillStyle = p.textBright; c.fillRect(x + 33, y + 17, 14, 14);
   c.globalAlpha = 1;
 };
 

@@ -13,9 +13,9 @@ const G = {};
 G.W = 360;
 G.H_BASE = 640;          // 9:16 Referenz
 G.H = G.H_BASE;
-G.TILE = 24;
-G.ROOM_W = 15; G.ROOM_H = 22;
-G.FIELD_H = G.ROOM_H * G.TILE; // 528
+G.TILE = 40;             // groessere Kacheln = naeher dran
+G.ROOM_W = 9; G.ROOM_H = 14;
+G.FIELD_H = G.ROOM_H * G.TILE; // 560
 G.HUD_Y = G.FIELD_H;
 G.HUD_H = G.H - G.FIELD_H;
 G.SAFE_Y = 0;            // Offset, um Vollbild-Menüs vertikal zu zentrieren
@@ -265,9 +265,14 @@ G.doShake = (mag, dur) => { G.shake.mag = mag; G.shake.t = dur; };
     }
     ctx.restore();
   }
-  function frame() { tick(); requestAnimationFrame(frame); }
+  function frame() {
+    // Eine Exception darf die rAF-Kette nicht abreissen, sonst friert
+    // das Bild dauerhaft ein und man kommt nicht mal ins Menue zurueck.
+    try { tick(); } catch (e) { console.error('Frame-Fehler:', e); }
+    finally { requestAnimationFrame(frame); }
+  }
   requestAnimationFrame(frame);
-  setInterval(() => { if (performance.now() - lastTick > 50) tick(); }, 33);
+  setInterval(() => { try { if (performance.now() - lastTick > 50) tick(); } catch (e) { /* siehe oben */ } }, 33);
   G._tick = tick;
 })();
 
@@ -325,5 +330,27 @@ G.hashStr = (s) => {
 // --- Spielstand ---
 G.state = null;
 G.save = () => { try { localStorage.setItem('arkana_save', JSON.stringify(G.state)); } catch (e) { /* ignoriert */ } };
-G.load = () => { try { const r = localStorage.getItem('arkana_save'); return r ? JSON.parse(r) : null; } catch (e) { return null; } };
+G.load = () => {
+  // Spielstaende aus aelteren Versionen duerfen das Spiel nicht kaputt
+  // machen. Deshalb gegen einen frischen Zustand mergen und pruefen.
+  try {
+    const raw = localStorage.getItem('arkana_save');
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s || typeof s !== 'object') return null;
+    if (!s.area || !G.MAPS[s.area] || !G.MAPS[s.area].rooms[s.room]) return null;
+    const base = G.newState();
+    const merged = {
+      ...base, ...s,
+      stats: { ...base.stats, ...(s.stats || {}) },
+      fragmente: Array.isArray(s.fragmente) ? s.fragmente : [],
+      flags: (s.flags && typeof s.flags === 'object') ? s.flags : {},
+    };
+    if (typeof merged.px !== 'number' || !Number.isFinite(merged.px)) merged.px = base.px;
+    if (typeof merged.py !== 'number' || !Number.isFinite(merged.py)) merged.py = base.py;
+    // In Arkana ohne Signatur waere der Zustand unbrauchbar
+    if (merged.phase === 'arkana' && !merged.sig) return null;
+    return merged;
+  } catch (e) { return null; }
+};
 G.clearSave = () => { try { localStorage.removeItem('arkana_save'); } catch (e) { /* ignoriert */ } };

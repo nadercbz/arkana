@@ -82,7 +82,7 @@ G.makeSignature = (name, zodiacIdx, age) => {
 G.newState = () => ({
   sig: null,
   phase: 'prolog',
-  area: 'stadt', room: '1,1', px: 168, py: 260,
+  area: 'stadt', room: '1,1', px: 167, py: 250,
   flags: {},
   fragmente: [],
   stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0 },
@@ -90,36 +90,30 @@ G.newState = () => ({
 
 // ============================================================
 // KARTEN-BAUKASTEN
-// Räume sind 15 Zeichen breit, 22 hoch. Der Baukasten sorgt
-// dafür, dass Ränder, Durchgänge und Maße immer stimmen.
+// Räume sind 9 Zeichen breit, 14 hoch (je 40px = 360x560).
+// Der Baukasten garantiert korrekte Maße und Durchgänge.
 // ============================================================
-const RW = 15, RH = 22;
+const RW = 9, RH = 14;
+const MX = 4, MY = 7;   // Mitte, dort liegen die Durchgänge
 
-// exits: {n:true, s:true, w:true, o:true} = Durchgang in die Richtung
 function room(exits, fill = '.', wall = '#') {
   const g = [];
   for (let y = 0; y < RH; y++) {
     const row = [];
     for (let x = 0; x < RW; x++) {
-      const border = (x === 0 || x === RW - 1 || y === 0 || y === RH - 1);
-      row.push(border ? wall : fill);
+      row.push((x === 0 || x === RW - 1 || y === 0 || y === RH - 1) ? wall : fill);
     }
     g.push(row);
   }
-  // Durchgänge in die Mitte der jeweiligen Kante, 3 Felder breit
-  const mx = Math.floor(RW / 2), my = Math.floor(RH / 2);
-  if (exits.n) for (let x = mx - 1; x <= mx + 1; x++) g[0][x] = fill;
-  if (exits.s) for (let x = mx - 1; x <= mx + 1; x++) g[RH - 1][x] = fill;
-  if (exits.w) for (let y = my - 1; y <= my + 1; y++) g[y][0] = fill;
-  if (exits.o) for (let y = my - 1; y <= my + 1; y++) g[y][RW - 1] = fill;
+  // Durchgänge, 3 Felder breit, in der Kantenmitte
+  if (exits.n) for (let x = MX - 1; x <= MX + 1; x++) g[0][x] = fill;
+  if (exits.s) for (let x = MX - 1; x <= MX + 1; x++) g[RH - 1][x] = fill;
+  if (exits.w) for (let y = MY - 1; y <= MY + 1; y++) g[y][0] = fill;
+  if (exits.o) for (let y = MY - 1; y <= MY + 1; y++) g[y][RW - 1] = fill;
   return g;
 }
-
-// Rechteck oder Linie in einen Raum stempeln
 function put(g, x, y, ch) { if (g[y] && g[y][x] !== undefined) g[y][x] = ch; }
-function rect(g, x1, y1, x2, y2, ch) {
-  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) put(g, x, y, ch);
-}
+function rect(g, x1, y1, x2, y2, ch) { for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) put(g, x, y, ch); }
 function hline(g, y, x1, x2, ch) { for (let x = x1; x <= x2; x++) put(g, x, y, ch); }
 function vline(g, x, y1, y2, ch) { for (let y = y1; y <= y2; y++) put(g, x, y, ch); }
 function toStrings(g) { return g.map((r) => r.join('')); }
@@ -130,64 +124,60 @@ function toStrings(g) { return g.map((r) => r.join('')); }
 function buildStadt() {
   const rooms = {};
 
-  // Zentrum: Straßenkreuzung
+  // Zentrum: Kreuzung
   let g = room({ n: true, s: true, w: true, o: true });
-  hline(g, 7, 1, 13, '='); hline(g, 8, 1, 13, '=');
-  hline(g, 14, 1, 13, '='); hline(g, 15, 1, 13, '=');
-  vline(g, 6, 1, 20, '='); vline(g, 7, 1, 20, '=');
-  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 18, 'T'); put(g, 12, 18, 'T');
-  rect(g, 9, 2, 12, 3, 'W');
+  hline(g, 4, 1, 7, '='); hline(g, 9, 1, 7, '=');
+  vline(g, 3, 1, 12, '='); vline(g, 5, 1, 12, '=');
+  put(g, 1, 2, 'T'); put(g, 7, 2, 'T'); put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,1'] = toStrings(g);
 
-  // Westen: Platz mit Bänken
+  // Westen: Platz
   g = room({ o: true });
-  rect(g, 3, 5, 11, 6, '=');
-  rect(g, 3, 15, 11, 16, '=');
-  put(g, 4, 9, 'T'); put(g, 10, 9, 'T'); put(g, 7, 12, 'T');
+  hline(g, 3, 2, 6, '='); hline(g, 10, 2, 6, '=');
+  put(g, 2, 6, 'T'); put(g, 6, 6, 'T');
   rooms['0,1'] = toStrings(g);
 
   // Osten: Gasse mit Häuserfront
   g = room({ w: true, s: true });
-  rect(g, 2, 2, 6, 6, '#'); rect(g, 3, 3, 5, 5, 'W');
-  rect(g, 9, 2, 13, 6, '#'); rect(g, 10, 3, 12, 5, 'W');
-  vline(g, 7, 1, 20, '=');
-  put(g, 3, 16, 'T'); put(g, 11, 16, 'T');
+  rect(g, 1, 1, 3, 4, '#'); rect(g, 2, 2, 2, 3, 'W');
+  rect(g, 5, 1, 7, 4, '#'); rect(g, 6, 2, 6, 3, 'W');
+  vline(g, 4, 1, 12, '=');
+  put(g, 2, 10, 'T'); put(g, 6, 10, 'T');
   rooms['2,1'] = toStrings(g);
 
   // Norden: Park am Wasser
   g = room({ s: true });
-  rect(g, 1, 1, 13, 5, '~');
-  put(g, 3, 9, 'T'); put(g, 11, 9, 'T'); put(g, 5, 14, 'T'); put(g, 9, 14, 'T');
-  hline(g, 11, 1, 13, '=');
+  rect(g, 1, 1, 7, 3, '~');
+  put(g, 2, 6, 'T'); put(g, 6, 6, 'T'); put(g, 4, 10, 'T');
+  hline(g, 8, 1, 7, '=');
   rooms['1,0'] = toStrings(g);
 
-  // Süden: die alte Ladenzeile
+  // Süden: Ladenzeile mit dem flackernden Laden
   g = room({ n: true, o: true });
-  // Ladenblock mit Tür in der Mitte
-  rect(g, 4, 8, 10, 13, '#');
-  rect(g, 5, 9, 9, 11, 'W');
-  put(g, 7, 13, 'D');
-  put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rect(g, 2, 5, 6, 8, '#');
+  rect(g, 3, 6, 5, 7, 'W');
+  put(g, 4, 8, 'D');
+  put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,2'] = toStrings(g);
 
-  // Südost: Sackgasse
-  g = room({ w: true });
-  rect(g, 3, 3, 11, 4, '#');
-  put(g, 4, 12, 'T'); put(g, 10, 12, 'T');
+  // Südost: Sackgasse, von Westen und von Norden erreichbar
+  g = room({ w: true, n: true });
+  rect(g, 2, 5, 6, 6, '#');
+  put(g, 3, 10, 'T'); put(g, 5, 10, 'T');
   rooms['2,2'] = toStrings(g);
 
   return {
     pal: 'gray',
     rooms,
     npcs: {
-      '1,1': [ { x: 4, y: 10, v: 0, dlg: 'stadt_pendler' }, { x: 10, y: 17, v: 1, dlg: 'stadt_meckerer' } ],
-      '0,1': [ { x: 7, y: 8, v: 0, dlg: 'stadt_scroller' } ],
-      '2,1': [ { x: 9, y: 12, v: 2, dlg: 'stadt_alte_frau' } ],
-      '1,0': [ { x: 7, y: 16, v: 1, dlg: 'stadt_parkmann' } ],
-      '1,2': [ { x: 4, y: 17, v: 3, dlg: 'stadt_kind' } ],
-      '2,2': [ { x: 7, y: 15, v: 1, dlg: 'stadt_obdachloser' } ],
+      '1,1': [ { x: 2, y: 6, v: 0, dlg: 'stadt_pendler' }, { x: 6, y: 10, v: 1, dlg: 'stadt_meckerer' } ],
+      '0,1': [ { x: 4, y: 6, v: 0, dlg: 'stadt_scroller' } ],
+      '2,1': [ { x: 6, y: 7, v: 2, dlg: 'stadt_alte_frau' } ],
+      '1,0': [ { x: 4, y: 5, v: 1, dlg: 'stadt_parkmann' } ],
+      '1,2': [ { x: 2, y: 11, v: 3, dlg: 'stadt_kind' } ],
+      '2,2': [ { x: 4, y: 8, v: 1, dlg: 'stadt_obdachloser' } ],
     },
-    triggers: { '1,2': [ { x1: 6, y1: 13, x2: 8, y2: 13, event: 'laden' } ] },
+    triggers: { '1,2': [ { x1: 3, y1: 8, x2: 5, y2: 8, event: 'laden' } ] },
     ambient: 'regen',
   };
 }
@@ -200,75 +190,72 @@ function buildAsche() {
 
   // Zentrum: Ruine des Archivs
   let g = room({ n: true, s: true, w: true, o: true });
-  rect(g, 5, 7, 9, 12, '#');
-  rect(g, 6, 8, 8, 11, ',');
-  put(g, 7, 12, 'D');
-  vline(g, 7, 13, 20, '*');
-  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rect(g, 3, 2, 5, 5, '#');
+  rect(g, 4, 3, 4, 4, ',');
+  put(g, 4, 5, 'D');
+  vline(g, 4, 9, 12, '*');
+  put(g, 1, 2, 'T'); put(g, 7, 2, 'T'); put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
   rooms['1,1'] = toStrings(g);
 
   // Westen: Nebelufer
   g = room({ o: true });
-  rect(g, 1, 1, 5, 8, '~');
-  put(g, 8, 6, 'T'); put(g, 4, 14, 'T'); put(g, 10, 16, 'T');
-  hline(g, 10, 6, 13, '=');
+  rect(g, 1, 1, 3, 5, '~');
+  put(g, 5, 4, 'T'); put(g, 2, 10, 'T'); put(g, 6, 11, 'T');
+  hline(g, 8, 4, 7, '=');
   rooms['0,1'] = toStrings(g);
 
   // Osten: Markt der Mustersucher
   g = room({ w: true, n: true });
-  rect(g, 4, 6, 10, 7, '=');
-  rect(g, 4, 13, 10, 14, '=');
-  put(g, 3, 3, 'T'); put(g, 11, 3, 'T');
-  put(g, 3, 18, 'T'); put(g, 11, 18, 'T');
+  hline(g, 4, 2, 6, '='); hline(g, 10, 2, 6, '=');
+  put(g, 2, 2, 'T'); put(g, 6, 2, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
   rooms['2,1'] = toStrings(g);
 
   // Norden: Spiegelhof mit dem Schrein
   g = room({ s: true });
-  rect(g, 3, 5, 11, 15, '#');
-  rect(g, 4, 6, 10, 14, ',');
-  hline(g, 15, 6, 8, ',');   // Zugang von unten
-  vline(g, 7, 16, 20, '*');
+  rect(g, 1, 1, 7, 10, '#');
+  rect(g, 2, 2, 6, 9, ',');
+  hline(g, 10, 3, 5, ',');   // Zugang von unten
   rooms['1,0'] = toStrings(g);
 
-  // Nordost: Leylinien-Feld
-  g = room({ s: true, w: true });
-  vline(g, 4, 1, 20, '*'); vline(g, 10, 1, 20, '*');
-  put(g, 7, 5, 'T'); put(g, 7, 16, 'T');
+  // Nordost: Leylinien-Feld. Kein Westausgang, der Spiegelhof hat dort keinen.
+  g = room({ s: true });
+  vline(g, 2, 1, 12, '*'); vline(g, 6, 1, 12, '*');
+  put(g, 4, 3, 'T'); put(g, 4, 10, 'T');
   rooms['2,0'] = toStrings(g);
 
   // Süden: Ascheweg
   g = room({ n: true, o: true });
-  vline(g, 7, 1, 12, '*');
-  rect(g, 3, 14, 11, 15, '=');
-  put(g, 2, 5, 'T'); put(g, 12, 5, 'T'); put(g, 4, 18, 'T'); put(g, 10, 18, 'T');
+  vline(g, 4, 1, 8, '*');
+  hline(g, 10, 2, 6, '=');
+  put(g, 1, 3, 'T'); put(g, 7, 3, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
   rooms['1,2'] = toStrings(g);
 
   // Südost: stille Kammer
   g = room({ w: true });
-  rect(g, 4, 6, 10, 13, '#');
-  rect(g, 5, 7, 9, 12, ',');
-  put(g, 7, 13, 'D');
+  rect(g, 2, 4, 6, 9, '#');
+  rect(g, 3, 5, 5, 8, ',');
+  put(g, 4, 9, 'D');
   rooms['2,2'] = toStrings(g);
 
   return {
     pal: 'amber',
     rooms,
     npcs: {
-      '1,1': [ { x: 3, y: 15, v: 2, dlg: 'asche_wache' } ],
-      '0,1': [ { x: 10, y: 12, v: 3, dlg: 'asche_sucherin' } ],
-      '2,1': [ { x: 7, y: 9, v: 1, dlg: 'asche_haendler' } ],
-      '1,2': [ { x: 11, y: 9, v: 2, dlg: 'asche_kind' } ],
-      '2,2': [ { x: 7, y: 16, v: 3, dlg: 'asche_alter' } ],
+      '1,1': [ { x: 2, y: 10, v: 2, dlg: 'asche_wache' } ],
+      '0,1': [ { x: 6, y: 7, v: 3, dlg: 'asche_sucherin' } ],
+      '2,1': [ { x: 4, y: 6, v: 1, dlg: 'asche_haendler' } ],
+      '1,2': [ { x: 6, y: 6, v: 2, dlg: 'asche_kind' } ],
+      '2,2': [ { x: 4, y: 11, v: 3, dlg: 'asche_alter' } ],
     },
-    shrines: { '1,0': { x: 5 * 24, y: 8 * 24 } },
+    shrines: { '1,0': { x: 2 * 40, y: 3 * 40 } },
     fragSpots: {
-      '1,1': [ [3, 6], [11, 14] ],
-      '0,1': [ [9, 3], [3, 17] ],
-      '2,1': [ [7, 4], [5, 17] ],
-      '1,2': [ [3, 8], [11, 16] ],
-      '2,0': [ [7, 9], [2, 14], [12, 6] ],
-      '2,2': [ [3, 4], [11, 18] ],
-      '1,0': [ [9, 18] ],
+      '1,1': [ [2, 2], [6, 10] ],
+      '0,1': [ [6, 2], [2, 12] ],
+      '2,1': [ [4, 2], [3, 12] ],
+      '1,2': [ [2, 5], [6, 11] ],
+      '2,0': [ [4, 6], [1, 11], [7, 4] ],
+      '2,2': [ [2, 2], [6, 12] ],
+      '1,0': [ [2, 12] ],
     },
     ambient: 'asche',
   };

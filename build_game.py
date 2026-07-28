@@ -77,9 +77,17 @@ def main():
 
     fragments = collect_fragments()
     print(f"   Wissensfragmente: {len(fragments)}")
+    if len(fragments) < 20:
+        print(f"   ⚠️  Nur {len(fragments)} Fragmente, Fundorte bleiben leer.")
     frag_json = json.dumps(fragments, ensure_ascii=False, separators=(",", ":"))
+    # Ein "</script>" im Text wuerde den Script-Block beenden und das Spiel toeten
+    frag_json = frag_json.replace("</", "<\\/")
+    if "__FRAGMENTS_PLACEHOLDER__" not in js_code:
+        raise SystemExit("FEHLER: __FRAGMENTS_PLACEHOLDER__ fehlt in src/03_data.js")
     js_code = js_code.replace("__FRAGMENTS_PLACEHOLDER__", frag_json)
 
+    if "__GAME_JS__" not in HTML_TEMPLATE:
+        raise SystemExit("FEHLER: __GAME_JS__ fehlt im HTML-Template")
     html = HTML_TEMPLATE.replace("__GAME_JS__", js_code)
     OUTPUT.write_text(html, encoding="utf-8")
     size_kb = len(html.encode("utf-8")) / 1024
