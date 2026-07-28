@@ -27,14 +27,15 @@ G.TILES = {
   } },
   // Innenboden, Dielen
   ',': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
-    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     const n = noise2(tx, ty);
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
     c.fillStyle = p.bgDeep;
-    c.fillRect(x, y + 13, T, 1); c.fillRect(x, y + 27, T, 1);
-    c.fillRect(x + Math.floor(n * 24) + 6, y, 1, 13);
-    c.fillRect(x + Math.floor((n * 53) % 26) + 6, y + 14, 1, 13);
-    c.fillStyle = p.card;
-    c.fillRect(x + 5 + Math.floor(n * 14), y + 6, 5, 1);
+    c.fillRect(x, y + 13, T, 2); c.fillRect(x, y + 27, T, 2);
+    c.fillRect(x + Math.floor(n * 24) + 6, y, 2, 13);
+    c.fillRect(x + Math.floor((n * 53) % 26) + 6, y + 15, 2, 12);
+    c.fillStyle = p.textDim; c.globalAlpha = 0.18;
+    c.fillRect(x, y + 1, T, 1); c.fillRect(x, y + 15, T, 1);
+    c.globalAlpha = 1;
   } },
   // Mauer mit Steinfugen und Kantenlicht
   '#': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
@@ -97,14 +98,20 @@ G.TILES = {
     c.fillRect(x + 6 + sway, y + 21, 28, 3);
     c.fillRect(x + 5 + sway, y + 12, 4, 3);
   } },
-  // Pflaster
+  // Pflaster und Strasse: begehbar, deshalb hell
   '=': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
-    c.fillStyle = p.card; c.fillRect(x, y, T, T);
-    c.fillStyle = p.cardLight; c.fillRect(x + 2, y + 2, T - 4, 2);
-    c.fillStyle = p.bg;
-    c.fillRect(x, y + T - 2, T, 2); c.fillRect(x + T - 2, y, 2, T);
-    c.fillRect(x, y + 19, T, 1); c.fillRect(x + 19, y, 1, T);
-    if (noise2(tx, ty) > 0.7) { c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 24, 8, 3); }
+    const n = noise2(tx, ty);
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
+    // Plattenfugen, dezent dunkler
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x, y + 19, T, 2); c.fillRect(x + 19, y, 2, T);
+    // Kantenlicht auf den Platten
+    c.fillStyle = p.textDim; c.globalAlpha = 0.22;
+    c.fillRect(x + 1, y + 1, 17, 1); c.fillRect(x + 22, y + 1, 17, 1);
+    c.fillRect(x + 1, y + 22, 17, 1); c.fillRect(x + 22, y + 22, 17, 1);
+    c.globalAlpha = 1;
+    if (n > 0.78) { c.fillStyle = p.bgDeep; c.fillRect(x + 8, y + 26, 9, 3); }
+    if (n < 0.16) { c.fillStyle = p.bgDeep; c.fillRect(x + 25, y + 8, 6, 2); }
   } },
   // Tür
   'D': { solid: false, draw: (c, x, y, p, t) => {
@@ -237,12 +244,14 @@ G.TILES['c'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
 // Sand, hell und weich
 G.TILES['s'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
   const n = noise2(tx,ty);
-  c.fillStyle = p.card; c.fillRect(x,y,T,T);
-  c.fillStyle = p.cardLight;
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.bgDeep; c.globalAlpha = 0.5;
   c.fillRect(x, y+Math.floor(n*14)+3, T, 2);
   c.fillRect(x, y+Math.floor(n*16)+21, T, 2);
-  c.fillStyle = p.cardHi;
-  c.fillRect(x+Math.floor(n*24), y+Math.floor(n*30), 4, 1);
+  c.globalAlpha = 1;
+  c.fillStyle = p.textDim; c.globalAlpha = 0.25;
+  c.fillRect(x+Math.floor(n*24), y+Math.floor(n*30), 5, 1);
+  c.globalAlpha = 1;
 } };
 
 // Gras und Kräuter
@@ -342,17 +351,19 @@ G.TILES['v'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
 // Brücke über den Abgrund
 G.TILES['B'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
   c.fillStyle = p.bgVoid; c.fillRect(x,y,T,T);
-  c.fillStyle = p.card; c.fillRect(x, y+6, T, 28);
-  c.fillStyle = p.cardLight; c.fillRect(x, y+6, T, 2);
+  c.fillStyle = p.bg; c.fillRect(x, y+5, T, 30);
+  c.fillStyle = p.textDim; c.globalAlpha = 0.4;
+  c.fillRect(x, y+5, T, 2); c.fillRect(x, y+33, T, 2);
+  c.globalAlpha = 1;
   c.fillStyle = p.bgDeep;
-  for (let i=0;i<4;i++) c.fillRect(x+2+i*10, y+8, 1, 24);
-  c.fillRect(x, y+32, T, 2);
+  for (let i=0;i<4;i++) c.fillRect(x+3+i*10, y+7, 2, 26);
 } };
 
 // Flaches Wasser, begehbar
 G.TILES['w'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
   const n = noise2(tx,ty);
   c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.fillStyle = p.bg; c.globalAlpha = 0.35; c.fillRect(x,y,T,T); c.globalAlpha = 1;
   c.globalAlpha = 0.5; c.fillStyle = p.dim;
   const o = Math.sin(t*1.5+n*6)*5;
   c.fillRect(x+4+o, y+11, 13, 2); c.fillRect(x+20-o, y+25, 11, 2);

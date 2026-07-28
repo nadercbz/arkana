@@ -284,19 +284,73 @@ G.bigSolid = (px, py) => {
   return tile ? tile.solid : false;
 };
 
-// Sichtbaren Ausschnitt zeichnen, alles andere wird uebersprungen
+// Sichtbaren Ausschnitt zeichnen, alles andere wird uebersprungen.
+// Danach ein Kanten-Pass: jede feste Kachel bekommt dort, wo sie an
+// Begehbares grenzt, eine helle Oberkante und wirft einen Schlagschatten
+// auf den Boden davor. Erst das macht sichtbar, wo Wand aufhoert und
+// Weg anfaengt.
 G.drawBigMap = (c, camX, camY, t) => {
   const M = G.activeMap(), T = G.TILE;
   const x0 = Math.max(0, Math.floor(camX / T));
   const y0 = Math.max(0, Math.floor(camY / T));
   const x1 = Math.min(M.W - 1, Math.ceil((camX + G.W) / T));
   const y1 = Math.min(M.H - 1, Math.ceil((camY + G.FIELD_H) / T));
+
+  const at = (tx, ty) => ((M.tiles[ty] || '')[tx]) || '#';
+  const solid = (tx, ty) => {
+    if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
+    const tl = G.TILES[at(tx, ty)];
+    return tl ? tl.solid : false;
+  };
+
+  // 1. Grundkacheln
   for (let ty = y0; ty <= y1; ty++) {
-    const row = M.tiles[ty] || '';
     for (let tx = x0; tx <= x1; tx++) {
-      const ch = row[tx] || '.';
       const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
-      (G.TILES[ch] || G.TILES['.']).draw(c, tx * T - camX, ty * T - camY, pal, t, tx, ty);
+      (G.TILES[at(tx, ty)] || G.TILES['.']).draw(c, tx * T - camX, ty * T - camY, pal, t, tx, ty);
+    }
+  }
+
+  // 2. Schlagschatten der Wände auf den Boden darunter
+  c.globalAlpha = 0.42;
+  c.fillStyle = '#000';
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      if (solid(tx, ty) || !G.TILES[at(tx, ty)]) continue;
+      if (G.TILES[at(tx, ty)].solid) continue;
+      const x = tx * T - camX, y = ty * T - camY;
+      if (solid(tx, ty - 1)) c.fillRect(x, y, T, 7);            // Wand über mir
+      if (solid(tx - 1, ty)) c.fillRect(x, y, 5, T);            // Wand links
+      if (solid(tx + 1, ty)) c.fillRect(x + T - 5, y, 5, T);    // Wand rechts
+      if (solid(tx - 1, ty - 1) && !solid(tx, ty - 1) && !solid(tx - 1, ty)) c.fillRect(x, y, 5, 5);
+    }
+  }
+  c.globalAlpha = 1;
+
+  // 3. Kantenlicht auf den Wänden, dort wo Begehbares angrenzt
+  for (let ty = y0; ty <= y1; ty++) {
+    for (let tx = x0; tx <= x1; tx++) {
+      if (!solid(tx, ty)) continue;
+      const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
+      const x = tx * T - camX, y = ty * T - camY;
+      const free = (ax, ay) => !solid(ax, ay);
+      // Unterkante: die zum Spieler zeigende Seite, hellster Akzent
+      if (free(tx, ty + 1)) {
+        c.fillStyle = pal.cardHi; c.fillRect(x, y + T - 5, T, 5);
+        c.fillStyle = pal.dim; c.globalAlpha = 0.5;
+        c.fillRect(x, y + T - 6, T, 1); c.globalAlpha = 1;
+      }
+      // Oberkante
+      if (free(tx, ty - 1)) { c.fillStyle = pal.cardLight; c.fillRect(x, y, T, 3); }
+      // Seiten
+      if (free(tx - 1, ty)) { c.fillStyle = pal.cardLight; c.fillRect(x, y, 3, T); }
+      if (free(tx + 1, ty)) { c.fillStyle = pal.cardLight; c.fillRect(x + T - 3, y, 3, T); }
+      // Dunkle Trennlinie zum Boden, damit die Silhouette klar bleibt
+      c.fillStyle = pal.bgVoid;
+      if (free(tx, ty + 1)) c.fillRect(x, y + T - 1, T, 1);
+      if (free(tx, ty - 1)) c.fillRect(x, y, T, 1);
+      if (free(tx - 1, ty)) c.fillRect(x, y, 1, T);
+      if (free(tx + 1, ty)) c.fillRect(x + T - 1, y, 1, T);
     }
   }
 };
