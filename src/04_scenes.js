@@ -539,30 +539,38 @@ G.bigInschrift = (idx) => {
 G.bigNpcDialog = (idx) => {
   const M = G.BIGMAP;
   const regName = M.npcRegions[idx] || 'Aschenstadt';
-  // Feste Sprecher je Region, sonst eine Stimme passend zum Fortschritt
-  const map = {
-    'Aschenstadt': 'asche_wache', 'Markt der Mustersucher': 'asche_haendler',
-    'Spiegelhof': 'hof_hueterin', 'Sternenwarte': 'sternwarte_deuterin',
-    'Kristallkaverne': 'kristall_hoerer', 'Verbrannte Bibliothek': 'biblio_archivar',
-    'Mondgarten': 'mond_gaertnerin', 'Sandtor': 'wueste_wanderer',
-    'Die stumme Pyramide': 'pyramide_waechter', 'Wandernde Dünen': 'duenen_nomade',
-    'Glutschlund': 'glut_schmied', 'Wurzelhain': 'hain_alte',
-    'Nebelsumpf': 'sumpf_faehrmann', 'Stille Bucht': 'bucht_schweigende',
-    'Die Tiefe': 'tiefe_stimme',
-  };
-  const key = map[regName];
-  const base = key && G.DIALOGE[key] ? G.DIALOGE[key].slice() : ['...'];
-  // Je nach Sammelstand hängt eine Stimme des Index oder der Sucher an
-  const n = G.state.fragmente.length, tot = G.FRAGMENTS.length;
-  const q = n / Math.max(1, tot);
-  if (G.INDEX_STIMMEN && Math.random() < 0.45) {
-    const stufe = q < 0.25 ? 'frueh' : q < 0.6 ? 'mitte' : 'spaet';
-    const arr = G.INDEX_STIMMEN[stufe] || [];
-    if (arr.length) base.push('Eine fremde Stimme, wie aus der Wand: ' + arr[Math.floor(Math.random() * arr.length)]);
-  } else if (G.SUCHER_STIMMEN && q > 0.3 && Math.random() < 0.4) {
-    base.push(G.SUCHER_STIMMEN[Math.floor(Math.random() * G.SUCHER_STIMMEN.length)]);
+  const st = G.state.stats;
+  const n = G.state.fragmente.length;
+
+  // Wer steht hier. Zwei Figuren je Region, abwechselnd nach NPC-Index.
+  const kandidaten = (G.FIGUR_ORTE && G.FIGUR_ORTE[regName]) || ['wache'];
+  const fig = G.FIGUREN[kandidaten[idx % kandidaten.length]];
+  if (!fig) return ['...'];
+
+  // Welche Stufe. Die letzte, deren Schwelle erreicht ist.
+  let stufe = fig.stufen[0];
+  for (const s of fig.stufen) if (n >= s.ab) stufe = s;
+
+  const out = [fig.name + ', ' + fig.rolle + '.'];
+  for (const z of stufe.zeilen) out.push(z);
+
+  // Hauptfiguren reagieren auf die Haltung des Spielers
+  if (fig.haltung && (st.geglaubt + st.geprueft) >= 4) {
+    const h = st.geprueft > st.geglaubt * 1.3 ? 'zweifel'
+      : st.geglaubt > st.geprueft * 1.3 ? 'glaube' : 'gleichgewicht';
+    if (fig.haltung[h]) out.push(fig.haltung[h]);
   }
-  return base;
+
+  // Und darueber legt sich manchmal eine fremde Stimme
+  const q = n / Math.max(1, G.FRAGMENTS.length);
+  if (G.INDEX_STIMMEN && Math.random() < 0.3) {
+    const stf = q < 0.25 ? 'frueh' : q < 0.6 ? 'mitte' : 'spaet';
+    const arr = G.INDEX_STIMMEN[stf] || [];
+    if (arr.length) out.push('Eine fremde Stimme, wie aus der Wand: ' + arr[Math.floor(Math.random() * arr.length)]);
+  } else if (G.SUCHER_STIMMEN && q > 0.3 && Math.random() < 0.3) {
+    out.push(G.SUCHER_STIMMEN[Math.floor(Math.random() * G.SUCHER_STIMMEN.length)]);
+  }
+  return out;
 };
 
 // ------------------------------------------------------------

@@ -1349,6 +1349,393 @@ G.drawShrine = (c, px, py, p, t) => {
 };
 
 // ------------------------------------------------------------
+// ASSETS. Eigenstaendige Objekte, die der Generator in der Welt
+// verteilt. Alle mit Bodenschatten, Kantenlicht und einer eigenen
+// Silhouette, damit sie greifbar wirken statt aufgemalt.
+// ------------------------------------------------------------
+function schatten(c, x, y, rx, ry, a) {
+  c.globalAlpha = a || 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+}
+
+G.TILES['1'] = { obj: true, solid: true, name: 'Kiefer', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.7 + n*7) * 1.4;
+    schatten(c, x+20, y+35, 10, 3.5);
+  c.fillStyle = p.card; c.fillRect(x+17, y+22, 7, 14);
+  c.fillStyle = p.bgDeep; c.fillRect(x+18, y+21, 4, 14);
+  // Drei gestapelte Kronen, nach oben schmaler
+  for (let k=0;k<3;k++){
+    const w = 26 - k*7, yy = y + 19 - k*7;
+    c.fillStyle = k===2 ? p.bright : p.dim;
+    c.beginPath();
+    c.moveTo(x+20+sw*(k+1)*0.4, yy-9);
+    c.lineTo(x+20-w/2+sw*(k+1)*0.3, yy+3);
+    c.lineTo(x+20+w/2+sw*(k+1)*0.3, yy+3);
+    c.closePath(); c.fill();
+    c.fillStyle = p.main; c.globalAlpha = 0.4;
+    c.fillRect(x+20-w/2+sw, yy+1, w*0.45, 2); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['2'] = { obj: true, solid: true, name: 'Laubbaum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.75 + n*8) * 1.8;
+    schatten(c, x+20, y+36, 12, 4);
+  c.fillStyle = p.card; c.fillRect(x+16, y+24, 8, 13);
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+23, 5, 13);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.arc(x+20+sw, y+15, 15, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+11+sw, y+19, 9, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+29+sw, y+18, 9, 0, 6.283); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.arc(x+17+sw, y+11, 9, 0, 6.283); c.fill();
+  c.fillStyle = p.bright;
+  c.beginPath(); c.arc(x+15+sw, y+8, 5, 0, 6.283); c.fill();
+  c.fillStyle = p.card; c.globalAlpha = 0.35;
+  c.beginPath(); c.arc(x+26+sw, y+23, 7, 0, 6.283); c.fill(); c.globalAlpha = 1;
+} };
+
+G.TILES['3'] = { obj: true, solid: true, name: 'Toter Baum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.5 + n*6) * 1;
+    schatten(c, x+20, y+35, 8, 3);
+  c.strokeStyle = p.dim; c.lineWidth = 5; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x+20, y+36); c.lineTo(x+19+sw, y+14); c.stroke();
+  c.lineWidth = 3;
+  c.beginPath(); c.moveTo(x+19+sw, y+22); c.lineTo(x+9+sw*1.4, y+11); c.stroke();
+  c.beginPath(); c.moveTo(x+19+sw, y+18); c.lineTo(x+31+sw*1.4, y+8); c.stroke();
+  c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x+9+sw*1.4, y+11); c.lineTo(x+5+sw*1.8, y+4); c.stroke();
+  c.beginPath(); c.moveTo(x+31+sw*1.4, y+8); c.lineTo(x+35+sw*1.8, y+2); c.stroke();
+  c.strokeStyle = p.bright; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x+18, y+34); c.lineTo(x+18+sw, y+16); c.stroke();
+} };
+
+G.TILES['4'] = { obj: true, solid: true, name: 'Findling', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+32, 13, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath();
+  c.moveTo(x+6, y+30); c.lineTo(x+9, y+13); c.lineTo(x+19, y+7);
+  c.lineTo(x+31, y+12); c.lineTo(x+34, y+29); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+10, y+14); c.lineTo(x+19, y+8); c.lineTo(x+24, y+13);
+  c.lineTo(x+14, y+18); c.closePath(); c.fill();
+  c.fillStyle = p.card;
+  c.fillRect(x+24, y+19, 7, 2); c.fillRect(x+11, y+24, 5, 2);
+  if (n > 0.6) { c.fillStyle = p.dim; c.globalAlpha = 0.5; c.fillRect(x+8, y+11, 8, 3); c.globalAlpha = 1; }
+} };
+
+G.TILES['5'] = { obj: true, solid: false, name: 'Steinhaufen', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+30, 11, 3);
+  const stones = [[10,22,9,7],[20,20,11,8],[15,15,8,6],[27,24,7,5]];
+  for (let i=0;i<stones.length;i++){
+    const [sx,sy,sw,sh] = stones[i];
+    c.fillStyle = i%2 ? p.textDim : p.text;
+    c.beginPath(); c.ellipse(x+sx+((n*13*i)%3), y+sy, sw/2, sh/2, 0, 0, 6.283); c.fill();
+    c.fillStyle = p.textBright; c.globalAlpha = 0.5;
+    c.fillRect(x+sx-sw/4, y+sy-sh/2, sw/2, 1); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['6'] = { obj: true, solid: true, name: 'Busch', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*1.1 + n*9) * 1.5;
+    schatten(c, x+20, y+33, 11, 3);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.arc(x+14+sw, y+24, 9, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+26+sw, y+25, 8, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+20+sw, y+18, 10, 0, 6.283); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.arc(x+17+sw, y+16, 6, 0, 6.283); c.fill();
+  if (n > 0.55) {
+    c.fillStyle = p.main;
+    c.fillRect(x+12+sw, y+21, 2, 2); c.fillRect(x+25+sw, y+19, 2, 2); c.fillRect(x+19+sw, y+27, 2, 2);
+  }
+} };
+
+G.TILES['7'] = { obj: true, solid: true, name: 'Fass', draw: (c,x,y,p) => {
+    schatten(c, x+20, y+33, 9, 3);
+  c.fillStyle = p.textDim; c.fillRect(x+11, y+13, 18, 20);
+  c.fillStyle = p.text; c.fillRect(x+13, y+13, 5, 20);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+11, y+17, 18, 2); c.fillRect(x+11, y+27, 18, 2);
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.ellipse(x+20, y+13, 9, 3, 0, 0, 6.283); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.ellipse(x+20, y+13, 6, 2, 0, 0, 6.283); c.fill();
+} };
+
+G.TILES['8'] = { obj: true, solid: true, name: 'Kiste', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+33, 10, 3);
+  c.fillStyle = p.textDim; c.fillRect(x+9, y+15, 22, 18);
+  c.fillStyle = p.textBright; c.fillRect(x+9, y+15, 22, 4);
+  c.fillStyle = p.text; c.fillRect(x+11, y+20, 18, 2);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+9, y+24, 22, 2);
+  c.fillRect(x+18, y+19, 3, 14);
+  if (n > 0.5) { c.fillStyle = p.dim; c.fillRect(x+12, y+27, 6, 3); }
+} };
+
+G.TILES['9'] = { obj: true, solid: true, name: 'Zaunstück', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+31, 14, 2.5, 0.24);
+  c.fillStyle = p.textDim;
+  for (const px of [6, 18, 30]) {
+    const lean = ((n*17 + px) % 4) - 2;
+    c.fillRect(x+px+lean, y+12, 4, 19);
+    c.fillStyle = p.textBright; c.fillRect(x+px+lean, y+12, 4, 2); c.fillStyle = p.textDim;
+  }
+  c.fillStyle = p.text;
+  c.fillRect(x+4, y+17, 32, 3); c.fillRect(x+4, y+25, 32, 3);
+} };
+
+G.TILES['0'] = { obj: true, solid: true, name: 'Brunnen', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+34, 14, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.ellipse(x+20, y+27, 14, 8, 0, 0, 6.283); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.ellipse(x+20, y+26, 10, 5.5, 0, 0, 6.283); c.fill();
+  // Wasser mit Reflex
+  c.fillStyle = p.dim; c.globalAlpha = 0.5;
+  c.beginPath(); c.ellipse(x+20, y+26, 8, 4, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 0.3 + 0.2*Math.sin(t*1.4); c.fillStyle = p.glow;
+  c.beginPath(); c.ellipse(x+17, y+25, 3, 1.5, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.ellipse(x+20, y+27, 14, 8, 0, Math.PI, 0); c.fill();
+  // Galgen
+  c.fillStyle = p.textDim; c.fillRect(x+7, y+4, 3, 20); c.fillRect(x+30, y+4, 3, 20);
+  c.fillRect(x+7, y+3, 26, 3);
+  c.fillStyle = p.dim; c.fillRect(x+19, y+6, 1, 8);
+  c.fillStyle = p.text; c.fillRect(x+16, y+13, 8, 5);
+} };
+
+G.TILES['A'] = { obj: true, solid: true, name: 'Zelt', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+34, 15, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+5); c.lineTo(x+35, y+33); c.lineTo(x+5, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.text;
+  c.beginPath(); c.moveTo(x+20, y+5); c.lineTo(x+27, y+33); c.lineTo(x+13, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.moveTo(x+20, y+16); c.lineTo(x+25, y+33); c.lineTo(x+15, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.textBright; c.fillRect(x+19, y+3, 2, 6);
+  if (n > 0.5) { c.fillStyle = p.main; c.globalAlpha = 0.4; c.fillRect(x+18, y+26, 4, 6); c.globalAlpha = 1; }
+} };
+
+G.TILES['C'] = { obj: true, solid: true, name: 'Karren', draw: (c,x,y,p) => {
+    schatten(c, x+20, y+32, 15, 3.5);
+  c.fillStyle = p.textDim; c.fillRect(x+6, y+14, 28, 12);
+  c.fillStyle = p.textBright; c.fillRect(x+6, y+14, 28, 3);
+  c.fillStyle = p.bgVoid; c.fillRect(x+6, y+22, 28, 2);
+  // Räder
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.arc(x+12, y+28, 6, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+28, y+28, 6, 0, 6.283); c.fill();
+  c.fillStyle = p.text;
+  c.beginPath(); c.arc(x+12, y+28, 3, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+28, y+28, 3, 0, 6.283); c.fill();
+  c.fillStyle = p.textDim; c.fillRect(x+32, y+18, 7, 3);
+} };
+
+G.TILES['E'] = { obj: true, solid: true, name: 'Torbogen', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+35, 16, 4);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+2, y+8, 8, 28); c.fillRect(x+30, y+8, 8, 28);
+  c.beginPath(); c.moveTo(x+2, y+12); c.quadraticCurveTo(x+20, y-6, x+38, y+12);
+  c.lineTo(x+38, y+4); c.quadraticCurveTo(x+20, y-14, x+2, y+4); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.fillRect(x+2, y+8, 3, 28); c.fillRect(x+30, y+8, 3, 28);
+  c.fillStyle = p.card;
+  c.fillRect(x+2, y+34, 8, 2); c.fillRect(x+30, y+34, 8, 2);
+  const gl = 0.15 + 0.1*Math.sin(t*1.6);
+  c.globalAlpha = gl; c.fillStyle = p.main; c.fillRect(x+10, y+10, 20, 26); c.globalAlpha = 1;
+} };
+
+G.TILES['F'] = { obj: true, solid: true, name: 'Obelisk', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+36, 9, 3);
+  c.fillStyle = p.card; c.fillRect(x+13, y+2, 15, 35);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+1); c.lineTo(x+27, y+9); c.lineTo(x+27, y+36);
+  c.lineTo(x+14, y+36); c.lineTo(x+14, y+9); c.closePath(); c.fill();
+  c.fillStyle = p.text; c.fillRect(x+15, y+10, 4, 26);
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+20, y+1); c.lineTo(x+24, y+8); c.lineTo(x+17, y+8); c.closePath(); c.fill();
+  // Eingravierte Zeichen
+  const gl = 0.35 + 0.3*Math.sin(t*1.2 + n*7);
+  c.globalAlpha = gl; c.fillStyle = p.main;
+  c.fillRect(x+18, y+15, 5, 2); c.fillRect(x+20, y+18, 2, 6);
+  c.fillRect(x+17, y+27, 7, 2);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['H'] = { obj: true, solid: true, name: 'Grabstein', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), lean = (n*7 % 5) - 2.5;
+    schatten(c, x+20, y+33, 10, 3);
+  c.save(); c.translate(x+20, y+33); c.rotate(lean*0.03); c.translate(-20, -33);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+13, 16, 20);
+  c.beginPath(); c.arc(x+20, y+13, 8, Math.PI, 0); c.fill();
+  c.fillStyle = p.textBright; c.fillRect(x+13, y+14, 4, 18);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+16, y+16, 8, 1); c.fillRect(x+16, y+19, 6, 1); c.fillRect(x+16, y+22, 7, 1);
+  c.restore();
+  c.fillStyle = p.dim; c.globalAlpha = 0.4;
+  c.fillRect(x+10, y+31, 20, 3); c.globalAlpha = 1;
+} };
+
+G.TILES['J'] = { obj: true, solid: true, name: 'Bücherstapel', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+33, 11, 3);
+  let yy = y + 31;
+  for (let i=0;i<5;i++){
+    const w = 20 - (i%2)*4, off = ((n*13*(i+1)) % 6) - 3;
+    c.fillStyle = [p.textDim, p.dim, p.text, p.main, p.textBright][i%5];
+    c.fillRect(x+10+off, yy, w, 4);
+    c.fillStyle = p.bgVoid; c.fillRect(x+10+off, yy+3, w, 1);
+    c.fillStyle = p.textDim; c.globalAlpha = 0.3;
+    c.fillRect(x+10+off+1, yy+1, w-2, 1); c.globalAlpha = 1;
+    yy -= 5;
+  }
+} };
+
+G.TILES['K'] = { obj: true, solid: true, name: 'Kristallcluster', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), pu = 0.5+0.4*Math.sin(t*1.5+n*8);
+  schatten(c, x+20, y+34, 12, 3.5, 0.28);
+  c.globalAlpha = pu*0.34; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+24, 21, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  const sh = [[20,4,9,27],[12,12,7,19],[28,10,6,21],[16,18,5,15],[26,20,5,13]];
+  for (let i=0;i<sh.length;i++){
+    const [cx,ty2,w2,h] = sh[i];
+    // Dunkle Silhouette darunter, damit die Scherbe auch im Hellen steht
+    c.fillStyle = p.bgVoid;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2-1); c.lineTo(x+cx+w2/2+1, y+ty2+h*0.4);
+    c.lineTo(x+cx, y+ty2+h+1); c.lineTo(x+cx-w2/2-1, y+ty2+h*0.4);
+    c.closePath(); c.fill();
+    c.fillStyle = i===0 ? p.main : p.dim;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2); c.lineTo(x+cx+w2/2, y+ty2+h*0.4);
+    c.lineTo(x+cx, y+ty2+h); c.lineTo(x+cx-w2/2, y+ty2+h*0.4);
+    c.closePath(); c.fill();
+    // Lichtkante auf der linken Flanke, Glanzgrat in der Mitte
+    c.fillStyle = p.bright; c.globalAlpha = 0.55;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2); c.lineTo(x+cx-w2/2, y+ty2+h*0.4);
+    c.lineTo(x+cx-w2/4, y+ty2+h*0.7); c.closePath(); c.fill();
+    c.globalAlpha = pu; c.fillStyle = p.textBright;
+    c.fillRect(x+cx-1, y+ty2+2, 2, h*0.45); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['L'] = { obj: true, solid: true, name: 'Laterne', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), fl = 0.6+0.4*Math.sin(t*5+n*9);
+    schatten(c, x+20, y+36, 6, 2);
+  c.globalAlpha = fl*0.22; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+12, 22, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.textDim; c.fillRect(x+18, y+16, 4, 21);
+  c.fillStyle = p.textBright; c.fillRect(x+18, y+16, 2, 21);
+  c.fillStyle = p.bgVoid; c.fillRect(x+13, y+4, 14, 13);
+  c.globalAlpha = fl; c.fillStyle = p.main; c.fillRect(x+15, y+6, 10, 9);
+  c.fillStyle = p.textBright; c.fillRect(x+18, y+8, 4, 5); c.globalAlpha = 1;
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+2, 16, 3); c.fillRect(x+12, y+15, 16, 3);
+  c.fillRect(x+13, y+4, 2, 12); c.fillRect(x+25, y+4, 2, 12);
+} };
+
+G.TILES['N'] = { obj: true, solid: true, name: 'Schrein', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+35, 13, 4);
+  c.fillStyle = p.textDim; c.fillRect(x+8, y+24, 24, 12);
+  c.fillStyle = p.textBright; c.fillRect(x+8, y+24, 24, 3);
+  c.fillStyle = p.card; c.fillRect(x+12, y+10, 16, 15);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+3); c.lineTo(x+32, y+12); c.lineTo(x+8, y+12); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+20, y+4); c.lineTo(x+26, y+11); c.lineTo(x+14, y+11); c.closePath(); c.fill();
+  const gl = 0.4+0.35*Math.sin(t*1.7);
+  c.globalAlpha = gl; c.fillStyle = p.main; c.fillRect(x+16, y+15, 8, 8);
+  c.globalAlpha = gl*0.6; c.fillStyle = p.textBright; c.fillRect(x+18, y+17, 4, 4);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['O'] = { solid: false, name: 'Teppich', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x+3, y+6, 34, 28);
+  c.fillStyle = p.dim; c.fillRect(x+5, y+8, 30, 24);
+  c.fillStyle = p.main; c.globalAlpha = 0.5;
+  c.fillRect(x+8, y+11, 24, 2); c.fillRect(x+8, y+27, 24, 2);
+  c.globalAlpha = 0.35;
+  c.fillRect(x+14, y+16, 12, 8);
+  c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep;
+  for (let i=0;i<6;i++){ c.fillRect(x+3+i*6, y+34, 3, 3); }
+} };
+
+G.TILES['P'] = { obj: true, solid: true, name: 'Pilzbaum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), gl = 0.4+0.35*Math.sin(t*1.3+n*6);
+    schatten(c, x+20, y+35, 10, 3);
+  c.globalAlpha = gl*0.2; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+16, 19, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+18, 6, 18);
+  c.fillStyle = p.main; c.fillRect(x+18, y+18, 2, 18);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.ellipse(x+20, y+16, 16, 9, 0, Math.PI, 0); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.ellipse(x+20, y+15, 12, 6, 0, Math.PI, 0); c.fill();
+  c.globalAlpha = gl; c.fillStyle = p.bright;
+  c.fillRect(x+13, y+10, 3, 3); c.fillRect(x+22, y+8, 3, 3); c.fillRect(x+26, y+12, 2, 2);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['Q'] = { obj: true, solid: true, name: 'Schilfgruppe', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    c.fillStyle = p.bgDeep; c.globalAlpha = 0.4;
+  c.fillRect(x+4, y+30, 32, 3); c.globalAlpha = 1;
+  for (let i=0;i<7;i++){
+    const bx = x + 5 + i*5 + ((n*11*i)%3);
+    const h = 16 + ((n*23*(i+1)) % 12);
+    const sw = Math.sin(t*1.6 + i*0.8 + n*5) * 2.5;
+    c.strokeStyle = i%2 ? p.dim : p.main; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(bx, y+33); c.quadraticCurveTo(bx+sw*0.5, y+33-h*0.6, bx+sw, y+33-h); c.stroke();
+    if (i%3===0){ c.fillStyle = p.bright; c.fillRect(bx+sw-1, y+33-h-3, 3, 5); }
+  }
+} };
+
+G.TILES['S'] = { obj: true, solid: true, name: 'Statue Sitzend', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+35, 13, 4);
+  c.fillStyle = p.text; c.fillRect(x+7, y+30, 26, 6);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+18, 16, 13);
+  c.fillRect(x+9, y+26, 22, 6);
+  c.beginPath(); c.arc(x+20, y+13, 7, 0, 6.283); c.fill();
+  c.fillStyle = p.textBright;
+  c.fillRect(x+13, y+19, 4, 12);
+  c.beginPath(); c.arc(x+18, y+11, 4, 0, 6.283); c.fill();
+  c.fillStyle = p.card;
+  c.fillRect(x+17, y+12, 2, 2); c.fillRect(x+22, y+12, 2, 2);
+  if (n > 0.5) { c.fillStyle = p.card; c.fillRect(x+24, y+20, 5, 8); }
+} };
+
+G.TILES['U'] = { obj: true, solid: true, name: 'Wrack', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+32, 16, 4, 0.25);
+  c.fillStyle = p.textDim;
+  c.beginPath();
+  c.moveTo(x+4, y+26); c.quadraticCurveTo(x+20, y+34, x+36, y+24);
+  c.lineTo(x+33, y+16); c.quadraticCurveTo(x+20, y+24, x+7, y+18);
+  c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+7, y+19); c.quadraticCurveTo(x+20, y+25, x+33, y+17);
+  c.lineTo(x+33, y+19); c.quadraticCurveTo(x+20, y+27, x+7, y+21); c.closePath(); c.fill();
+  c.fillStyle = p.dim; c.fillRect(x+18, y+4, 3, 16);
+  c.fillStyle = p.card; c.fillRect(x+12, y+22, 4, 5); c.fillRect(x+24, y+21, 3, 4);
+} };
+
+// ------------------------------------------------------------
 // DEKORATION: Kleinkram auf dem Boden, rein aus der Rauschfunktion.
 // Kein Speicher, kein Zustand, deterministisch. Das ist der billigste
 // Weg, damit kein Bodenfeld aussieht wie das daneben.
@@ -2909,30 +3296,38 @@ G.bigInschrift = (idx) => {
 G.bigNpcDialog = (idx) => {
   const M = G.BIGMAP;
   const regName = M.npcRegions[idx] || 'Aschenstadt';
-  // Feste Sprecher je Region, sonst eine Stimme passend zum Fortschritt
-  const map = {
-    'Aschenstadt': 'asche_wache', 'Markt der Mustersucher': 'asche_haendler',
-    'Spiegelhof': 'hof_hueterin', 'Sternenwarte': 'sternwarte_deuterin',
-    'Kristallkaverne': 'kristall_hoerer', 'Verbrannte Bibliothek': 'biblio_archivar',
-    'Mondgarten': 'mond_gaertnerin', 'Sandtor': 'wueste_wanderer',
-    'Die stumme Pyramide': 'pyramide_waechter', 'Wandernde Dünen': 'duenen_nomade',
-    'Glutschlund': 'glut_schmied', 'Wurzelhain': 'hain_alte',
-    'Nebelsumpf': 'sumpf_faehrmann', 'Stille Bucht': 'bucht_schweigende',
-    'Die Tiefe': 'tiefe_stimme',
-  };
-  const key = map[regName];
-  const base = key && G.DIALOGE[key] ? G.DIALOGE[key].slice() : ['...'];
-  // Je nach Sammelstand hängt eine Stimme des Index oder der Sucher an
-  const n = G.state.fragmente.length, tot = G.FRAGMENTS.length;
-  const q = n / Math.max(1, tot);
-  if (G.INDEX_STIMMEN && Math.random() < 0.45) {
-    const stufe = q < 0.25 ? 'frueh' : q < 0.6 ? 'mitte' : 'spaet';
-    const arr = G.INDEX_STIMMEN[stufe] || [];
-    if (arr.length) base.push('Eine fremde Stimme, wie aus der Wand: ' + arr[Math.floor(Math.random() * arr.length)]);
-  } else if (G.SUCHER_STIMMEN && q > 0.3 && Math.random() < 0.4) {
-    base.push(G.SUCHER_STIMMEN[Math.floor(Math.random() * G.SUCHER_STIMMEN.length)]);
+  const st = G.state.stats;
+  const n = G.state.fragmente.length;
+
+  // Wer steht hier. Zwei Figuren je Region, abwechselnd nach NPC-Index.
+  const kandidaten = (G.FIGUR_ORTE && G.FIGUR_ORTE[regName]) || ['wache'];
+  const fig = G.FIGUREN[kandidaten[idx % kandidaten.length]];
+  if (!fig) return ['...'];
+
+  // Welche Stufe. Die letzte, deren Schwelle erreicht ist.
+  let stufe = fig.stufen[0];
+  for (const s of fig.stufen) if (n >= s.ab) stufe = s;
+
+  const out = [fig.name + ', ' + fig.rolle + '.'];
+  for (const z of stufe.zeilen) out.push(z);
+
+  // Hauptfiguren reagieren auf die Haltung des Spielers
+  if (fig.haltung && (st.geglaubt + st.geprueft) >= 4) {
+    const h = st.geprueft > st.geglaubt * 1.3 ? 'zweifel'
+      : st.geglaubt > st.geprueft * 1.3 ? 'glaube' : 'gleichgewicht';
+    if (fig.haltung[h]) out.push(fig.haltung[h]);
   }
-  return base;
+
+  // Und darueber legt sich manchmal eine fremde Stimme
+  const q = n / Math.max(1, G.FRAGMENTS.length);
+  if (G.INDEX_STIMMEN && Math.random() < 0.3) {
+    const stf = q < 0.25 ? 'frueh' : q < 0.6 ? 'mitte' : 'spaet';
+    const arr = G.INDEX_STIMMEN[stf] || [];
+    if (arr.length) out.push('Eine fremde Stimme, wie aus der Wand: ' + arr[Math.floor(Math.random() * arr.length)]);
+  } else if (G.SUCHER_STIMMEN && q > 0.3 && Math.random() < 0.3) {
+    out.push(G.SUCHER_STIMMEN[Math.floor(Math.random() * G.SUCHER_STIMMEN.length)]);
+  }
+  return out;
 };
 
 // ------------------------------------------------------------
@@ -4345,113 +4740,113 @@ G.SUCHER_STIMMEN = [
 // ============================================================
 G.BIGMAP = (function () {
   const MAP_W = 72, MAP_H = 108;
-  const tiles = [
+              const tiles = [
     '########################################################################',
     '########################################################################',
-    '##pp...................##......................##...................RR##',
-    '###......................#......................##................RRRR##',
-    '####.............p...............................#................RRRR##',
-    '#####............pp................................................RRR##',
-    '######............p................................................RRR##',
-    '#######............................................................RRR##',
-    '#######...........................##vvv##......................R..RRRR##',
-    '########.........................###...###.....................R..RRRR##',
-    '#########........................##..M..##.....................RR.RRRR##',
-    '##########.......................#.......#.....................RRR.RRR##',
-    '##########.......................#.o...o.#.....................RRR..RR##',
-    '##########.......................##.....##...........R.........RRRR..R##',
-    '##########..ii........p..........##.....##...........RR.cc......RRR..R##',
-    '###########.iii.......pp..........#.....#............RRRcc.......RRR.R##',
-    '###########.iii.ii.....ppp..........................RRRRRcc.......RRRR##',
-    '###########..iii.ii....ppp........................c.RRRRRRcc......RRRR##',
-    '###########...ii.iii...ppp.......................cccRRRRRRcc......RRRR##',
-    '############..iii..i...ppp.......................cccRRRRRRRc.......RRR##',
-    '##.##########..ii.......ppp......................cccRRRRRRRc........RR##',
-    '##..##########...........pp......................cc.RRRRRRR..........R##',
-    '##..#########............pp.........................RRRRRRRR..........##',
-    '##.....#####..............p........................cRRRRRRRRR.........##',
-    '##.....#####.........................................RRR...RRR........##',
-    '##.....#####................................................RR........##',
-    '##.....#####.................................................R........##',
-    '##.....#####.................................................RR.......##',
-    '##.......###...p..............................................R.....c.##',
-    '##........##...p..............................................R.....cc##',
-    '##.........#..................................................R.....cc##',
-    '##..............p........i....................................RR....cc##',
-    '##......................bbb....................................R..c...##',
-    '##...............#.......bb...........................................##',
-    '##pp.............#........b.....ooo...................................##',
-    '##p..............#.........b...o......................................##',
-    '##...............#.........b...o......................................##',
-    '##...............#..........o.o.........###...........................##',
-    '##......................................####..........................##',
-    '##......................................####..........................##',
-    '##.....................................o#####.........................##',
-    '##.....................................o#####.........................##',
-    '##..............................o.....o#######..................ssssss##',
-    '##..............................#.....########.........sssssssssssssss##',
-    '##....................................#########...ssssssssssssssssssss##',
-    '##....................................#########...ssssssssssssssssssss##',
-    '##.....................................########..sssssssssssssssssssss##',
-    '##.g.g.............#######.....##.....##########.sssssssssssssssssssss##',
-    '##.gggg...........########....###.....###########sssssssssssssssssssss##',
-    '##.gggg...........########...##.........##.#######ssssssssssssssssssss##',
-    '##.gggg...........#######....#..b,,,,,b..#..######ssssssssssssssssssss##',
-    '##..gg............########...#.b,,,,,,,b.#..######ssssssssssssssssssss##',
-    '##..gg.........b...#######...#.b,,...,,b.#...######sssssssssssssssssss##',
-    '##....g.........b..########....b,,...,,....########sssssssssssssssssss##',
-    '##....ggg.......bb..########....,,...,,....#######ssssssssssssssssssss##',
-    '##....gggg......bbb..#######...b,,...,,.....#...ssssssss##sssss####sss##',
-    '##.....gggg.B....bb..#########.b,,,,,,,.........ssssssssssssssssss#sss##',
-    '##.w...gggg.B....gg..##.######...,,,,,..........sssssssssssssss##s#sss##',
-    '##.w~..gggggB.........#.#######.................ssssssssss,,,,,,#s#sss##',
-    '##.~~~..ggggB............######.................sss#ssssss,,,s,,#s#sss##',
-    '##w~~~~..gggB.............####..................sss##sssss,,,,,,#s#sss##',
-    '##~~~~~w.gg.B....w..r..rr..###..................sss###ss#s#,,,,,#s#sss##',
-    '##~~~BBBBBBBBBBBBBBB.r.rr.......................ssss##ss#s#######s#sss##',
-    '##~~~~~www..B........rr.rr.....................ssssss#ss#sssssssss#sss##',
-    '##~~~~wwww..B........rr.rr.....................sssssssss###########sss##',
-    '##~~~~wwww..B...pp....rrr......................sssssssssssssssssssssss##',
-    '##~~~~wwwww.B....p....rrr......##..............sssssssssssssssssssssss##',
-    '##~~~~~wwwwwB....pp...rrrr.T...##..............sssssssssssssssssssssss##',
-    '##~~~~~wwwwwB.....p...r..r.To...#..............sssssssssssssssssssss#s##',
-    '##~~~~~wwwwwB.....pp......rT.....#.............sssssssssssssssssssss#s##',
-    '##~~~~~wwwwww.r....p...r.Trr....................sssssssss#ssssssssss####',
-    '##~~~~~~wwwwg............Trr....................sssssssss##ssssssssss###',
-    '##~~~~~~wwwgg..r........rr.r..o.o...............sssssssss###ssssssssss##',
-    '##~~~~~~wwwggg..rr.......rr....oo...............sssssssss####sssssssss##',
-    '##~~~~~~wwgggg..rrr.......r.....................sssssssss####sssssssss##',
-    '##~~~~~~wgggggg.rrrr......r.......................ffsssss#####ssssssss##',
-    '##~~~~~~ppggggg.rrrr......r........................fff...#####ssssssss##',
-    '##~~~~~~pppgggggrrr................................fff...RRRR#ssssssss##',
-    '##~~~~~ppppgggggg.r........r........................ff...RRRRRRR.sssss##',
-    '##~~~~.ppppggggggg..........r........................f....RRRRRRR..Rss##',
-    '##~~~~...ppggggggg.r.r......r........................f..R.RRRRRRRR....##',
-    '##~~~r...ppggggggggrrrr...............................f.RR.RRRRRRR....##',
-    '##~~rTrr..pgggggggg.rrr.....rr.........................f.R.RRRRRRR....##',
-    '##w.rTTrr.gpgggggggrrrr.....r..........................ffRRRRRRRRR....##',
-    '##...TTT.rgppggggggrrr............................v....f..RRRRRRRR....##',
+    '##pp..Q......05.....O.6##..L..L................##.5......55....4....RR##',
+    '###...2Q................S#5.S..4.....4L.........##S.....4.K45K545LRRRR##',
+    '####.............p...N6..F.LF....................#.......4...55...RRRR##',
+    '#####20..........pp....................555.......FL.......44.....4.RRR##',
+    '######O..........6p2...........5......5....5.5.F5........P4P......5RRR##',
+    '#######Q6PQ......06...........................5..4..K.P555.K.....5.RRR##',
+    '#######..........N.............5.5##vvv##.......4LS.F.K5.4.....R..RRRR##',
+    '########.2.P.6.PQ................###...###...........K..5P.....R..RRRR##',
+    '#########..Q...........22.L5N....##..M..##..........4454K4.....RR.RRRR##',
+    '##########Q6...........P.......S.#.......#L....................RRR.RRR##',
+    '##########.......5......0.......5#.o...o.#...........5.........RRR..RR##',
+    '##########.......5...N066......4.##.....##5..F.....4.RP5.KK....RRRR5.R##',
+    '##########2.ii........p6.......5.##5....##.........P.RR.ccK...5.RRR..R##',
+    '###########.iii......Qpp........4.#5....#4...4S...K5KRRRccK5.....RRR.R##',
+    '###########.iii.ii..520ppp..F...55...5.............5RRRRRccL......RRRR##',
+    '###########..iii.ii....ppp.........4.E........F..Kc.RRRRRRcc......RRRR##',
+    '###########...ii.iii...ppp.......F.L.S.......L...cccRRRRRRcc5K....RRRR##',
+    '############..iii..i...ppp........S5.........N...cccRRRRRRRc.......RRR##',
+    '##.##########..ii.......ppp.......4FS5.5.........cccRRRRRRRc......45RR##',
+    '##..##########..5........pp......5....44.5F......cc.RRRRRRR.......5.PR##',
+    '##.Q#########...........6pp.....F.....5LFL5NF5......RRRRRRRR.....K....##',
+    '##.Q66.#####P566......2Q26p....4.......L.....4.....cRRRRRRRRR.....5...##',
+    '##50...#####..56P.....Q.5......55............L.....55RRR...RRR....F...##',
+    '##.5.20#####..........66.6......5............4......5......5RR........##',
+    '##...5.#####..........56...........................4.5.......R...5....##',
+    '##..Q2O#####......................LL.F.............KL5.......RR.......##',
+    '##.60.6.6###...p....O.25..........FFS5.......54K....F.4.L.....R5L...c.##',
+    '##........##...p.....PP............4.L.4L4L...K45..P..........R.5...cc##',
+    '##6........#..0......5.Q..........4N.5......EKK....5..........R5....cc##',
+    '##............6.p....5..6i...5.4.............4.5.K4...........RRL...cc##',
+    '##...........Q..QN......bbb..........5L.....5.....K5...........R5.c...##',
+    '##.............OJ#......Obb..5..............5.....45............P..4.5##',
+    '##pp...........3.#O.......b.J...ooo.........5........5...........K.55F##',
+    '##p......8J.L....#.J.......b97.o..................5PKP...........L....##',
+    '##............4.H#.........b...oH38...............K.KL...........KKK..##',
+    '##L..........48..#S.OO......o.o..C.C....###.......L.L...........4..K4.##',
+    '##...........L..8....4.............5....####.....P5..K.5..P45......5L4##',
+    '##...44.......J....OO.O.........35....3.####.......K54P...KKK......K..##',
+    '##............J.O4...8O.J..........4.4.o#####......4K5.....K..........##',
+    '##.......J.O.........J.J...............o#####....4.4................5.##',
+    '##.......J..S......4L.OHJ......9o.....o#######..9..K5...........ssssss##',
+    '##...........L.....J...........7#.....########.........sssssssssssssss##',
+    '##.........L3......L.....H..H37.L.....#########C..ssssssssssssssssssss##',
+    '##......O4...O.....L......O..5........#########.54ssssssssssssssssssss##',
+    '##....H.S4.J......OS..........S........########..sssssssssssssssssssss##',
+    '##.g.g..HH..J.....H#######5..5.##.....##########.sssssssssssssssssssss##',
+    '##.ggg6..3.J......########...9###....7###########sssssssssssssssssssss##',
+    '##.ggggP6J........########L7.##.........##.#######ssssssssssssssssssss##',
+    '##.gggP..3........#######..H.#..b,,,,,b..#..######ssssssssssssssssssss##',
+    '##..gg.3.5........########...#.b,,,,,,,b.#..######ssssssssssssssssssss##',
+    '##..gg.........b...#######...#.b,,...,,b5#...######sssssssssssssssssss##',
+    '##..35g.3.......b..########....b9,...,,....########sssssssssssssssssss##',
+    '##.6.5g3gQ5Q36.LbbL.########....,,...,,...5#######ssssssssssssssssssss##',
+    '##....Ugg65L....bbb..#######...b,,...,,.....#..5ssssssss##sssss####sss##',
+    '##...6Qgggg.B....bb..#########5b,,,,,,,.........ssssssssssssssssss#sss##',
+    '##.w5P6gggg.B....ggOH##.######.53,,,,,.........5sssssssssssssss##s#sss##',
+    '##.w~6.5ggggB....3Q63.#.#######..............7..ssssssssss,,4,3E#s#sss##',
+    '##.~~~..ggggB....353.....######..............L.Lsss#ssssss,AUs5,#s#sss##',
+    '##w~~~~6.gggB..Q....4.....####....L3..5.L...C.55sss##sssss,4,,,,#s#sss##',
+    '##~~~~~w.ggQB.6UPwP6r..rr.S###...9L..9.4L..85..5sss###ss#s#,,,,,#s#sss##',
+    '##~~~BBBBBBBBBBBBBBB2r.rr........98...S8.5....9Sssss##ss#s#######s#sss##',
+    '##~~~~~www..B........rr.rr3.....93C.L38..53....ssssss#ss#sssssssss#sss##',
+    '##~~~~wwww..BQPQ.....rr.rr.......8.....34......sssssssss###########sss##',
+    '##~~~~wwww..BQU.pp....rrr..........8........89.sssssssssssssssssssssss##',
+    '##~~~~wwwww.B6...p...6rrr......##4.4...........sssssssssssssssssssssss##',
+    '##~~~~~wwwwwB3...pp..2rrrr.T...##..4......34.7.sssssssssssssssssssssss##',
+    '##~~~~~wwwwwB3....p...r..r.To...#.........8....sssssssssssssssssssss#s##',
+    '##~~~~~wwwwwB4....pp66....rT.....#........7....sssssssssssssssssssss#s##',
+    '##~~~~~wwwwww6r....p.15r.Trr5.............3.....sssssssss#ssssssssss####',
+    '##~~~~~~wwww611..........Trr5.........8.........sssssssss##ssssssssss###',
+    '##~~~~~~www1g.2r........rr.r..o.o.....8.5HH.....sssssssss###ssssssssss##',
+    '##~~~~~~wwwggg.2rr.......rr....oo.4.......35....sssssssss####sssssssss##',
+    '##~~~~~~wwgggg1.rrr.......r.....433......8......sssssssss####sssssssss##',
+    '##~~~~~~wggggg92rrrr......r......L.......8........ffsssss#####ssssssss##',
+    '##~~~~~~ppggggg.rrrr......r..............4.........fff...#####ssssssss##',
+    '##~~~~~~pppgggggrrr......................7......4..fff...RRRR#ssssssss##',
+    '##~~~~~pppp025ggg.r........r....5....5..53......HK5.ff...RRRRRRRUsssss##',
+    '##~~~~.ppppggggggg....6.2.4.r......5...853..5.K...5..f....RRRRRRR44Rss##',
+    '##~~~~...ppggggggg.r.r..266.r....334.....34.H........f..R.RRRRRRRRU...##',
+    '##~~~r...ppggggg6ggrrrr.5.56.4...3.9.5..4....454......f.RR.RRRRRRR....##',
+    '##~~rTrr..pgggggggg.rrr.42..rr8H5H.53.....H............f.R.RRRRRRRLHL.##',
+    '##w.rTTrr.gpgggggggrrrr.....r..7C..........53..........ffRRRRRRRRR....##',
+    '##...TTT.rgppggggg4rrr............................v....f..RRRRRRRR...L##',
     '##....ii.rggpgggggg.rr....................................RRRRRRRR....##',
-    '##....ii...ggggggrr..rr.........................BBBBBBBBBvvvBvvvvR....##',
-    '##....ii....gggggrrg.rrr...ppp..................BBBBBBBBBBvvBvvvvR....##',
-    '##...........#gggggg..rr...ppp..................BBBBBBBBBBBvBvvvvRR...##',
-    '##...........#.ggggrg..r...pppp.................BBBBBBBBBBBBBBBBBRR...##',
-    '##..............gggrg......ppppp...........R....vvvBBBBBBvvvBvvvvRRR..##',
-    '##...............rgrg......ppppp...........RR...vvBBBBBBvvvvBvvvvRRRR.##',
-    '##...............##rg.......pppp...........RR...vBBBBBBBvvvvBvvvvRRRRR##',
-    '##................##rg......pppp..........RRR...BBBBBBBBvvvvBvvvvRRRRR##',
-    '##...........i.....#rg.......pppp..........RRR....BB..Bvvv.......RRRRR##',
-    '##...........i......#gg.......ppp..........RRRR.....B.vvv.........RRRR##',
-    '##...........i.......#g.......pppg.........RRRR........vv.........RRRR##',
-    '##...........i........#g.......pppRR........RRR........vv..........RRR##',
-    '##..........ii.........#........ppRRR...............................RR##',
-    '##................p....#rg.......pRRR................................R##',
-    '##.....................##rgrr.....RRRR................................##',
-    '##.....................###rrrr....fRRR.R..............................##',
-    '##.....................###rrTTr...ffRRRRR.......RR....................##',
-    '##.....................####rTTTr...fRRRRRRRRRRRRRR....................##',
-    '##.....................####TTTTr....RRRRRRRRRRRRRRR...................##',
-    '##.....................#####TTTTR....RRRR..RRRRRRRRf..................##',
+    '##....ii...g2ggggrr..rr........35...............BBBBBBBBBvvvBvvvvR....##',
+    '##....ii25Q2299ggrr2.rrr61.ppp........73........BBBBBBBBBBvvBvvvvR...4##',
+    '##.....P.....#6g21220.rr2.2ppp...3..3HH........4BBBBBBBBBBBvBvvvvRR...##',
+    '##.....P0....#.gg2Nr55.r..4pppp....455.......3.KBBBBBBBBBBBBBBBBBRR..F##',
+    '##......5.....0Pg2gr4....4.ppppp...85.75...R..55vvvBBBBBBvvvBvvvvRRR..##',
+    '##.....25......N.r6rg......ppppp...........RR...vvBBBBBBvvvvBvvvvRRRR.##',
+    '##...N.P........5##rg.......pppp...........RR5..vBBBBBBBvvvvBvvvvRRRRR##',
+    '##.Q.P.N.......6N.##rg......pppp........H.RRR.45BBBBBBBBvvvvBvvvvRRRRR##',
+    '##2.6.N6.....i..2..#rg.......pppp.........3RRR....BB53Bvvv...44..RRRRR##',
+    '##2..........i......#gg...565.ppp..........RRRR.....B.vvvK..3.44..RRRR##',
+    '##...........i.......#g.......pppg5.....5.5RRRR........vv........FRRRR##',
+    '##...........i........#g.....52pppRR........RRR........vv5.....55..RRR##',
+    '##..........ii....5....#.....61.ppRRRK.......5.................F.3..RR##',
+    '##5...............p....#rg...42..pRRR........53K...............4K3...R##',
+    '##...........65........##rgrr.....RRRR5......5.L...3.4F........5.F....##',
+    '##.....................###rrrr....fRRR.R.......43K..L55.....444F......##',
+    '##...........5........O###rrTTr...ffRRRRR.......RR.5F..............4..##',
+    '##...........5Q......5.####rTTTr...fRRRRRRRRRRRRRR.4..4....L.3......L.##',
+    '##.........P.Q6........####TTTTr....RRRRRRRRRRRRRRR.5.5.4..33......K..##',
+    '##.5P.56.2.6.2..P6.65..#####TTTTR5...RRRR..RRRRRRRRf.3..K..K.......5U.##',
     '########################################################################',
     '########################################################################',
   ];
@@ -4642,6 +5037,13 @@ G.drawBigMap = (c, camX, camY, t) => {
     const tl = G.TILES[at(tx, ty)];
     return tl ? tl.solid : false;
   };
+  // Freistehende Objekte sind zwar fest, aber keine Architektur. Sie bekommen
+  // keine Wandkanten und werfen keinen Wandschatten, sie bringen ihren eigenen mit.
+  const wand = (tx, ty) => {
+    if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
+    const tl = G.TILES[at(tx, ty)];
+    return tl ? (tl.solid && !tl.obj) : false;
+  };
 
   // 1. Grundkacheln plus Dekoration auf begehbarem Boden
   for (let ty = y0; ty <= y1; ty++) {
@@ -4650,7 +5052,13 @@ G.drawBigMap = (c, camX, camY, t) => {
       const pal = G.BIOMES[bio] || G.pal;
       const ch = at(tx, ty);
       const x = tx * T - camX, y = ty * T - camY;
-      (G.TILES[ch] || G.TILES['.']).draw(c, x, y, pal, t, tx, ty);
+      const tl = G.TILES[ch] || G.TILES['.'];
+      if (tl.obj) {
+        // Erst der Boden des Bioms, dann das Objekt darauf. So steht es im
+        // Gelaende statt auf einer eigenen Platte.
+        G.TILES['.'].draw(c, x, y, pal, t, tx, ty);
+      }
+      tl.draw(c, x, y, pal, t, tx, ty);
       // Nur auf schlichtem Boden, sonst wird es unruhig
       if (ch === '.' || ch === ',' || ch === 's' || ch === '=') {
         G.drawDeco(c, x, y, tx, ty, bio, pal, t);
@@ -4677,13 +5085,13 @@ G.drawBigMap = (c, camX, camY, t) => {
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
       const tl = G.TILES[at(tx, ty)];
-      if (!tl || tl.solid) continue;
+      if (!tl || (tl.solid && !tl.obj)) continue;
       const x = tx * T - camX, y = ty * T - camY;
       c.save(); c.translate(x, y);
-      if (solid(tx, ty - 1)) { c.fillStyle = SG.top; c.fillRect(0, 0, T, 14); }
-      if (solid(tx - 1, ty)) { c.fillStyle = SG.left; c.fillRect(0, 0, 12, T); }
-      if (solid(tx + 1, ty)) { c.fillStyle = SG.right; c.fillRect(T - 12, 0, 12, T); }
-      if (solid(tx, ty + 1)) { c.fillStyle = SG.bottom; c.fillRect(0, T - 10, T, 10); }
+      if (wand(tx, ty - 1)) { c.fillStyle = SG.top; c.fillRect(0, 0, T, 14); }
+      if (wand(tx - 1, ty)) { c.fillStyle = SG.left; c.fillRect(0, 0, 12, T); }
+      if (wand(tx + 1, ty)) { c.fillStyle = SG.right; c.fillRect(T - 12, 0, 12, T); }
+      if (wand(tx, ty + 1)) { c.fillStyle = SG.bottom; c.fillRect(0, T - 10, T, 10); }
       c.restore();
     }
   }
@@ -4691,10 +5099,10 @@ G.drawBigMap = (c, camX, camY, t) => {
   // 3. Kantenlicht auf den Wänden, dort wo Begehbares angrenzt
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      if (!solid(tx, ty)) continue;
+      if (!wand(tx, ty)) continue;
       const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
       const x = tx * T - camX, y = ty * T - camY;
-      const free = (ax, ay) => !solid(ax, ay);
+      const free = (ax, ay) => !wand(ax, ay);
       // Unterkante: die zum Spieler zeigende Seite, hellster Akzent
       if (free(tx, ty + 1)) {
         c.fillStyle = pal.cardHi; c.fillRect(x, y + T - 5, T, 5);
@@ -4755,64 +5163,64 @@ G.drawBigLight = (c, camX, camY, t) => {
 // ============================================================
 G.CITYMAP = (function () {
   const CITY_W = 40, CITY_H = 60;
-  const tiles = [
+    const tiles = [
     '########################################',
     '########################################',
     '##W###==W#W#W##W#W==WW####W##W==W#W#W###',
-    '##W###==W#########==#########W==W#######',
-    '#####W==##########==#########W==########',
-    '#####W==##########==#########W==#####W##',
-    '######==W#########==##########==W#######',
-    '##W##W==###WW##WWW==W####WWWWW==WW#W####',
-    '##====================================##',
-    '##====================================##',
-    '##W##W==##..T.T###==#####W#W#W==W####W##',
-    '#####W==##g....##W==##########==########',
-    '#####W==##.....##W==W#########==W####W##',
+    '##W###=CW#########==#########W=3W#######',
+    '#####W=8##########==#########W==########',
+    '#####W==##########5O#########W5=#####W##',
+    '######=LW#########==##########==W#######',
+    '##W##W==###WW##WWW=5W####WWWWW5=WW#W####',
+    '##===2==8========8======4===5=======L=##',
+    '##======L========O=J=======L====95====##',
+    '##W##W==##..T.T###==#####W#W#W=3W####W##',
+    '#####W2=##g....##W==##########==########',
+    '#####W==##.C...##W==W#########=8W####W##',
     '##WWWW==W#W##WW##W==#W#WW#WWWW==########',
-    '######==========================W####W##',
-    '######==========================W####W##',
-    '####WW==#WWWWWW#W#==##..T..#WW==W####W##',
-    '######==##########==##...T.###==########',
-    '#####W==##########==W#.....###==########',
+    '######==============L===3======LW####W##',
+    '######=============6=======8=5==W####W##',
+    '####WW==#WWWWWW#W#==##.5T..#WW=3W####W##',
+    '######=9##########==##...T.###L=########',
+    '#####W==##########=3W#.....###8=########',
     '#####W==W#W##W##WW==WW#W##WW#W==WW##WW##',
-    '##====================================##',
-    '##====================================##',
-    '##WWWW==..........==W#WW#WWW##==#WWWWW##',
-    '######==.~~~~~~~~.==#########W==W#######',
-    '##W###==.~~~~~~~~.==#########W==#####W##',
-    '##W###==.~~~~~~~~.==W########W==.....###',
-    '######==.~~~~~~~~.==W#########==.gT..###',
-    '######==...T......==##########==....TW##',
-    '##W##W==============##########==########',
-    '##W###==..T.....T.==W#########==########',
-    '##W###==.....gTT..==W#########==########',
-    '##WWW#==...g....g.==#WW#WW#WW#==#W##WW##',
-    '##====================================##',
-    '##====================================##',
-    '##WWWW==WWW##WWW#W==WW##W#W##W==W###W###',
+    '##============L===============5===O===##',
+    '##========================5======L====##',
+    '##WWWW==........7.==W#WW#WWW##==#WWWWW##',
+    '######==.~~~~~~~~C==#########W==W#######',
+    '##W###==.~~~~~~~~.9=#########WC=#####W##',
+    '##W###C=.~~~~~~~~.==W########W==...5.###',
+    '######==2~~~~~~~~.==W#########==.gT..###',
+    '######=3..CT2...C.L=##########==....TW##',
+    '##W##W=7====O==9====##########==########',
+    '##W###7=.LT.....T5==W#########==########',
+    '##W###==7.L..gTT6.==W#########==########',
+    '##WWW#4C...g....g.==#WW#WW#WW#=5#W##WW##',
+    '##=LH=====9===================5L==L===##',
+    '##=======99======================5====##',
+    '##WWWW5=WWW##WWW#W==WW##W#W##W==W###W###',
     '######==##########==##.....###==########',
-    '######==W#########==W#...g.###==W#######',
-    '#####W==W########W==W#.....###==########',
-    '#####W==WW#WW##W#W==#WWW##WWWW==########',
-    '######==========================W#######',
-    '######==========================W####W##',
+    '######=JW#########==W#...5.###==W#######',
+    '#####W=5W########W=5W#.....###==########',
+    '#####W=OWW#WW##W#W==#WWW##WWWW==########',
+    '######=====O====================W#######',
+    '######=========O=O==5===========W####W##',
     '###WW#==W####WWWW#==#WW###W#WW==W####W##',
-    '##W###==##.g...###==W#########==########',
+    '##W###==##.g...###=JW#########==########',
     '#####W==##.....###==#########W==########',
     '######==##....T##W==##########==W#######',
     '###W#W==#W#WWW####==WW#WWW#W#W==#####W##',
-    '##====================================##',
-    '##====================================##',
+    '##==================8===7===2==5===9==##',
+    '##=============================O==5===##',
     '##WWWW==##########==##########==W##WWW##',
-    '##W##W==##########==#WWWWWWWW#==#####W##',
-    '##W##W==##########==#WWWWWWWW#==########',
+    '##W##W7=##########==#WWWWWWWW#==#####W##',
+    '##W##W=8##########==#WWWWWWWW#==########',
     '##WW#W==##########==####DD####==W####W##',
-    '######================......====########',
-    '######================......====########',
-    '######==#W.....##W==WWWWWWWWWW==W#######',
-    '######==W#.....##W==##########==W#######',
-    '######==##.g..g###==##########==########',
+    '######====84C=C======9..55..=8==########',
+    '######==============5=......==6=########',
+    '######6=#W....5##W==WWWWWWWWWW==W#######',
+    '######==W#..9..##W==##########==W#######',
+    '######==##.g.4g###==##########==########',
     '######==W#WWWW##WW==WWWWWW##W#==W##W#W##',
     '########################################',
     '########################################',
@@ -4882,6 +5290,429 @@ G.drawDayTint = (c) => {
   c.fillRect(0, 0, G.W, G.FIELD_H);
   c.globalCompositeOperation = 'source-over';
   c.globalAlpha = 1;
+};
+
+// ===== 08_figuren.js =====
+'use strict';
+// Wiederkehrende Figuren. Ihre Haltung entwickelt sich mit dem Fortschritt.
+G.FIGUREN = {
+
+  weber: {
+    name: 'Archivarin Weber',
+    rolle: 'Feldarchivarin des Index',
+    // Stufen nach gesammelten Fragmenten: 0 bis 15, 16 bis 40, 41 bis 70, ab 71
+    stufen: [
+      { ab: 0, zeilen: [
+        'Bitte treten Sie einen Schritt zurück. Der Boden hier ist noch nicht freigegeben.',
+        'Ich nehme nur auf, was ich sehe. Was ich aufnehme, wird geprüft. Was geprüft ist, wird verwahrt. Das ist alles.',
+        'Sie tragen Asche an den Schuhen. Waren Sie unten in den Sälen. Nein, sagen Sie nichts, ich muss es dann notieren.',
+        'Der Mantel ist grau, damit man mich nicht mit jemandem verwechselt, der etwas verspricht.',
+      ] },
+      { ab: 16, zeilen: [
+        'Sie sammeln. Gut. Ich sage nicht, dass es erlaubt ist. Ich sage, dass ich es verstehe.',
+        'Vor dem Brand durfte jeder lesen. Man hat es uns später so erzählt, als wäre das der Fehler gewesen.',
+        'Ich habe einen Mann gekannt, der aus vier Zeilen eine ganze Ordnung gebaut hat. Die Ordnung hat neunzig Leute gekostet. Er hatte die vier Zeilen richtig gelesen.',
+        'Das ist das Unangenehme. Er hatte recht und es war trotzdem falsch.',
+      ] },
+      { ab: 41, zeilen: [
+        'Ich habe letzte Woche eine Fundstelle freigegeben, die ich vor zwei Jahren versiegelt hätte. Ich weiß nicht, wann ich mich geändert habe.',
+        'Man versiegelt nicht das Wissen. Man versiegelt die Zeit, die jemand bräuchte, um es zu verstehen. Nur hat niemand die Zeit dazugelegt.',
+        'Meine Vorgesetzte fragt nicht mehr, was ich finde. Sie fragt, wen ich treffe. Das ist ein Unterschied und er gefällt mir nicht.',
+        'Wenn Sie mich das nächste Mal sehen und ich Sie nicht grüße, dann liegt es nicht an Ihnen.',
+        'Ich verteidige nicht, wie wir es tun. Ich verteidige nur, warum. Das reicht immer seltener.',
+      ] },
+      { ab: 71, zeilen: [
+        'Mein Name steht seit Dienstag nicht mehr in der Dienstliste. Ich stehe hier und die Liste ist trotzdem vollständig.',
+        'Sie erkennen mich. Behalten Sie das bitte. Nicht aufschreiben, das findet man. Behalten.',
+        'Ich habe die Formulare selbst mitentworfen. Es ist ein sauberes Verfahren. Es tut sauber weh.',
+        'Weber. W, E, B, E, R. Sagen Sie es einmal laut, wenn Sie draußen sind. Mehr will ich nicht.',
+      ] },
+    ],
+    haltung: {
+      glaube: 'Sie nehmen alles an, ohne zu wiegen. Genau davor haben wir Angst, und genau deshalb sind wir gefährlich geworden.',
+      zweifel: 'Sie prüfen jedes Stück. Das ist die Arbeit, die wir Ihnen weggenommen haben. Nehmen Sie sie sich zurück.',
+      gleichgewicht: 'Sie glauben und Sie prüfen. Wenn das jemand vor dem Brand gemacht hätte, wäre ich heute Lehrerin.',
+    },
+  },
+
+  ilva: {
+    name: 'Ilva Kern',
+    rolle: 'Kartografin der Mustersucher',
+    stufen: [
+      { ab: 0, zeilen: [
+        'Nicht ins Licht stellen, Sie werfen einen Schatten auf mein Blatt.',
+        'Karten kosten. Nicht Geld. Sie kosten, dass ich hingehen musste.',
+        'Wenn Sie fragen wollen, wo etwas ist, fragen Sie lieber, wann.',
+      ] },
+      { ab: 16, zeilen: [
+        'Sie haben ein Fragment aus dem Spiegelhof. Zeigen Sie. Nicht geben, nur zeigen.',
+        'Der Mondgarten liegt seit dem Frühjahr acht Schritte weiter westlich. Niemand hat ihn getragen.',
+        'Ich zeichne keine Orte. Ich zeichne, wo Orte gerade Lust haben zu sein.',
+        'Vor dem Brand gab es angeblich eine Karte, auf der sich nichts bewegt hat. Ich halte das für eine Geschichte für Kinder.',
+      ] },
+      { ab: 41, zeilen: [
+        'Ich habe heute Nacht die Bucht gezeichnet. Ich war nie in der Bucht. Die Zeichnung stimmt.',
+        'Fragen Sie mich nicht, wie. Ich habe die Hand angesehen, sie hat einfach weitergemacht.',
+        'Zwei meiner Blätter zeigen Straßen, die es erst nächstes Jahr geben kann. Ich habe sie umgedreht und beschwert.',
+        'Der Index sagt, man verliert sich, wenn man zu weit vorausliest. Ich habe das immer für eine Drohung gehalten. Es war eine Warnung.',
+      ] },
+      { ab: 71, zeilen: [
+        'Sehen Sie meine Hände an. Der Rand ist weich. Wie Tinte, die zu lange im Wasser lag.',
+        'Ich weiß noch alle Wege. Ich weiß nur nicht mehr sicher, welcher davon meiner war.',
+        'Nehmen Sie die Mappe. Wenn ich sie behalte, zeichne ich mich irgendwann ein und dann bin ich nur noch ein Ort.',
+        'Der Index hat nicht gelogen. Das ist der Teil, an dem ich am längsten gekaut habe.',
+        'Wenn Sie eine Karte von mir finden, auf der ich draufstehe, verbrennen Sie sie nicht. Falten Sie sie nur zu.',
+      ] },
+    ],
+    haltung: {
+      glaube: 'Sie schlucken alles. Passen Sie auf. Ich habe auch mit Schlucken angefangen und jetzt zeichne ich Orte, an denen ich nicht war.',
+      zweifel: 'Sie zweifeln viel. Gut. Zweifel ist ein Gewicht am Bein, und ohne Gewicht hebt es einen ab.',
+      gleichgewicht: 'Sie halten das Gleichgewicht besser als ich. Sagen Sie mir irgendwann, wie das geht, ich schreibe es an den Rand.',
+    },
+  },
+
+  kes: {
+    name: 'Kes',
+    rolle: 'Kind, entschrieben aber nicht ganz',
+    stufen: [
+      { ab: 0, zeilen: [
+        'Du bist neu. Neue riechen anders. Nach draußen.',
+        'Willst du wetten. Ich kann bis zur Mauer und zurück, bevor du blinzelst.',
+        'Ich darf hier eigentlich nicht sein. Aber eigentlich bin ich ja auch nicht.',
+      ] },
+      { ab: 16, zeilen: [
+        'Du hast mich wiedererkannt. Das machen fast alle nicht beim zweiten Mal.',
+        'Ich habe gestern im Sumpf gesessen und heute im Berg. Ich weiß nicht, wie ich rüberkomme. Ich bin einfach schon da.',
+        'Meine Mutter hat gearbeitet, wo die Bücher waren. Danach war sie nicht mehr meine Mutter. Sie war nur noch eine Frau, die freundlich war.',
+        'Ich habe kein Bild von ihr. Ich habe ein Geräusch. Sie hat beim Gehen immer ein bisschen geschleift.',
+      ] },
+      { ab: 41, zeilen: [
+        'Sie haben mich rausgestrichen, weil ich gesagt habe, was in dem Buch steht. Ich war sieben. Ich habe nur laut gelesen.',
+        'Rausstreichen geht nicht ganz. Es bleibt ein Fussel. Ich bin der Fussel.',
+        'Manchmal wache ich auf und weiß meinen Namen nicht mehr, und dann sage ich ihn hundertmal, bis er wieder klebt.',
+        'Kannst du ihn auch sagen. Nur einmal. Dann bin ich ein bisschen fester.',
+      ] },
+      { ab: 71, zeilen: [
+        'Ich werde nicht größer. Das ist nicht schlimm. Aber ich werde auch nicht müde, und das ist schlimm.',
+        'Wenn du hier fertig bist, gehst du wieder. Alle gehen wieder. Ich frage nur, ob du mich mitnimmst im Kopf.',
+        'Du musst nichts machen. Nur nicht vergessen. Vergessen ist die zweite Hälfte vom Entschreiben, und die machen nicht sie, die machen wir.',
+        'Sag Kes. So heißt der Rest von mir.',
+      ] },
+    ],
+    haltung: {
+      glaube: 'Du glaubst schnell. Ich auch. Deshalb sind wir beide da, wo wir sind.',
+      zweifel: 'Du prüfst immer erst. Prüf mich ruhig auch. Ich bin trotzdem noch da, wenn du fertig bist.',
+      gleichgewicht: 'Du bist so einer, der zuhört und trotzdem nachdenkt. Von denen gibt es hier fast keine mehr.',
+    },
+  },
+
+  aldan: {
+    name: 'Aldan Roh',
+    rolle: 'Kopist des Index',
+    stufen: [
+      { ab: 0, zeilen: [
+        'Ich kopiere. Mehr ist meine Stelle nicht. Fragen bitte an die Aufsicht.',
+        'Dreißig Jahre dasselbe Pult. Man sieht es am Holz, da ist eine Mulde für den Ellenbogen.',
+        'Was ich abschreibe, geht danach weg. Wohin, das steht nicht in meinem Formular.',
+      ] },
+      { ab: 16, zeilen: [
+        'Sie fragen zu freundlich. Bei freundlichen Fragen rede ich zu viel, das ist bekannt.',
+        'Sie vernichten das Original, sobald die Kopie liegt. Sauber, ordentlich, mit zwei Unterschriften.',
+        'Also ist die Kopie die Welt. Und die Kopie mache ich. Denken Sie das einmal zu Ende und dann schlafen Sie mal gut.',
+        'Ich mache Fehler. Nicht immer aus Versehen.',
+      ] },
+      { ab: 41, zeilen: [
+        'Ein falscher Buchstabe, und ein Satz überlebt die Prüfung, weil er anders klingt als der verbotene. Das war meine Idee. Ich war stolz darauf.',
+        'Ich habe ganze Absätze als Rechenfehler getarnt. Zahlen prüft niemand gern.',
+        'Ich habe geglaubt, ich rette etwas. Ich habe vielleicht nur etwas verbogen und in die Zukunft geschoben.',
+        'Der Index hat nach dem Brand behauptet, halbes Wissen habe die Sechs Städte gekostet. Ich habe das Protokoll kopiert. Es stand tatsächlich so drin.',
+      ] },
+      { ab: 71, zeilen: [
+        'Ich habe eine Liste geführt, welche Fehler Absicht waren. Die Liste ist weg. Ich habe sie selbst kopiert und das Original ging weg.',
+        'Jetzt lese ich meine eigene Arbeit und weiß nicht, ob das da Wahrheit ist oder mein Zittern von vor elf Jahren.',
+        'Wenn Sie irgendwo einen Text finden, in dem ein Name doppelt steht, dann bin ich das gewesen. Ich glaube. Ich glaube.',
+        'Sie sammeln jetzt lauter Sätze, die vielleicht von mir sind statt von der Welt. Es tut mir leid und ich würde es wieder tun.',
+      ] },
+    ],
+    haltung: {
+      glaube: 'Sie glauben, was Sie lesen. Ich habe geschrieben, was Sie lesen. Bitte glauben Sie ein bisschen weniger.',
+      zweifel: 'Sie prüfen nach. Endlich einer. Prüfen Sie besonders die Stellen, die zu glatt klingen. Die glatten sind meine.',
+      gleichgewicht: 'Sie wägen ab. Genau das war unser Beruf, bevor daraus Verwaltung wurde.',
+    },
+  },
+
+  ossa: {
+    name: 'Ossa',
+    rolle: 'Fährfrau',
+    stufen: [
+      { ab: 0, zeilen: [
+        'Einsteigen. Nicht in die Mitte, da liegt das Wasser.',
+        'Geld nehme ich nicht. Sagen Sie mir etwas, das ich noch nicht weiß, dann sind wir quitt.',
+        'Nein. Das wusste ich. Nochmal.',
+      ] },
+      { ab: 16, zeilen: [
+        'Sie waren im Sandtor. Ihre Auskunft war brauchbar. Setzen Sie sich weiter vorn.',
+        'Ich fahre seit dem Brand. Damals kamen sie nachts, in Reihen, mit Kisten. Bezahlt haben sie mit Schweigen, und Schweigen ist keine Auskunft.',
+        'Die Kisten waren schwer und trocken. Wer Bücher verbrennt, trägt sie nicht erst über Wasser.',
+      ] },
+      { ab: 41, zeilen: [
+        'Sie sehen müde aus. Trinken Sie was, es ist nur Wasser mit Salz, aber es hilft.',
+        'Ich merke mir jeden, der übersetzt. Nicht das Gesicht. Den Namen. Gesichter ändern sie.',
+        'Manchmal steht einer am Ufer, den es amtlich nicht gibt. Ich fahre ihn trotzdem. Meine Fähre fragt keine Papiere.',
+        'Eine Kartografin fahre ich seit Jahren. In letzter Zeit wiegt sie weniger. Das Boot lügt nicht bei sowas.',
+      ] },
+      { ab: 71, zeilen: [
+        'Setzen Sie sich hierher, neben mich. Ist wärmer.',
+        'Ich habe vierhundertzwölf Namen im Kopf, die sonst nirgends mehr stehen. Ich sage sie beim Rudern auf. Deshalb rudere ich langsam.',
+        'Wenn Sie einmal nicht mehr auftauchen, sage ich Ihren auch mit. Das ist kein Trost, das ist Buchhaltung.',
+        'Der Index löscht Papier. Papier ist nicht der Ort, wo Menschen wohnen.',
+        'Aussteigen. Und drehen Sie sich nicht um, das macht den Rücken nass.',
+      ] },
+    ],
+    haltung: {
+      glaube: 'Sie nehmen alles mit, was man Ihnen in die Hand drückt. Das Boot kentert nicht am Gewicht, sondern an der Verteilung.',
+      zweifel: 'Sie fragen viel nach. Bei mir dürfen Sie das. Bei anderen kostet es Sie den Platz im Boot.',
+      gleichgewicht: 'Sie sitzen ruhig. Ruhig sitzen können die wenigsten, die etwas suchen.',
+    },
+  },
+
+};
+
+// Ortsgebundene Nebenfiguren. Zwei Stufen, gebunden an ihren Ort.
+G.FIGUREN.wache = {
+  name: 'Torwache Brandt',
+  rolle: 'Torwache der Aschenstadt',
+  ort: 'Aschenstadt',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Taschen auf. Nicht wegen Ihnen. Wegen der Liste.',
+      'Sammeln ist Sorgfaltsbruch. Steht am Pfosten, lesen Sie selbst, ich sage es zwanzigmal am Tag.',
+      'Weitergehen. Rechts halten. Nicht die Wand anfassen, die ist noch nicht geprüft.',
+    ] },
+    { ab: 41, zeilen: [
+      'Sie schon wieder. Ich sehe nicht in Ihre Tasche. Ich habe heute eine Zahl zu erfüllen und die habe ich.',
+      'Mein Vater stand an diesem Tor in der Brandnacht. Er sagt, das Feuer kam von innen und ging nach außen. Innen war abgeschlossen.',
+      'Sie haben das nicht von mir. Ich habe Ihnen nur die Uhrzeit gesagt.',
+    ] },
+  ],
+};
+
+G.FIGUREN.haendler = {
+  name: 'Mareth Sull',
+  rolle: 'Fragmentehändler',
+  ort: 'Markt der Mustersucher',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Alles echt, alles geprüft, fragen Sie nicht von wem.',
+      'Drei Stück für den Preis von zwei, aber das dritte ist eine Wetterliste. Ich sage es fair.',
+      'Wenn Sie was Halbes kaufen, kaufen Sie die andere Hälfte auch bei mir. Das ist mein ganzes Geschäftsmodell.',
+    ] },
+    { ab: 41, zeilen: [
+      'Für Sie hole ich das aus der Kiste unter dem Tisch. Da liegt, was ich niemandem zeige, der noch alles glaubt.',
+      'Neunzig Prozent von dem Zeug hier ist Müll. Das weiß ich. Der Index weiß es auch, deshalb jagt er uns nicht ernsthaft. Wir sind der Lärm über dem Signal.',
+      'Die zehn Prozent sind das Problem. Die zehn Prozent sind, warum ich jede Nacht woanders schlafe.',
+    ] },
+  ],
+};
+
+G.FIGUREN.archivar_alt = {
+  name: 'Bibliothekar Hennig',
+  rolle: 'Alter Bibliothekar',
+  ort: 'Verbrannte Bibliothek',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Leise. Ich weiß, es ist alles verbrannt. Trotzdem leise.',
+      'Ich sortiere noch. Regal vier, Reihe zwei. Da liegt nichts, aber die Ordnung stimmt wieder.',
+      'Sie wollen ein Buch. Ich habe Asche in zwölf Sorten. Suchen Sie sich eine aus.',
+    ] },
+    { ab: 41, zeilen: [
+      'Die Nacht war windstill. Ein Haus brennt bei Windstille nicht in allen zwölf Sälen gleichzeitig.',
+      'Ich war Verwalter der Sperrsäle. Ich habe die Türen selbst verschlossen, weil man es mir befahl, und am nächsten Morgen war der Schlüssel weg und die Schuld bei mir.',
+      'Ich sortiere, weil es das Einzige ist, was ich damals richtig gemacht habe.',
+    ] },
+  ],
+};
+
+G.FIGUREN.hoerer = {
+  name: 'Der Hörer',
+  rolle: 'Lauscher in der Kristallkaverne',
+  ort: 'Kristallkaverne',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Nicht sprechen. Der Stein nimmt alles auf und gibt es später falsch zurück.',
+      'Ich sitze hier und höre. Manchmal zwei Wochen für einen Satz.',
+      'Sie atmen zu laut. Alle atmen zu laut.',
+    ] },
+    { ab: 41, zeilen: [
+      'Ich habe gestern Ihren Namen im Kristall gehört. Sie haben ihn hier nie gesagt.',
+      'Der Index hat die Kaverne dreimal versiegeln lassen. Der Stein hat weitergespeichert. Man kann Wände zumauern, aber nicht das Material.',
+      'Was ich höre, sind meistens Entschuldigungen. Sehr viele Entschuldigungen aus dem Jahr des Brandes.',
+    ] },
+  ],
+};
+
+G.FIGUREN.deuterin = {
+  name: 'Sternendeuterin Yrsa',
+  rolle: 'Sternendeuterin',
+  ort: 'Sternenwarte',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Kopf aus dem Rohr. Danke.',
+      'Ich sage Ihnen keine Zukunft. Ich sage Ihnen, wann etwas wiederkommt. Das ist etwas anderes und viel langweiliger.',
+      'Der Himmel dreht sich ordentlich. Als Einziger hier.',
+    ] },
+    { ab: 41, zeilen: [
+      'Die Tafeln aus der Zeit vor dem Brand rechnen mit einem Stern, der heute nicht mehr da ist. Ich habe das dreimal nachgerechnet.',
+      'Entweder haben sie sich geirrt, oder etwas ist verschwunden, das größer war als eine Bibliothek.',
+      'Ich habe die Rechnung eingereicht. Sie kam zurück mit dem Vermerk, sie sei nicht prüfbar. Sie war prüfbar. Ich habe sie ja geprüft.',
+    ] },
+  ],
+};
+
+G.FIGUREN.gaertnerin = {
+  name: 'Mondgärtnerin Tave',
+  rolle: 'Mondgärtnerin',
+  ort: 'Mondgarten',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Nicht auf die weißen Beete treten. Die schlafen noch.',
+      'Ich pflanze nach Mond, nicht nach Kalender. Der Kalender ist dreimal geändert worden, der Mond nicht.',
+      'Wenn Sie etwas mitnehmen wollen, nehmen Sie Samen, keine Blüte. Blüten lügen schnell.',
+    ] },
+    { ab: 41, zeilen: [
+      'Die Pflanzen hier stammen aus dem Innenhof des Archivs. Jemand hat sie in der Brandnacht rausgetragen, statt Bücher.',
+      'Manchmal denke ich, das war der klügste Mensch der Nacht. Manchmal denke ich, er war der feigste.',
+      'Sie tragen viel im Kopf. Setzen Sie sich hin, bis der Mond über die Mauer ist. Das ist keine Weisheit, das ist Erschöpfung, und ich sehe sie Ihnen an.',
+    ] },
+  ],
+};
+
+G.FIGUREN.schmied = {
+  name: 'Schmied Corr',
+  rolle: 'Schmied am Glutschlund',
+  ort: 'Glutschlund',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Weiter weg vom Loch. Die Hitze frisst Augenbrauen und dann Gesichter.',
+      'Ich schmiede Siegel. Ja, für die. Man muss essen.',
+      'Was Sie da tragen, schmilzt hier drin in vier Herzschlägen. Passen Sie auf sich auf.',
+    ] },
+    { ab: 41, zeilen: [
+      'Jedes Siegel bekommt eine Kerbe an der Innenseite. Meine Kerbe. Man kann später sehen, wann etwas geschlossen wurde und von wem.',
+      'Das ist nicht Widerstand. Das ist nur, dass ich nicht namenlos arbeiten will.',
+      'Sie werfen die aussortierten Fragmente hier rein. Ich sehe sie fallen. Manchmal fische ich eins raus, wenn keiner schaut, und es ist nur ein Rezept für Brot.',
+    ] },
+  ],
+};
+
+G.FIGUREN.nomade = {
+  name: 'Nomade Sef',
+  rolle: 'Wüstennomade',
+  ort: 'Wandernde Dünen',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Wasser gibt es. Fragen gibt es nach dem Wasser.',
+      'Karten helfen hier nichts. Die Dünen ziehen weiter, wir ziehen mit. Wer stehenbleibt, wird zugedeckt.',
+      'Gehen Sie hinter mir. Nicht neben mir, ich sehe dann Ihre Spur nicht.',
+    ] },
+    { ab: 41, zeilen: [
+      'Unter dem Sand liegen Straßen. Wir gehen manchmal drüber und hören es am Klang.',
+      'Meine Großmutter sagte, hier standen Städte, bevor jemand beschlossen hat, dass sie nie standen. Sie hat es mir nur einmal gesagt und danach nie wieder.',
+      'Der Index schickt keine Leute in die Dünen. Man kann Sand nicht versiegeln, und das ärgert sie.',
+    ] },
+  ],
+};
+
+G.FIGUREN.waechter = {
+  name: 'Wächter Onn',
+  rolle: 'Wächter der Pyramide',
+  ort: 'Die stumme Pyramide',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Bis hierher. Nicht weiter.',
+      'Es gibt keine Tür. Ich bewache trotzdem. Fragen Sie nicht, das habe ich mir längst selbst gefragt.',
+      'Drinnen ist es still. Man hört die Stille durch den Stein, das ist keine Redensart, das ist ein Geräusch.',
+    ] },
+    { ab: 41, zeilen: [
+      'Mein Posten wurde vor dem Brand eingerichtet. Der Index hat ihn übernommen, nicht erfunden. Das steht in keiner Akte.',
+      'Also war hier etwas, das schon vorher bewacht werden musste. Von Leuten, die es besser wussten als wir.',
+      'Manchmal wechselt die Ostseite die Farbe. Ich melde es. Es kommt nie eine Antwort.',
+    ] },
+  ],
+};
+
+G.FIGUREN.faehrmann = {
+  name: 'Sumpffährmann Duul',
+  rolle: 'Sumpffährmann',
+  ort: 'Nebelsumpf',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Hände im Boot. Was hier greift, gibt nicht wieder her.',
+      'Der Nebel steht seit vierzehn Jahren. Vorher gab es hier Felder, sagt man.',
+      'Reden Sie ruhig. Nur nicht die Namen von Lebenden.',
+    ] },
+    { ab: 41, zeilen: [
+      'Ich sammle, was im Schilf hängt. Papier, Blech, Schuhe. Das meiste ist amtlich gestempelt.',
+      'Man wirft es nicht ins Feuer, man wirft es ins Wasser. Wasser gibt keine Rauchsäule, die man von der Stadt aus sieht.',
+      'Ich habe eine Kiste voll. Ich kann nicht lesen. Vielleicht ist das der Grund, warum ich noch hier bin.',
+    ] },
+  ],
+};
+
+G.FIGUREN.bergmann = {
+  name: 'Bergmann Kolt',
+  rolle: 'Bergmann in den Adern',
+  ort: 'Wurzelhain',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Helm auf oder gar nicht rein.',
+      'Wir graben nach Adern. Erz, meistens. Manchmal was anderes.',
+      'Unten redet keiner. Nicht aus Aberglauben. Man braucht die Luft.',
+    ] },
+    { ab: 41, zeilen: [
+      'In Sohle sieben sind wir auf Mauerwerk gestoßen. Sauber gesetzt, tiefer als alles, was es geben dürfte.',
+      'Der Index kam am selben Abend und hat den Stollen verfüllt. Am selben Abend. So schnell ist niemand, der nicht vorher Bescheid weiß.',
+      'Zwei von meinen Leuten stehen seitdem nicht mehr in der Lohnliste. Sie stehen aber morgens neben mir.',
+    ] },
+  ],
+};
+
+G.FIGUREN.stimme = {
+  name: 'Die Stimme',
+  rolle: 'Körperlose Stimme in der Tiefe',
+  ort: 'Die Tiefe',
+  stufen: [
+    { ab: 0, zeilen: [
+      'Da ist jemand. Gut. Es war lange niemand.',
+      'Ich habe keinen Mund. Sie hören mich trotzdem. Denken Sie darüber später nach, jetzt ist es unpraktisch.',
+      'Vorsicht auf der dritten Stufe. Die ist nicht mehr da.',
+    ] },
+    { ab: 41, zeilen: [
+      'Ich war einmal mehrere. Wir haben zusammen gearbeitet, und dann hat man uns alle am selben Tag gestrichen.',
+      'Was übrig blieb, ist zusammengelaufen. Ich bin kein Geist. Ich bin ein Rest von einer Belegschaft.',
+      'Fragen Sie mich nach dem Brand. Ich weiß es. Ich weiß nur nicht mehr, ob ich zugesehen oder gezündet habe.',
+      'Beides stimmt hier unten gleichzeitig, und das ist genau das, wovor sie die Leute schützen wollten.',
+    ] },
+  ],
+};
+
+// Zuordnung Region zu Figur. Mehrere Figuren pro Region sind erlaubt.
+G.FIGUR_ORTE = {
+  'Aschenstadt': ['wache', 'weber'],
+  'Markt der Mustersucher': ['haendler', 'ilva'],
+  'Spiegelhof': ['weber', 'kes'],
+  'Sternenwarte': ['deuterin', 'ilva'],
+  'Kristallkaverne': ['hoerer', 'kes'],
+  'Verbrannte Bibliothek': ['archivar_alt', 'aldan'],
+  'Mondgarten': ['gaertnerin', 'ossa'],
+  'Sandtor': ['wache', 'aldan'],
+  'Die stumme Pyramide': ['waechter', 'ilva'],
+  'Wandernde Dünen': ['nomade', 'kes'],
+  'Glutschlund': ['schmied', 'weber'],
+  'Wurzelhain': ['bergmann', 'kes'],
+  'Nebelsumpf': ['faehrmann', 'ossa'],
+  'Stille Bucht': ['ossa', 'ilva'],
+  'Die Tiefe': ['stimme', 'aldan'],
 };
 
 </script>

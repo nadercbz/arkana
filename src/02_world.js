@@ -756,6 +756,393 @@ G.drawShrine = (c, px, py, p, t) => {
 };
 
 // ------------------------------------------------------------
+// ASSETS. Eigenstaendige Objekte, die der Generator in der Welt
+// verteilt. Alle mit Bodenschatten, Kantenlicht und einer eigenen
+// Silhouette, damit sie greifbar wirken statt aufgemalt.
+// ------------------------------------------------------------
+function schatten(c, x, y, rx, ry, a) {
+  c.globalAlpha = a || 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+}
+
+G.TILES['1'] = { obj: true, solid: true, name: 'Kiefer', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.7 + n*7) * 1.4;
+    schatten(c, x+20, y+35, 10, 3.5);
+  c.fillStyle = p.card; c.fillRect(x+17, y+22, 7, 14);
+  c.fillStyle = p.bgDeep; c.fillRect(x+18, y+21, 4, 14);
+  // Drei gestapelte Kronen, nach oben schmaler
+  for (let k=0;k<3;k++){
+    const w = 26 - k*7, yy = y + 19 - k*7;
+    c.fillStyle = k===2 ? p.bright : p.dim;
+    c.beginPath();
+    c.moveTo(x+20+sw*(k+1)*0.4, yy-9);
+    c.lineTo(x+20-w/2+sw*(k+1)*0.3, yy+3);
+    c.lineTo(x+20+w/2+sw*(k+1)*0.3, yy+3);
+    c.closePath(); c.fill();
+    c.fillStyle = p.main; c.globalAlpha = 0.4;
+    c.fillRect(x+20-w/2+sw, yy+1, w*0.45, 2); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['2'] = { obj: true, solid: true, name: 'Laubbaum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.75 + n*8) * 1.8;
+    schatten(c, x+20, y+36, 12, 4);
+  c.fillStyle = p.card; c.fillRect(x+16, y+24, 8, 13);
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+23, 5, 13);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.arc(x+20+sw, y+15, 15, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+11+sw, y+19, 9, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+29+sw, y+18, 9, 0, 6.283); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.arc(x+17+sw, y+11, 9, 0, 6.283); c.fill();
+  c.fillStyle = p.bright;
+  c.beginPath(); c.arc(x+15+sw, y+8, 5, 0, 6.283); c.fill();
+  c.fillStyle = p.card; c.globalAlpha = 0.35;
+  c.beginPath(); c.arc(x+26+sw, y+23, 7, 0, 6.283); c.fill(); c.globalAlpha = 1;
+} };
+
+G.TILES['3'] = { obj: true, solid: true, name: 'Toter Baum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*0.5 + n*6) * 1;
+    schatten(c, x+20, y+35, 8, 3);
+  c.strokeStyle = p.dim; c.lineWidth = 5; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x+20, y+36); c.lineTo(x+19+sw, y+14); c.stroke();
+  c.lineWidth = 3;
+  c.beginPath(); c.moveTo(x+19+sw, y+22); c.lineTo(x+9+sw*1.4, y+11); c.stroke();
+  c.beginPath(); c.moveTo(x+19+sw, y+18); c.lineTo(x+31+sw*1.4, y+8); c.stroke();
+  c.lineWidth = 2;
+  c.beginPath(); c.moveTo(x+9+sw*1.4, y+11); c.lineTo(x+5+sw*1.8, y+4); c.stroke();
+  c.beginPath(); c.moveTo(x+31+sw*1.4, y+8); c.lineTo(x+35+sw*1.8, y+2); c.stroke();
+  c.strokeStyle = p.bright; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x+18, y+34); c.lineTo(x+18+sw, y+16); c.stroke();
+} };
+
+G.TILES['4'] = { obj: true, solid: true, name: 'Findling', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+32, 13, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath();
+  c.moveTo(x+6, y+30); c.lineTo(x+9, y+13); c.lineTo(x+19, y+7);
+  c.lineTo(x+31, y+12); c.lineTo(x+34, y+29); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+10, y+14); c.lineTo(x+19, y+8); c.lineTo(x+24, y+13);
+  c.lineTo(x+14, y+18); c.closePath(); c.fill();
+  c.fillStyle = p.card;
+  c.fillRect(x+24, y+19, 7, 2); c.fillRect(x+11, y+24, 5, 2);
+  if (n > 0.6) { c.fillStyle = p.dim; c.globalAlpha = 0.5; c.fillRect(x+8, y+11, 8, 3); c.globalAlpha = 1; }
+} };
+
+G.TILES['5'] = { obj: true, solid: false, name: 'Steinhaufen', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+30, 11, 3);
+  const stones = [[10,22,9,7],[20,20,11,8],[15,15,8,6],[27,24,7,5]];
+  for (let i=0;i<stones.length;i++){
+    const [sx,sy,sw,sh] = stones[i];
+    c.fillStyle = i%2 ? p.textDim : p.text;
+    c.beginPath(); c.ellipse(x+sx+((n*13*i)%3), y+sy, sw/2, sh/2, 0, 0, 6.283); c.fill();
+    c.fillStyle = p.textBright; c.globalAlpha = 0.5;
+    c.fillRect(x+sx-sw/4, y+sy-sh/2, sw/2, 1); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['6'] = { obj: true, solid: true, name: 'Busch', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*1.1 + n*9) * 1.5;
+    schatten(c, x+20, y+33, 11, 3);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.arc(x+14+sw, y+24, 9, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+26+sw, y+25, 8, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+20+sw, y+18, 10, 0, 6.283); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.arc(x+17+sw, y+16, 6, 0, 6.283); c.fill();
+  if (n > 0.55) {
+    c.fillStyle = p.main;
+    c.fillRect(x+12+sw, y+21, 2, 2); c.fillRect(x+25+sw, y+19, 2, 2); c.fillRect(x+19+sw, y+27, 2, 2);
+  }
+} };
+
+G.TILES['7'] = { obj: true, solid: true, name: 'Fass', draw: (c,x,y,p) => {
+    schatten(c, x+20, y+33, 9, 3);
+  c.fillStyle = p.textDim; c.fillRect(x+11, y+13, 18, 20);
+  c.fillStyle = p.text; c.fillRect(x+13, y+13, 5, 20);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+11, y+17, 18, 2); c.fillRect(x+11, y+27, 18, 2);
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.ellipse(x+20, y+13, 9, 3, 0, 0, 6.283); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.ellipse(x+20, y+13, 6, 2, 0, 0, 6.283); c.fill();
+} };
+
+G.TILES['8'] = { obj: true, solid: true, name: 'Kiste', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+33, 10, 3);
+  c.fillStyle = p.textDim; c.fillRect(x+9, y+15, 22, 18);
+  c.fillStyle = p.textBright; c.fillRect(x+9, y+15, 22, 4);
+  c.fillStyle = p.text; c.fillRect(x+11, y+20, 18, 2);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+9, y+24, 22, 2);
+  c.fillRect(x+18, y+19, 3, 14);
+  if (n > 0.5) { c.fillStyle = p.dim; c.fillRect(x+12, y+27, 6, 3); }
+} };
+
+G.TILES['9'] = { obj: true, solid: true, name: 'Zaunstück', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+31, 14, 2.5, 0.24);
+  c.fillStyle = p.textDim;
+  for (const px of [6, 18, 30]) {
+    const lean = ((n*17 + px) % 4) - 2;
+    c.fillRect(x+px+lean, y+12, 4, 19);
+    c.fillStyle = p.textBright; c.fillRect(x+px+lean, y+12, 4, 2); c.fillStyle = p.textDim;
+  }
+  c.fillStyle = p.text;
+  c.fillRect(x+4, y+17, 32, 3); c.fillRect(x+4, y+25, 32, 3);
+} };
+
+G.TILES['0'] = { obj: true, solid: true, name: 'Brunnen', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+34, 14, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.ellipse(x+20, y+27, 14, 8, 0, 0, 6.283); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.ellipse(x+20, y+26, 10, 5.5, 0, 0, 6.283); c.fill();
+  // Wasser mit Reflex
+  c.fillStyle = p.dim; c.globalAlpha = 0.5;
+  c.beginPath(); c.ellipse(x+20, y+26, 8, 4, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 0.3 + 0.2*Math.sin(t*1.4); c.fillStyle = p.glow;
+  c.beginPath(); c.ellipse(x+17, y+25, 3, 1.5, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.ellipse(x+20, y+27, 14, 8, 0, Math.PI, 0); c.fill();
+  // Galgen
+  c.fillStyle = p.textDim; c.fillRect(x+7, y+4, 3, 20); c.fillRect(x+30, y+4, 3, 20);
+  c.fillRect(x+7, y+3, 26, 3);
+  c.fillStyle = p.dim; c.fillRect(x+19, y+6, 1, 8);
+  c.fillStyle = p.text; c.fillRect(x+16, y+13, 8, 5);
+} };
+
+G.TILES['A'] = { obj: true, solid: true, name: 'Zelt', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+34, 15, 4);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+5); c.lineTo(x+35, y+33); c.lineTo(x+5, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.text;
+  c.beginPath(); c.moveTo(x+20, y+5); c.lineTo(x+27, y+33); c.lineTo(x+13, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.moveTo(x+20, y+16); c.lineTo(x+25, y+33); c.lineTo(x+15, y+33); c.closePath(); c.fill();
+  c.fillStyle = p.textBright; c.fillRect(x+19, y+3, 2, 6);
+  if (n > 0.5) { c.fillStyle = p.main; c.globalAlpha = 0.4; c.fillRect(x+18, y+26, 4, 6); c.globalAlpha = 1; }
+} };
+
+G.TILES['C'] = { obj: true, solid: true, name: 'Karren', draw: (c,x,y,p) => {
+    schatten(c, x+20, y+32, 15, 3.5);
+  c.fillStyle = p.textDim; c.fillRect(x+6, y+14, 28, 12);
+  c.fillStyle = p.textBright; c.fillRect(x+6, y+14, 28, 3);
+  c.fillStyle = p.bgVoid; c.fillRect(x+6, y+22, 28, 2);
+  // Räder
+  c.fillStyle = p.bgVoid;
+  c.beginPath(); c.arc(x+12, y+28, 6, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+28, y+28, 6, 0, 6.283); c.fill();
+  c.fillStyle = p.text;
+  c.beginPath(); c.arc(x+12, y+28, 3, 0, 6.283); c.fill();
+  c.beginPath(); c.arc(x+28, y+28, 3, 0, 6.283); c.fill();
+  c.fillStyle = p.textDim; c.fillRect(x+32, y+18, 7, 3);
+} };
+
+G.TILES['E'] = { obj: true, solid: true, name: 'Torbogen', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+35, 16, 4);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+2, y+8, 8, 28); c.fillRect(x+30, y+8, 8, 28);
+  c.beginPath(); c.moveTo(x+2, y+12); c.quadraticCurveTo(x+20, y-6, x+38, y+12);
+  c.lineTo(x+38, y+4); c.quadraticCurveTo(x+20, y-14, x+2, y+4); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.fillRect(x+2, y+8, 3, 28); c.fillRect(x+30, y+8, 3, 28);
+  c.fillStyle = p.card;
+  c.fillRect(x+2, y+34, 8, 2); c.fillRect(x+30, y+34, 8, 2);
+  const gl = 0.15 + 0.1*Math.sin(t*1.6);
+  c.globalAlpha = gl; c.fillStyle = p.main; c.fillRect(x+10, y+10, 20, 26); c.globalAlpha = 1;
+} };
+
+G.TILES['F'] = { obj: true, solid: true, name: 'Obelisk', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+36, 9, 3);
+  c.fillStyle = p.card; c.fillRect(x+13, y+2, 15, 35);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+1); c.lineTo(x+27, y+9); c.lineTo(x+27, y+36);
+  c.lineTo(x+14, y+36); c.lineTo(x+14, y+9); c.closePath(); c.fill();
+  c.fillStyle = p.text; c.fillRect(x+15, y+10, 4, 26);
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+20, y+1); c.lineTo(x+24, y+8); c.lineTo(x+17, y+8); c.closePath(); c.fill();
+  // Eingravierte Zeichen
+  const gl = 0.35 + 0.3*Math.sin(t*1.2 + n*7);
+  c.globalAlpha = gl; c.fillStyle = p.main;
+  c.fillRect(x+18, y+15, 5, 2); c.fillRect(x+20, y+18, 2, 6);
+  c.fillRect(x+17, y+27, 7, 2);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['H'] = { obj: true, solid: true, name: 'Grabstein', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), lean = (n*7 % 5) - 2.5;
+    schatten(c, x+20, y+33, 10, 3);
+  c.save(); c.translate(x+20, y+33); c.rotate(lean*0.03); c.translate(-20, -33);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+13, 16, 20);
+  c.beginPath(); c.arc(x+20, y+13, 8, Math.PI, 0); c.fill();
+  c.fillStyle = p.textBright; c.fillRect(x+13, y+14, 4, 18);
+  c.fillStyle = p.bgVoid;
+  c.fillRect(x+16, y+16, 8, 1); c.fillRect(x+16, y+19, 6, 1); c.fillRect(x+16, y+22, 7, 1);
+  c.restore();
+  c.fillStyle = p.dim; c.globalAlpha = 0.4;
+  c.fillRect(x+10, y+31, 20, 3); c.globalAlpha = 1;
+} };
+
+G.TILES['J'] = { obj: true, solid: true, name: 'Bücherstapel', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+33, 11, 3);
+  let yy = y + 31;
+  for (let i=0;i<5;i++){
+    const w = 20 - (i%2)*4, off = ((n*13*(i+1)) % 6) - 3;
+    c.fillStyle = [p.textDim, p.dim, p.text, p.main, p.textBright][i%5];
+    c.fillRect(x+10+off, yy, w, 4);
+    c.fillStyle = p.bgVoid; c.fillRect(x+10+off, yy+3, w, 1);
+    c.fillStyle = p.textDim; c.globalAlpha = 0.3;
+    c.fillRect(x+10+off+1, yy+1, w-2, 1); c.globalAlpha = 1;
+    yy -= 5;
+  }
+} };
+
+G.TILES['K'] = { obj: true, solid: true, name: 'Kristallcluster', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), pu = 0.5+0.4*Math.sin(t*1.5+n*8);
+  schatten(c, x+20, y+34, 12, 3.5, 0.28);
+  c.globalAlpha = pu*0.34; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+24, 21, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  const sh = [[20,4,9,27],[12,12,7,19],[28,10,6,21],[16,18,5,15],[26,20,5,13]];
+  for (let i=0;i<sh.length;i++){
+    const [cx,ty2,w2,h] = sh[i];
+    // Dunkle Silhouette darunter, damit die Scherbe auch im Hellen steht
+    c.fillStyle = p.bgVoid;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2-1); c.lineTo(x+cx+w2/2+1, y+ty2+h*0.4);
+    c.lineTo(x+cx, y+ty2+h+1); c.lineTo(x+cx-w2/2-1, y+ty2+h*0.4);
+    c.closePath(); c.fill();
+    c.fillStyle = i===0 ? p.main : p.dim;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2); c.lineTo(x+cx+w2/2, y+ty2+h*0.4);
+    c.lineTo(x+cx, y+ty2+h); c.lineTo(x+cx-w2/2, y+ty2+h*0.4);
+    c.closePath(); c.fill();
+    // Lichtkante auf der linken Flanke, Glanzgrat in der Mitte
+    c.fillStyle = p.bright; c.globalAlpha = 0.55;
+    c.beginPath();
+    c.moveTo(x+cx, y+ty2); c.lineTo(x+cx-w2/2, y+ty2+h*0.4);
+    c.lineTo(x+cx-w2/4, y+ty2+h*0.7); c.closePath(); c.fill();
+    c.globalAlpha = pu; c.fillStyle = p.textBright;
+    c.fillRect(x+cx-1, y+ty2+2, 2, h*0.45); c.globalAlpha = 1;
+  }
+} };
+
+G.TILES['L'] = { obj: true, solid: true, name: 'Laterne', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), fl = 0.6+0.4*Math.sin(t*5+n*9);
+    schatten(c, x+20, y+36, 6, 2);
+  c.globalAlpha = fl*0.22; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+12, 22, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.textDim; c.fillRect(x+18, y+16, 4, 21);
+  c.fillStyle = p.textBright; c.fillRect(x+18, y+16, 2, 21);
+  c.fillStyle = p.bgVoid; c.fillRect(x+13, y+4, 14, 13);
+  c.globalAlpha = fl; c.fillStyle = p.main; c.fillRect(x+15, y+6, 10, 9);
+  c.fillStyle = p.textBright; c.fillRect(x+18, y+8, 4, 5); c.globalAlpha = 1;
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+2, 16, 3); c.fillRect(x+12, y+15, 16, 3);
+  c.fillRect(x+13, y+4, 2, 12); c.fillRect(x+25, y+4, 2, 12);
+} };
+
+G.TILES['N'] = { obj: true, solid: true, name: 'Schrein', draw: (c,x,y,p,t) => {
+    schatten(c, x+20, y+35, 13, 4);
+  c.fillStyle = p.textDim; c.fillRect(x+8, y+24, 24, 12);
+  c.fillStyle = p.textBright; c.fillRect(x+8, y+24, 24, 3);
+  c.fillStyle = p.card; c.fillRect(x+12, y+10, 16, 15);
+  c.fillStyle = p.textDim;
+  c.beginPath(); c.moveTo(x+20, y+3); c.lineTo(x+32, y+12); c.lineTo(x+8, y+12); c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+20, y+4); c.lineTo(x+26, y+11); c.lineTo(x+14, y+11); c.closePath(); c.fill();
+  const gl = 0.4+0.35*Math.sin(t*1.7);
+  c.globalAlpha = gl; c.fillStyle = p.main; c.fillRect(x+16, y+15, 8, 8);
+  c.globalAlpha = gl*0.6; c.fillStyle = p.textBright; c.fillRect(x+18, y+17, 4, 4);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['O'] = { solid: false, name: 'Teppich', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x+3, y+6, 34, 28);
+  c.fillStyle = p.dim; c.fillRect(x+5, y+8, 30, 24);
+  c.fillStyle = p.main; c.globalAlpha = 0.5;
+  c.fillRect(x+8, y+11, 24, 2); c.fillRect(x+8, y+27, 24, 2);
+  c.globalAlpha = 0.35;
+  c.fillRect(x+14, y+16, 12, 8);
+  c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep;
+  for (let i=0;i<6;i++){ c.fillRect(x+3+i*6, y+34, 3, 3); }
+} };
+
+G.TILES['P'] = { obj: true, solid: true, name: 'Pilzbaum', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), gl = 0.4+0.35*Math.sin(t*1.3+n*6);
+    schatten(c, x+20, y+35, 10, 3);
+  c.globalAlpha = gl*0.2; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20, y+16, 19, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+18, 6, 18);
+  c.fillStyle = p.main; c.fillRect(x+18, y+18, 2, 18);
+  c.fillStyle = p.dim;
+  c.beginPath(); c.ellipse(x+20, y+16, 16, 9, 0, Math.PI, 0); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.ellipse(x+20, y+15, 12, 6, 0, Math.PI, 0); c.fill();
+  c.globalAlpha = gl; c.fillStyle = p.bright;
+  c.fillRect(x+13, y+10, 3, 3); c.fillRect(x+22, y+8, 3, 3); c.fillRect(x+26, y+12, 2, 2);
+  c.globalAlpha = 1;
+} };
+
+G.TILES['Q'] = { obj: true, solid: true, name: 'Schilfgruppe', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    c.fillStyle = p.bgDeep; c.globalAlpha = 0.4;
+  c.fillRect(x+4, y+30, 32, 3); c.globalAlpha = 1;
+  for (let i=0;i<7;i++){
+    const bx = x + 5 + i*5 + ((n*11*i)%3);
+    const h = 16 + ((n*23*(i+1)) % 12);
+    const sw = Math.sin(t*1.6 + i*0.8 + n*5) * 2.5;
+    c.strokeStyle = i%2 ? p.dim : p.main; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(bx, y+33); c.quadraticCurveTo(bx+sw*0.5, y+33-h*0.6, bx+sw, y+33-h); c.stroke();
+    if (i%3===0){ c.fillStyle = p.bright; c.fillRect(bx+sw-1, y+33-h-3, 3, 5); }
+  }
+} };
+
+G.TILES['S'] = { obj: true, solid: true, name: 'Statue Sitzend', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+35, 13, 4);
+  c.fillStyle = p.text; c.fillRect(x+7, y+30, 26, 6);
+  c.fillStyle = p.textDim;
+  c.fillRect(x+12, y+18, 16, 13);
+  c.fillRect(x+9, y+26, 22, 6);
+  c.beginPath(); c.arc(x+20, y+13, 7, 0, 6.283); c.fill();
+  c.fillStyle = p.textBright;
+  c.fillRect(x+13, y+19, 4, 12);
+  c.beginPath(); c.arc(x+18, y+11, 4, 0, 6.283); c.fill();
+  c.fillStyle = p.card;
+  c.fillRect(x+17, y+12, 2, 2); c.fillRect(x+22, y+12, 2, 2);
+  if (n > 0.5) { c.fillStyle = p.card; c.fillRect(x+24, y+20, 5, 8); }
+} };
+
+G.TILES['U'] = { obj: true, solid: true, name: 'Wrack', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+    schatten(c, x+20, y+32, 16, 4, 0.25);
+  c.fillStyle = p.textDim;
+  c.beginPath();
+  c.moveTo(x+4, y+26); c.quadraticCurveTo(x+20, y+34, x+36, y+24);
+  c.lineTo(x+33, y+16); c.quadraticCurveTo(x+20, y+24, x+7, y+18);
+  c.closePath(); c.fill();
+  c.fillStyle = p.textBright;
+  c.beginPath(); c.moveTo(x+7, y+19); c.quadraticCurveTo(x+20, y+25, x+33, y+17);
+  c.lineTo(x+33, y+19); c.quadraticCurveTo(x+20, y+27, x+7, y+21); c.closePath(); c.fill();
+  c.fillStyle = p.dim; c.fillRect(x+18, y+4, 3, 16);
+  c.fillStyle = p.card; c.fillRect(x+12, y+22, 4, 5); c.fillRect(x+24, y+21, 3, 4);
+} };
+
+// ------------------------------------------------------------
 // DEKORATION: Kleinkram auf dem Boden, rein aus der Rauschfunktion.
 // Kein Speicher, kein Zustand, deterministisch. Das ist der billigste
 // Weg, damit kein Bodenfeld aussieht wie das daneben.
