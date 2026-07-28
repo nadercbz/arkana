@@ -755,6 +755,34 @@ G.drawShrine = (c, px, py, p, t) => {
   c.globalAlpha = 1;
 };
 
+// Pfad. Getretener Boden, heller als das Umland, mit Randsteinen.
+// Das Wegenetz ist die Wirbelsaeule der Karte: es verbindet alle Orte
+// und gibt dem Auge etwas, dem es folgen kann.
+G.TILES[':'] = { solid: false, name: 'Pfad', draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  // Getretener Grund. dim ist in jeder Biompalette der helle, gesaettigte
+  // Ton, deshalb hebt sich der Weg vom Boden ab statt in ihm zu versinken.
+  c.globalAlpha = 0.40; c.fillStyle = p.dim; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.14; c.fillStyle = p.textBright; c.fillRect(x,y,T,T);
+  c.globalAlpha = 1;
+  // Spurrillen laengs
+  c.globalAlpha = 0.16; c.fillStyle = p.bgVoid;
+  for (let i=0;i<3;i++){
+    const o = ((n*29*(i+1)) % 32) | 0;
+    c.fillRect(x+o, y+(((n*17*(i+1))%34)|0), 6, 2);
+  }
+  c.globalAlpha = 1;
+  // Kies und Trittsteine
+  c.globalAlpha = 0.45; c.fillStyle = p.textBright;
+  for (let i=0;i<4;i++){
+    c.fillRect(x+(((n*13*(i+3))%36)|0), y+(((n*23*(i+1))%36)|0), 2, 2);
+  }
+  c.globalAlpha = 0.3; c.fillStyle = p.card;
+  c.fillRect(x+(((n*31)%30)|0), y+(((n*19)%30)|0), 4, 3);
+  c.globalAlpha = 1;
+} };
+
 // ------------------------------------------------------------
 // ASSETS. Eigenstaendige Objekte, die der Generator in der Welt
 // verteilt. Alle mit Bodenschatten, Kantenlicht und einer eigenen

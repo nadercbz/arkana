@@ -51,7 +51,9 @@ G.TitleScene = () => {
       const SY = G.SAFE_Y;
       G.textGlow(c, '⚡', G.W / 2, SY + 168, p.main, 34);
       G.textGlow(c, 'ARKANA', G.W / 2, SY + 226, p.bright, 46);
-      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 18, 'center');
+      // Gesperrt gesetzt, aber schmal genug fuer 360 Pixel Breite
+      G.text(c, 'D A S  V E R B O R G E N E', G.W / 2, SY + 278, p.text, 15, 'center');
+      G.text(c, 'M U S T E R', G.W / 2, SY + 298, p.text, 15, 'center');
 
       opts.forEach((o, i) => {
         const y = SY + 400 + i * 40;
