@@ -756,6 +756,183 @@ G.drawShrine = (c, px, py, p, t) => {
 };
 
 // ------------------------------------------------------------
+// DEKORATION: Kleinkram auf dem Boden, rein aus der Rauschfunktion.
+// Kein Speicher, kein Zustand, deterministisch. Das ist der billigste
+// Weg, damit kein Bodenfeld aussieht wie das daneben.
+// ------------------------------------------------------------
+const D = {
+  // Steinchen
+  stein: (c, x, y, p, n) => {
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + 3, y + 2, 4, 3); c.fillRect(x + 7, y + 4, 3, 2);
+    c.fillStyle = p.textDim; c.globalAlpha = 0.25;
+    c.fillRect(x + 3, y + 2, 4, 1); c.globalAlpha = 1;
+  },
+  // Grasbüschel
+  halme: (c, x, y, p, n, t) => {
+    c.fillStyle = p.dim; c.globalAlpha = 0.55;
+    for (let i = 0; i < 4; i++) {
+      const sw = Math.sin(t * 1.3 + n * 9 + i) * 1.2;
+      c.fillRect(Math.round(x + i * 3 + sw), y + 3 - i % 2, 1, 5 + i % 2);
+    }
+    c.globalAlpha = 1;
+  },
+  // Scherben
+  scherbe: (c, x, y, p) => {
+    c.fillStyle = p.cardHi;
+    c.beginPath(); c.moveTo(x + 2, y + 6); c.lineTo(x + 8, y); c.lineTo(x + 9, y + 6); c.closePath(); c.fill();
+    c.fillStyle = p.textDim; c.globalAlpha = 0.3; c.fillRect(x + 4, y + 2, 2, 1); c.globalAlpha = 1;
+  },
+  // Wurzelende
+  wurzel: (c, x, y, p) => {
+    c.strokeStyle = p.card; c.lineWidth = 2; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x, y + 4); c.quadraticCurveTo(x + 6, y, x + 12, y + 5); c.stroke();
+    c.lineWidth = 1; c.strokeStyle = p.cardHi;
+    c.beginPath(); c.moveTo(x + 4, y + 3); c.lineTo(x + 7, y + 6); c.stroke();
+  },
+  // Knochensplitter
+  knochen: (c, x, y, p) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.5;
+    c.fillRect(x + 1, y + 3, 9, 2);
+    c.fillRect(x, y + 2, 2, 4); c.fillRect(x + 9, y + 2, 2, 4);
+    c.globalAlpha = 1;
+  },
+  // Riss im Boden
+  riss: (c, x, y, p, n) => {
+    c.strokeStyle = p.bgVoid; c.lineWidth = 1; c.globalAlpha = 0.6;
+    c.beginPath();
+    c.moveTo(x, y + 2);
+    c.lineTo(x + 5, y + 4 + (n * 5 % 3));
+    c.lineTo(x + 11, y + 1);
+    c.stroke(); c.globalAlpha = 1;
+  },
+  // Ascheflecken
+  asche: (c, x, y, p, n) => {
+    c.fillStyle = p.bgDeep; c.globalAlpha = 0.5;
+    c.fillRect(x, y, 7, 4); c.fillRect(x + 5, y + 3, 5, 3);
+    c.globalAlpha = 1;
+  },
+  // Eiskristall
+  eis: (c, x, y, p, n, t) => {
+    const a = 0.3 + 0.25 * Math.sin(t * 1.5 + n * 8);
+    c.globalAlpha = a; c.fillStyle = p.bright;
+    c.fillRect(x + 4, y, 1, 9); c.fillRect(x, y + 4, 9, 1);
+    c.fillRect(x + 2, y + 2, 5, 5); c.globalAlpha = 1;
+  },
+  // Sandwelle
+  welle: (c, x, y, p, n) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.2;
+    c.fillRect(x, y + 2, 14, 1); c.fillRect(x + 3, y + 5, 10, 1);
+    c.globalAlpha = 1;
+  },
+  // Funkenglut
+  glut: (c, x, y, p, n, t) => {
+    const a = 0.35 + 0.45 * Math.sin(t * 3 + n * 11);
+    c.globalAlpha = a; c.fillStyle = p.main;
+    c.fillRect(x + 2, y + 2, 3, 3);
+    c.globalAlpha = a * 0.4; c.fillRect(x, y, 7, 7);
+    c.globalAlpha = 1;
+  },
+  // Papierfetzen
+  papier: (c, x, y, p, n, t) => {
+    const sw = Math.sin(t * 0.9 + n * 6) * 1.5;
+    c.fillStyle = p.textDim; c.globalAlpha = 0.35;
+    c.save(); c.translate(x + 5, y + 4); c.rotate(n * 3 + sw * 0.1);
+    c.fillRect(-4, -3, 8, 6); c.restore();
+    c.globalAlpha = 1;
+  },
+  // Pilz
+  pilz: (c, x, y, p, n, t) => {
+    const gl = 0.3 + 0.3 * Math.sin(t * 2 + n * 7);
+    c.fillStyle = p.dim; c.fillRect(x + 4, y + 4, 2, 4);
+    c.globalAlpha = gl * 0.5; c.fillStyle = p.glow;
+    c.beginPath(); c.arc(x + 5, y + 3, 6, 0, 6.283); c.fill();
+    c.globalAlpha = 1; c.fillStyle = p.main;
+    c.fillRect(x + 2, y + 1, 7, 3); c.fillRect(x + 3, y, 5, 1);
+  },
+};
+
+// Grosse, seltene Fundstuecke. Etwa alle 30 Kacheln eins.
+const DBIG = {
+  saeulenrest: (c, x, y, p) => {
+    c.globalAlpha = 0.3; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 14, y + 22, 13, 4, 0, 0, 6.283); c.fill(); c.globalAlpha = 1;
+    c.fillStyle = p.card; c.fillRect(x + 3, y + 8, 22, 12);
+    c.fillStyle = p.cardHi; c.fillRect(x + 3, y + 8, 22, 3);
+    c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 12, 3, 8); c.fillRect(x + 17, y + 13, 2, 7);
+  },
+  feuerstelle: (c, x, y, p, n, t) => {
+    c.fillStyle = p.bgVoid; c.beginPath(); c.arc(x + 12, y + 12, 9, 0, 6.283); c.fill();
+    c.fillStyle = p.card;
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * 6.283;
+      c.fillRect(x + 12 + Math.cos(a) * 9 - 2, y + 12 + Math.sin(a) * 9 - 2, 4, 4);
+    }
+    const gl = 0.25 + 0.2 * Math.sin(t * 2.5 + n * 5);
+    c.globalAlpha = gl; c.fillStyle = p.main;
+    c.beginPath(); c.arc(x + 12, y + 12, 6, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  },
+  gebein: (c, x, y, p) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.45;
+    c.fillRect(x + 2, y + 10, 18, 2);
+    c.fillRect(x + 4, y + 6, 2, 8); c.fillRect(x + 9, y + 5, 2, 9); c.fillRect(x + 14, y + 6, 2, 8);
+    c.beginPath(); c.arc(x + 20, y + 9, 4, 0, 6.283); c.fill();
+    c.globalAlpha = 1;
+  },
+  wegstein: (c, x, y, p) => {
+    c.globalAlpha = 0.28; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 10, y + 20, 9, 3, 0, 0, 6.283); c.fill(); c.globalAlpha = 1;
+    c.fillStyle = p.card; c.fillRect(x + 5, y + 4, 11, 16);
+    c.fillStyle = p.cardHi; c.fillRect(x + 5, y + 4, 11, 2);
+    c.fillStyle = p.bgVoid;
+    c.fillRect(x + 8, y + 9, 5, 1); c.fillRect(x + 8, y + 12, 4, 1);
+  },
+};
+
+// Welche Deko passt zu welchem Biom
+G.DECO = {
+  asche:     ['asche', 'riss', 'stein', 'papier', 'scherbe'],
+  bibliothek:['papier', 'papier', 'stein', 'asche'],
+  grau:      ['riss', 'stein', 'papier', 'scherbe'],
+  sumpf:     ['halme', 'pilz', 'wurzel', 'stein'],
+  hain:      ['halme', 'halme', 'wurzel', 'pilz', 'stein'],
+  mond:      ['eis', 'stein', 'halme'],
+  kristall:  ['scherbe', 'stein', 'riss'],
+  wueste:    ['welle', 'welle', 'knochen', 'stein'],
+  sternen:   ['stein', 'riss', 'scherbe'],
+  unterwelt: ['glut', 'riss', 'knochen', 'stein'],
+};
+G.DECO_BIG = {
+  asche: ['saeulenrest', 'wegstein', 'feuerstelle'],
+  bibliothek: ['saeulenrest', 'wegstein'],
+  grau: ['wegstein'],
+  sumpf: ['gebein', 'wegstein'],
+  hain: ['wegstein', 'feuerstelle'],
+  mond: ['wegstein', 'saeulenrest'],
+  kristall: ['saeulenrest'],
+  wueste: ['gebein', 'saeulenrest', 'wegstein'],
+  sternen: ['saeulenrest', 'wegstein'],
+  unterwelt: ['gebein', 'feuerstelle'],
+};
+
+// Zeichnet Deko auf eine begehbare Kachel. Wird im Grundpass aufgerufen.
+G.drawDeco = (c, x, y, tx, ty, biome, p, t) => {
+  const h = noise2(tx * 7 + 13, ty * 11 + 5);
+  if (h > 0.965) {
+    const big = G.DECO_BIG[biome];
+    if (big && big.length) {
+      const fn = DBIG[big[Math.floor(h * 997) % big.length]];
+      if (fn) fn(c, x + 8, y + 8, p, h, t);
+      return;
+    }
+  }
+  if (h < 0.74) return;
+  const list = G.DECO[biome] || G.DECO.asche;
+  const fn = D[list[Math.floor(h * 991) % list.length]];
+  if (fn) fn(c, x + Math.floor((h * 173) % 24), y + Math.floor((h * 331) % 26), p, h, t);
+};
+
+// ------------------------------------------------------------
 // LICHT: Fackeln, Kristalle und Leylinien werfen echtes Licht
 // ------------------------------------------------------------
 // Wird als weiches Overlay über den Raum gelegt. Die Lichtquellen

@@ -579,7 +579,7 @@ G.OverworldScene = () => {
   let ambientTimer = 0;
   let fauna = [];
   let faunaKey = null;
-  const cam = { x: 0, y: 0 };
+  const cam = { x: 0, y: 0, vx: 0, vy: 0 };
   let lastRegion = null;
 
   const arkana = () => G.state.phase === 'arkana';
@@ -724,11 +724,23 @@ G.OverworldScene = () => {
       }
 
       {
-        // ---------- Kamera folgt weich, bleibt in der Karte ----------
-        const tgx = G.state.px + 13 - G.W / 2;
-        const tgy = G.state.py + 20 - G.FIELD_H / 2;
-        cam.x += (tgx - cam.x) * Math.min(1, dt * 6);
-        cam.y += (tgy - cam.y) * Math.min(1, dt * 6);
+        // ---------- Kamera: Totzone, Lookahead, Federung ----------
+        // Kleine Schritte verschieben das Bild nicht. Beim Laufen
+        // schaut die Kamera leicht in die Richtung voraus.
+        const pcx = G.state.px + 13, pcy = G.state.py + 20;
+        const look = 0.26;
+        let tgx = pcx + vx * look - G.W / 2;
+        let tgy = pcy + vy * look - G.FIELD_H / 2;
+        // Totzone: 44 x 64 Pixel um die Bildmitte
+        const dzx = pcx - (cam.x + G.W / 2), dzy = pcy - (cam.y + G.FIELD_H / 2);
+        if (Math.abs(dzx) < 22 && Math.abs(vx) < 6) tgx = cam.x;
+        if (Math.abs(dzy) < 32 && Math.abs(vy) < 6) tgy = cam.y;
+        // Feder statt linearem Nachziehen
+        const stiff = 105, damp = 15.5;
+        cam.vx += ((tgx - cam.x) * stiff - cam.vx * damp) * dt;
+        cam.vy += ((tgy - cam.y) * stiff - cam.vy * damp) * dt;
+        cam.x += cam.vx * dt;
+        cam.y += cam.vy * dt;
         cam.x = Math.max(0, Math.min(M().W * TT - G.W, cam.x));
         cam.y = Math.max(0, Math.min(M().H * TT - G.FIELD_H, cam.y));
         // Kartengrenzen für den Spieler
@@ -830,10 +842,15 @@ G.OverworldScene = () => {
       const cols = G.state.sig ? G.state.sig.farben
         : { robe: '#4a4e58', robeHi: '#5f646f', robeDark: '#2a2d33', trim: '#8b8f99', core: '#ff8c00' };
       G.drawPlayer(c, G.state.px - cx, G.state.py - cy, anim, p, cols, arkana() ? null : G.PAL.amber.main);
+      // Wolkenschatten ziehen über alles, danach die Tagesstimmung,
+      // erst dann das Licht. Sonst wirken Fackeln wie Aufkleber.
+      const bioNow = M().biomeAt(tx, ty);
+      G.drawClouds(c, cx, cy, t, bioNow);
+      G.drawDayTint(c);
       G.drawBigLight(c, cx, cy, t);
       c.restore();
 
-      G.vignette(c, arkana() ? 0.42 : 0.62);
+      G.vignette(c, arkana() ? 0.42 : 0.62, bioNow);
 
       // ---------- HUD ----------
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);

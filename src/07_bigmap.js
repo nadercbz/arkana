@@ -303,29 +303,50 @@ G.drawBigMap = (c, camX, camY, t) => {
     return tl ? tl.solid : false;
   };
 
-  // 1. Grundkacheln
+  // 1. Grundkacheln plus Dekoration auf begehbarem Boden
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
-      (G.TILES[at(tx, ty)] || G.TILES['.']).draw(c, tx * T - camX, ty * T - camY, pal, t, tx, ty);
+      const bio = M.biomeAt(tx, ty);
+      const pal = G.BIOMES[bio] || G.pal;
+      const ch = at(tx, ty);
+      const x = tx * T - camX, y = ty * T - camY;
+      (G.TILES[ch] || G.TILES['.']).draw(c, x, y, pal, t, tx, ty);
+      // Nur auf schlichtem Boden, sonst wird es unruhig
+      if (ch === '.' || ch === ',' || ch === 's' || ch === '=') {
+        G.drawDeco(c, x, y, tx, ty, bio, pal, t);
+      }
     }
   }
 
-  // 2. Schlagschatten der Wände auf den Boden darunter
-  c.globalAlpha = 0.42;
-  c.fillStyle = '#000';
+  // 2. Schlagschatten, weich auslaufend statt harte Kante.
+  // Die Gradienten werden einmal gebaut und wiederverwendet.
+  if (!G._shadowGrads) {
+    const mk = (x0_, y0_, x1_, y1_) => {
+      const g2 = c.createLinearGradient(x0_, y0_, x1_, y1_);
+      g2.addColorStop(0, 'rgba(0,0,0,0.50)');
+      g2.addColorStop(0.55, 'rgba(0,0,0,0.16)');
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      return g2;
+    };
+    G._shadowGrads = {
+      top: mk(0, 0, 0, 14), left: mk(0, 0, 12, 0),
+      right: mk(T, 0, T - 12, 0), bottom: mk(0, T, 0, T - 10),
+    };
+  }
+  const SG = G._shadowGrads;
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      if (solid(tx, ty) || !G.TILES[at(tx, ty)]) continue;
-      if (G.TILES[at(tx, ty)].solid) continue;
+      const tl = G.TILES[at(tx, ty)];
+      if (!tl || tl.solid) continue;
       const x = tx * T - camX, y = ty * T - camY;
-      if (solid(tx, ty - 1)) c.fillRect(x, y, T, 7);            // Wand über mir
-      if (solid(tx - 1, ty)) c.fillRect(x, y, 5, T);            // Wand links
-      if (solid(tx + 1, ty)) c.fillRect(x + T - 5, y, 5, T);    // Wand rechts
-      if (solid(tx - 1, ty - 1) && !solid(tx, ty - 1) && !solid(tx - 1, ty)) c.fillRect(x, y, 5, 5);
+      c.save(); c.translate(x, y);
+      if (solid(tx, ty - 1)) { c.fillStyle = SG.top; c.fillRect(0, 0, T, 14); }
+      if (solid(tx - 1, ty)) { c.fillStyle = SG.left; c.fillRect(0, 0, 12, T); }
+      if (solid(tx + 1, ty)) { c.fillStyle = SG.right; c.fillRect(T - 12, 0, 12, T); }
+      if (solid(tx, ty + 1)) { c.fillStyle = SG.bottom; c.fillRect(0, T - 10, T, 10); }
+      c.restore();
     }
   }
-  c.globalAlpha = 1;
 
   // 3. Kantenlicht auf den Wänden, dort wo Begehbares angrenzt
   for (let ty = y0; ty <= y1; ty++) {
@@ -373,7 +394,9 @@ G.drawBigLight = (c, camX, camY, t) => {
       const [r, i0] = spec;
       const x = tx * T + T / 2 - camX, y = ty * T + T / 2 - camY;
       const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
-      const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + tx * 1.7 + ty * 2.3));
+      // Nachts stark, mittags fast unsichtbar
+      const amb = G.dayMood().amb;
+      const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + tx * 1.7 + ty * 2.3)) * (1.25 - amb * 0.95);
       const grd = c.createRadialGradient(x, y, 0, x, y, r);
       grd.addColorStop(0, pal.glow);
       grd.addColorStop(1, 'rgba(0,0,0,0)');
@@ -476,4 +499,47 @@ G.mapSolid = (px, py) => {
   const ch = (M.tiles[ty] || '')[tx] || '.';
   const tile = G.TILES[ch];
   return tile ? tile.solid : false;
+};
+
+
+// ------------------------------------------------------------
+// Wolkenschatten: eine langsamer ziehende Ebene. In der Draufsicht
+// ist das die ehrlichste Form von Parallaxe.
+// ------------------------------------------------------------
+G.drawClouds = (c, camX, camY, t, biome) => {
+  const str = (G.CLOUD_STRENGTH[biome] !== undefined) ? G.CLOUD_STRENGTH[biome] : 0.5;
+  if (str <= 0) return;
+  if (!G.cloudTex) G.buildClouds();
+  const mood = G.dayMood();
+  const night = Math.max(0, 1 - mood.amb * 1.4);
+  const alpha = str * (0.55 - night * 0.45);
+  if (alpha <= 0.02) return;
+  // Faktor 0.6 = Parallaxe, t*9 = Wind
+  const ox = -(camX * 0.6 + t * 9) % 256, oy = -(camY * 0.6 + t * 3) % 256;
+  c.globalAlpha = alpha;
+  for (let y = oy - 256; y < G.FIELD_H + 256; y += 256) {
+    for (let x = ox - 256; x < G.W + 256; x += 256) {
+      c.drawImage(G.cloudTex, Math.round(x), Math.round(y));
+    }
+  }
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Tageszeit als Farbstimmung. Kommt nach der Welt und vor dem Licht.
+// ------------------------------------------------------------
+G.drawDayTint = (c) => {
+  const m = G.dayMood();
+  if (m.alpha < 0.02) return;
+  // Absenken in der Stimmungsfarbe
+  c.globalAlpha = m.alpha;
+  c.fillStyle = `rgb(${m.r},${m.g},${m.b})`;
+  c.globalCompositeOperation = 'multiply';
+  c.fillRect(0, 0, G.W, G.FIELD_H);
+  // Leichte warme Anhebung, damit es nicht nur dunkler wird
+  c.globalCompositeOperation = 'screen';
+  c.globalAlpha = m.alpha * 0.22;
+  c.fillRect(0, 0, G.W, G.FIELD_H);
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
 };

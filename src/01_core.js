@@ -99,6 +99,72 @@ for (const b of Object.values(G.BIOMES)) {
   for (const k in G.PAL.amber) if (b[k] === undefined) b[k] = G.PAL.amber[k];
 }
 
+// --- Tageszeit ---
+// Ein Spieltag dauert 12 Echtzeit-Minuten. Die Stimmung wird zwischen
+// vier Stuetzstellen interpoliert und faerbt die ganze Welt. Das
+// Umgebungslicht "amb" steuert gleichzeitig, wie stark Fackeln wirken.
+G.DAY_KEYS = [
+  { t: 0.00, col: [22, 34, 78],  a: 0.52, amb: 0.32 },  // Nacht
+  { t: 0.22, col: [118, 84, 96], a: 0.28, amb: 0.68 },  // Daemmerung
+  { t: 0.50, col: [255, 242, 214], a: 0.05, amb: 1.00 },// Mittag
+  { t: 0.78, col: [196, 96, 44], a: 0.26, amb: 0.74 },  // Abend
+];
+G.dayPhase = () => {
+  const cycle = 12 * 60 * 1000;
+  return ((G.timeOffset || 0) + performance.now()) % cycle / cycle;
+};
+G.dayMood = () => {
+  const p = G.dayPhase();
+  const K = G.DAY_KEYS;
+  let a = K[K.length - 1], b = K[0], span;
+  for (let i = 0; i < K.length; i++) {
+    const cur = K[i], nxt = K[(i + 1) % K.length];
+    const hi = nxt.t > cur.t ? nxt.t : nxt.t + 1;
+    if (p >= cur.t && p < hi) { a = cur; b = nxt; span = hi - cur.t; break; }
+    if (i === K.length - 1) { a = cur; b = nxt; span = 1 - cur.t + nxt.t; }
+  }
+  let f = (p - a.t) / span;
+  if (f < 0) f += 1 / span;
+  f = Math.max(0, Math.min(1, f));
+  const sm = f * f * (3 - 2 * f);   // weiche Blende
+  return {
+    r: Math.round(a.col[0] + (b.col[0] - a.col[0]) * sm),
+    g: Math.round(a.col[1] + (b.col[1] - a.col[1]) * sm),
+    b: Math.round(a.col[2] + (b.col[2] - a.col[2]) * sm),
+    alpha: a.a + (b.a - a.a) * sm,
+    amb: a.amb + (b.amb - a.amb) * sm,
+    phase: p,
+  };
+};
+
+// --- Wolkenschatten: einmal gebacken, dann nur noch gekachelt ---
+G.cloudTex = null;
+G.buildClouds = () => {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const cc = cv.getContext('2d');
+  const rng = G.mulberry32(9182);
+  for (let i = 0; i < 26; i++) {
+    const x = rng() * 256, y = rng() * 256, r = 40 + rng() * 70;
+    const gr = cc.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(0,0,0,${(0.05 + rng() * 0.07).toFixed(3)})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    cc.fillStyle = gr; cc.fillRect(x - r, y - r, r * 2, r * 2);
+    // Ueber den Rand wiederholen, damit die Kachelung nahtlos bleibt
+    for (const [ox, oy] of [[256,0],[-256,0],[0,256],[0,-256]]) {
+      const g2 = cc.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      g2.addColorStop(0, `rgba(0,0,0,${(0.05 + rng() * 0.07).toFixed(3)})`);
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      cc.fillStyle = g2; cc.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+    }
+  }
+  G.cloudTex = cv;
+};
+
+// Biome, ueber denen Wolken ziehen, mit Staerke
+G.CLOUD_STRENGTH = { wueste: 1.0, hain: 0.85, asche: 0.7, mond: 0.5, sumpf: 0.6,
+                     sternen: 0.3, bibliothek: 0.25, kristall: 0, unterwelt: 0, grau: 0.55 };
+
 // --- Einstellungen ---
 G.settings = { crt: true, partikel: true };
 
@@ -355,10 +421,26 @@ G.wrapText = (ctx, str, maxWidth, size = 14) => {
 };
 
 // --- Vignette ---
-G.vignette = (c, strength = 0.55) => {
-  const g = c.createRadialGradient(G.W / 2, G.FIELD_H / 2, G.W * 0.28, G.W / 2, G.FIELD_H / 2, G.W * 0.85);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, `rgba(0,0,0,${strength})`);
+// Distanznebel statt schwarzer Vignette: der Bildrand verliert Kontrast
+// in der Farbe des Bioms. Der Gradient wird pro Biom einmal gebaut.
+G.FOG = { wueste: 0.62, sumpf: 0.70, unterwelt: 0.58, kristall: 0.50,
+          hain: 0.55, mond: 0.48, sternen: 0.42, bibliothek: 0.52,
+          asche: 0.50, grau: 0.66 };
+G._fogCache = {};
+G.vignette = (c, strength = 0.55, biome) => {
+  const pal = (biome && G.BIOMES[biome]) || G.pal;
+  const s = (biome && G.FOG[biome] !== undefined) ? G.FOG[biome] : strength;
+  const key = (biome || 'x') + '|' + Math.round(s * 20) + '|' + G.FIELD_H;
+  let g = G._fogCache[key];
+  if (!g) {
+    const hex = pal.bgDeep.replace('#', '');
+    const r = parseInt(hex.slice(0, 2), 16), gg = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    g = c.createRadialGradient(G.W / 2, G.FIELD_H / 2, G.W * 0.30, G.W / 2, G.FIELD_H / 2, G.W * 0.92);
+    g.addColorStop(0, `rgba(${r},${gg},${b},0)`);
+    g.addColorStop(0.6, `rgba(${r},${gg},${b},${(s * 0.35).toFixed(3)})`);
+    g.addColorStop(1, `rgba(${r},${gg},${b},${s.toFixed(3)})`);
+    G._fogCache[key] = g;
+  }
   c.fillStyle = g;
   c.fillRect(0, 0, G.W, G.FIELD_H);
 };

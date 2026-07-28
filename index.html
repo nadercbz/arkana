@@ -199,6 +199,72 @@ for (const b of Object.values(G.BIOMES)) {
   for (const k in G.PAL.amber) if (b[k] === undefined) b[k] = G.PAL.amber[k];
 }
 
+// --- Tageszeit ---
+// Ein Spieltag dauert 12 Echtzeit-Minuten. Die Stimmung wird zwischen
+// vier Stuetzstellen interpoliert und faerbt die ganze Welt. Das
+// Umgebungslicht "amb" steuert gleichzeitig, wie stark Fackeln wirken.
+G.DAY_KEYS = [
+  { t: 0.00, col: [22, 34, 78],  a: 0.52, amb: 0.32 },  // Nacht
+  { t: 0.22, col: [118, 84, 96], a: 0.28, amb: 0.68 },  // Daemmerung
+  { t: 0.50, col: [255, 242, 214], a: 0.05, amb: 1.00 },// Mittag
+  { t: 0.78, col: [196, 96, 44], a: 0.26, amb: 0.74 },  // Abend
+];
+G.dayPhase = () => {
+  const cycle = 12 * 60 * 1000;
+  return ((G.timeOffset || 0) + performance.now()) % cycle / cycle;
+};
+G.dayMood = () => {
+  const p = G.dayPhase();
+  const K = G.DAY_KEYS;
+  let a = K[K.length - 1], b = K[0], span;
+  for (let i = 0; i < K.length; i++) {
+    const cur = K[i], nxt = K[(i + 1) % K.length];
+    const hi = nxt.t > cur.t ? nxt.t : nxt.t + 1;
+    if (p >= cur.t && p < hi) { a = cur; b = nxt; span = hi - cur.t; break; }
+    if (i === K.length - 1) { a = cur; b = nxt; span = 1 - cur.t + nxt.t; }
+  }
+  let f = (p - a.t) / span;
+  if (f < 0) f += 1 / span;
+  f = Math.max(0, Math.min(1, f));
+  const sm = f * f * (3 - 2 * f);   // weiche Blende
+  return {
+    r: Math.round(a.col[0] + (b.col[0] - a.col[0]) * sm),
+    g: Math.round(a.col[1] + (b.col[1] - a.col[1]) * sm),
+    b: Math.round(a.col[2] + (b.col[2] - a.col[2]) * sm),
+    alpha: a.a + (b.a - a.a) * sm,
+    amb: a.amb + (b.amb - a.amb) * sm,
+    phase: p,
+  };
+};
+
+// --- Wolkenschatten: einmal gebacken, dann nur noch gekachelt ---
+G.cloudTex = null;
+G.buildClouds = () => {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const cc = cv.getContext('2d');
+  const rng = G.mulberry32(9182);
+  for (let i = 0; i < 26; i++) {
+    const x = rng() * 256, y = rng() * 256, r = 40 + rng() * 70;
+    const gr = cc.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(0,0,0,${(0.05 + rng() * 0.07).toFixed(3)})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    cc.fillStyle = gr; cc.fillRect(x - r, y - r, r * 2, r * 2);
+    // Ueber den Rand wiederholen, damit die Kachelung nahtlos bleibt
+    for (const [ox, oy] of [[256,0],[-256,0],[0,256],[0,-256]]) {
+      const g2 = cc.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      g2.addColorStop(0, `rgba(0,0,0,${(0.05 + rng() * 0.07).toFixed(3)})`);
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      cc.fillStyle = g2; cc.fillRect(x + ox - r, y + oy - r, r * 2, r * 2);
+    }
+  }
+  G.cloudTex = cv;
+};
+
+// Biome, ueber denen Wolken ziehen, mit Staerke
+G.CLOUD_STRENGTH = { wueste: 1.0, hain: 0.85, asche: 0.7, mond: 0.5, sumpf: 0.6,
+                     sternen: 0.3, bibliothek: 0.25, kristall: 0, unterwelt: 0, grau: 0.55 };
+
 // --- Einstellungen ---
 G.settings = { crt: true, partikel: true };
 
@@ -455,10 +521,26 @@ G.wrapText = (ctx, str, maxWidth, size = 14) => {
 };
 
 // --- Vignette ---
-G.vignette = (c, strength = 0.55) => {
-  const g = c.createRadialGradient(G.W / 2, G.FIELD_H / 2, G.W * 0.28, G.W / 2, G.FIELD_H / 2, G.W * 0.85);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, `rgba(0,0,0,${strength})`);
+// Distanznebel statt schwarzer Vignette: der Bildrand verliert Kontrast
+// in der Farbe des Bioms. Der Gradient wird pro Biom einmal gebaut.
+G.FOG = { wueste: 0.62, sumpf: 0.70, unterwelt: 0.58, kristall: 0.50,
+          hain: 0.55, mond: 0.48, sternen: 0.42, bibliothek: 0.52,
+          asche: 0.50, grau: 0.66 };
+G._fogCache = {};
+G.vignette = (c, strength = 0.55, biome) => {
+  const pal = (biome && G.BIOMES[biome]) || G.pal;
+  const s = (biome && G.FOG[biome] !== undefined) ? G.FOG[biome] : strength;
+  const key = (biome || 'x') + '|' + Math.round(s * 20) + '|' + G.FIELD_H;
+  let g = G._fogCache[key];
+  if (!g) {
+    const hex = pal.bgDeep.replace('#', '');
+    const r = parseInt(hex.slice(0, 2), 16), gg = parseInt(hex.slice(2, 4), 16), b = parseInt(hex.slice(4, 6), 16);
+    g = c.createRadialGradient(G.W / 2, G.FIELD_H / 2, G.W * 0.30, G.W / 2, G.FIELD_H / 2, G.W * 0.92);
+    g.addColorStop(0, `rgba(${r},${gg},${b},0)`);
+    g.addColorStop(0.6, `rgba(${r},${gg},${b},${(s * 0.35).toFixed(3)})`);
+    g.addColorStop(1, `rgba(${r},${gg},${b},${s.toFixed(3)})`);
+    G._fogCache[key] = g;
+  }
   c.fillStyle = g;
   c.fillRect(0, 0, G.W, G.FIELD_H);
 };
@@ -1264,6 +1346,183 @@ G.drawShrine = (c, px, py, p, t) => {
   c.globalAlpha = a; c.fillStyle = p.glow; c.fillRect(x + 26, y + 10, 28, 28);
   c.globalAlpha = a * 0.7; c.fillStyle = p.textBright; c.fillRect(x + 33, y + 17, 14, 14);
   c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// DEKORATION: Kleinkram auf dem Boden, rein aus der Rauschfunktion.
+// Kein Speicher, kein Zustand, deterministisch. Das ist der billigste
+// Weg, damit kein Bodenfeld aussieht wie das daneben.
+// ------------------------------------------------------------
+const D = {
+  // Steinchen
+  stein: (c, x, y, p, n) => {
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + 3, y + 2, 4, 3); c.fillRect(x + 7, y + 4, 3, 2);
+    c.fillStyle = p.textDim; c.globalAlpha = 0.25;
+    c.fillRect(x + 3, y + 2, 4, 1); c.globalAlpha = 1;
+  },
+  // Grasbüschel
+  halme: (c, x, y, p, n, t) => {
+    c.fillStyle = p.dim; c.globalAlpha = 0.55;
+    for (let i = 0; i < 4; i++) {
+      const sw = Math.sin(t * 1.3 + n * 9 + i) * 1.2;
+      c.fillRect(Math.round(x + i * 3 + sw), y + 3 - i % 2, 1, 5 + i % 2);
+    }
+    c.globalAlpha = 1;
+  },
+  // Scherben
+  scherbe: (c, x, y, p) => {
+    c.fillStyle = p.cardHi;
+    c.beginPath(); c.moveTo(x + 2, y + 6); c.lineTo(x + 8, y); c.lineTo(x + 9, y + 6); c.closePath(); c.fill();
+    c.fillStyle = p.textDim; c.globalAlpha = 0.3; c.fillRect(x + 4, y + 2, 2, 1); c.globalAlpha = 1;
+  },
+  // Wurzelende
+  wurzel: (c, x, y, p) => {
+    c.strokeStyle = p.card; c.lineWidth = 2; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(x, y + 4); c.quadraticCurveTo(x + 6, y, x + 12, y + 5); c.stroke();
+    c.lineWidth = 1; c.strokeStyle = p.cardHi;
+    c.beginPath(); c.moveTo(x + 4, y + 3); c.lineTo(x + 7, y + 6); c.stroke();
+  },
+  // Knochensplitter
+  knochen: (c, x, y, p) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.5;
+    c.fillRect(x + 1, y + 3, 9, 2);
+    c.fillRect(x, y + 2, 2, 4); c.fillRect(x + 9, y + 2, 2, 4);
+    c.globalAlpha = 1;
+  },
+  // Riss im Boden
+  riss: (c, x, y, p, n) => {
+    c.strokeStyle = p.bgVoid; c.lineWidth = 1; c.globalAlpha = 0.6;
+    c.beginPath();
+    c.moveTo(x, y + 2);
+    c.lineTo(x + 5, y + 4 + (n * 5 % 3));
+    c.lineTo(x + 11, y + 1);
+    c.stroke(); c.globalAlpha = 1;
+  },
+  // Ascheflecken
+  asche: (c, x, y, p, n) => {
+    c.fillStyle = p.bgDeep; c.globalAlpha = 0.5;
+    c.fillRect(x, y, 7, 4); c.fillRect(x + 5, y + 3, 5, 3);
+    c.globalAlpha = 1;
+  },
+  // Eiskristall
+  eis: (c, x, y, p, n, t) => {
+    const a = 0.3 + 0.25 * Math.sin(t * 1.5 + n * 8);
+    c.globalAlpha = a; c.fillStyle = p.bright;
+    c.fillRect(x + 4, y, 1, 9); c.fillRect(x, y + 4, 9, 1);
+    c.fillRect(x + 2, y + 2, 5, 5); c.globalAlpha = 1;
+  },
+  // Sandwelle
+  welle: (c, x, y, p, n) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.2;
+    c.fillRect(x, y + 2, 14, 1); c.fillRect(x + 3, y + 5, 10, 1);
+    c.globalAlpha = 1;
+  },
+  // Funkenglut
+  glut: (c, x, y, p, n, t) => {
+    const a = 0.35 + 0.45 * Math.sin(t * 3 + n * 11);
+    c.globalAlpha = a; c.fillStyle = p.main;
+    c.fillRect(x + 2, y + 2, 3, 3);
+    c.globalAlpha = a * 0.4; c.fillRect(x, y, 7, 7);
+    c.globalAlpha = 1;
+  },
+  // Papierfetzen
+  papier: (c, x, y, p, n, t) => {
+    const sw = Math.sin(t * 0.9 + n * 6) * 1.5;
+    c.fillStyle = p.textDim; c.globalAlpha = 0.35;
+    c.save(); c.translate(x + 5, y + 4); c.rotate(n * 3 + sw * 0.1);
+    c.fillRect(-4, -3, 8, 6); c.restore();
+    c.globalAlpha = 1;
+  },
+  // Pilz
+  pilz: (c, x, y, p, n, t) => {
+    const gl = 0.3 + 0.3 * Math.sin(t * 2 + n * 7);
+    c.fillStyle = p.dim; c.fillRect(x + 4, y + 4, 2, 4);
+    c.globalAlpha = gl * 0.5; c.fillStyle = p.glow;
+    c.beginPath(); c.arc(x + 5, y + 3, 6, 0, 6.283); c.fill();
+    c.globalAlpha = 1; c.fillStyle = p.main;
+    c.fillRect(x + 2, y + 1, 7, 3); c.fillRect(x + 3, y, 5, 1);
+  },
+};
+
+// Grosse, seltene Fundstuecke. Etwa alle 30 Kacheln eins.
+const DBIG = {
+  saeulenrest: (c, x, y, p) => {
+    c.globalAlpha = 0.3; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 14, y + 22, 13, 4, 0, 0, 6.283); c.fill(); c.globalAlpha = 1;
+    c.fillStyle = p.card; c.fillRect(x + 3, y + 8, 22, 12);
+    c.fillStyle = p.cardHi; c.fillRect(x + 3, y + 8, 22, 3);
+    c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 12, 3, 8); c.fillRect(x + 17, y + 13, 2, 7);
+  },
+  feuerstelle: (c, x, y, p, n, t) => {
+    c.fillStyle = p.bgVoid; c.beginPath(); c.arc(x + 12, y + 12, 9, 0, 6.283); c.fill();
+    c.fillStyle = p.card;
+    for (let i = 0; i < 6; i++) {
+      const a = i / 6 * 6.283;
+      c.fillRect(x + 12 + Math.cos(a) * 9 - 2, y + 12 + Math.sin(a) * 9 - 2, 4, 4);
+    }
+    const gl = 0.25 + 0.2 * Math.sin(t * 2.5 + n * 5);
+    c.globalAlpha = gl; c.fillStyle = p.main;
+    c.beginPath(); c.arc(x + 12, y + 12, 6, 0, 6.283); c.fill(); c.globalAlpha = 1;
+  },
+  gebein: (c, x, y, p) => {
+    c.fillStyle = p.textDim; c.globalAlpha = 0.45;
+    c.fillRect(x + 2, y + 10, 18, 2);
+    c.fillRect(x + 4, y + 6, 2, 8); c.fillRect(x + 9, y + 5, 2, 9); c.fillRect(x + 14, y + 6, 2, 8);
+    c.beginPath(); c.arc(x + 20, y + 9, 4, 0, 6.283); c.fill();
+    c.globalAlpha = 1;
+  },
+  wegstein: (c, x, y, p) => {
+    c.globalAlpha = 0.28; c.fillStyle = '#000';
+    c.beginPath(); c.ellipse(x + 10, y + 20, 9, 3, 0, 0, 6.283); c.fill(); c.globalAlpha = 1;
+    c.fillStyle = p.card; c.fillRect(x + 5, y + 4, 11, 16);
+    c.fillStyle = p.cardHi; c.fillRect(x + 5, y + 4, 11, 2);
+    c.fillStyle = p.bgVoid;
+    c.fillRect(x + 8, y + 9, 5, 1); c.fillRect(x + 8, y + 12, 4, 1);
+  },
+};
+
+// Welche Deko passt zu welchem Biom
+G.DECO = {
+  asche:     ['asche', 'riss', 'stein', 'papier', 'scherbe'],
+  bibliothek:['papier', 'papier', 'stein', 'asche'],
+  grau:      ['riss', 'stein', 'papier', 'scherbe'],
+  sumpf:     ['halme', 'pilz', 'wurzel', 'stein'],
+  hain:      ['halme', 'halme', 'wurzel', 'pilz', 'stein'],
+  mond:      ['eis', 'stein', 'halme'],
+  kristall:  ['scherbe', 'stein', 'riss'],
+  wueste:    ['welle', 'welle', 'knochen', 'stein'],
+  sternen:   ['stein', 'riss', 'scherbe'],
+  unterwelt: ['glut', 'riss', 'knochen', 'stein'],
+};
+G.DECO_BIG = {
+  asche: ['saeulenrest', 'wegstein', 'feuerstelle'],
+  bibliothek: ['saeulenrest', 'wegstein'],
+  grau: ['wegstein'],
+  sumpf: ['gebein', 'wegstein'],
+  hain: ['wegstein', 'feuerstelle'],
+  mond: ['wegstein', 'saeulenrest'],
+  kristall: ['saeulenrest'],
+  wueste: ['gebein', 'saeulenrest', 'wegstein'],
+  sternen: ['saeulenrest', 'wegstein'],
+  unterwelt: ['gebein', 'feuerstelle'],
+};
+
+// Zeichnet Deko auf eine begehbare Kachel. Wird im Grundpass aufgerufen.
+G.drawDeco = (c, x, y, tx, ty, biome, p, t) => {
+  const h = noise2(tx * 7 + 13, ty * 11 + 5);
+  if (h > 0.965) {
+    const big = G.DECO_BIG[biome];
+    if (big && big.length) {
+      const fn = DBIG[big[Math.floor(h * 997) % big.length]];
+      if (fn) fn(c, x + 8, y + 8, p, h, t);
+      return;
+    }
+  }
+  if (h < 0.74) return;
+  const list = G.DECO[biome] || G.DECO.asche;
+  const fn = D[list[Math.floor(h * 991) % list.length]];
+  if (fn) fn(c, x + Math.floor((h * 173) % 24), y + Math.floor((h * 331) % 26), p, h, t);
 };
 
 // ------------------------------------------------------------
@@ -2690,7 +2949,7 @@ G.OverworldScene = () => {
   let ambientTimer = 0;
   let fauna = [];
   let faunaKey = null;
-  const cam = { x: 0, y: 0 };
+  const cam = { x: 0, y: 0, vx: 0, vy: 0 };
   let lastRegion = null;
 
   const arkana = () => G.state.phase === 'arkana';
@@ -2835,11 +3094,23 @@ G.OverworldScene = () => {
       }
 
       {
-        // ---------- Kamera folgt weich, bleibt in der Karte ----------
-        const tgx = G.state.px + 13 - G.W / 2;
-        const tgy = G.state.py + 20 - G.FIELD_H / 2;
-        cam.x += (tgx - cam.x) * Math.min(1, dt * 6);
-        cam.y += (tgy - cam.y) * Math.min(1, dt * 6);
+        // ---------- Kamera: Totzone, Lookahead, Federung ----------
+        // Kleine Schritte verschieben das Bild nicht. Beim Laufen
+        // schaut die Kamera leicht in die Richtung voraus.
+        const pcx = G.state.px + 13, pcy = G.state.py + 20;
+        const look = 0.26;
+        let tgx = pcx + vx * look - G.W / 2;
+        let tgy = pcy + vy * look - G.FIELD_H / 2;
+        // Totzone: 44 x 64 Pixel um die Bildmitte
+        const dzx = pcx - (cam.x + G.W / 2), dzy = pcy - (cam.y + G.FIELD_H / 2);
+        if (Math.abs(dzx) < 22 && Math.abs(vx) < 6) tgx = cam.x;
+        if (Math.abs(dzy) < 32 && Math.abs(vy) < 6) tgy = cam.y;
+        // Feder statt linearem Nachziehen
+        const stiff = 105, damp = 15.5;
+        cam.vx += ((tgx - cam.x) * stiff - cam.vx * damp) * dt;
+        cam.vy += ((tgy - cam.y) * stiff - cam.vy * damp) * dt;
+        cam.x += cam.vx * dt;
+        cam.y += cam.vy * dt;
         cam.x = Math.max(0, Math.min(M().W * TT - G.W, cam.x));
         cam.y = Math.max(0, Math.min(M().H * TT - G.FIELD_H, cam.y));
         // Kartengrenzen für den Spieler
@@ -2941,10 +3212,15 @@ G.OverworldScene = () => {
       const cols = G.state.sig ? G.state.sig.farben
         : { robe: '#4a4e58', robeHi: '#5f646f', robeDark: '#2a2d33', trim: '#8b8f99', core: '#ff8c00' };
       G.drawPlayer(c, G.state.px - cx, G.state.py - cy, anim, p, cols, arkana() ? null : G.PAL.amber.main);
+      // Wolkenschatten ziehen über alles, danach die Tagesstimmung,
+      // erst dann das Licht. Sonst wirken Fackeln wie Aufkleber.
+      const bioNow = M().biomeAt(tx, ty);
+      G.drawClouds(c, cx, cy, t, bioNow);
+      G.drawDayTint(c);
       G.drawBigLight(c, cx, cy, t);
       c.restore();
 
-      G.vignette(c, arkana() ? 0.42 : 0.62);
+      G.vignette(c, arkana() ? 0.42 : 0.62, bioNow);
 
       // ---------- HUD ----------
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
@@ -4367,29 +4643,50 @@ G.drawBigMap = (c, camX, camY, t) => {
     return tl ? tl.solid : false;
   };
 
-  // 1. Grundkacheln
+  // 1. Grundkacheln plus Dekoration auf begehbarem Boden
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
-      (G.TILES[at(tx, ty)] || G.TILES['.']).draw(c, tx * T - camX, ty * T - camY, pal, t, tx, ty);
+      const bio = M.biomeAt(tx, ty);
+      const pal = G.BIOMES[bio] || G.pal;
+      const ch = at(tx, ty);
+      const x = tx * T - camX, y = ty * T - camY;
+      (G.TILES[ch] || G.TILES['.']).draw(c, x, y, pal, t, tx, ty);
+      // Nur auf schlichtem Boden, sonst wird es unruhig
+      if (ch === '.' || ch === ',' || ch === 's' || ch === '=') {
+        G.drawDeco(c, x, y, tx, ty, bio, pal, t);
+      }
     }
   }
 
-  // 2. Schlagschatten der Wände auf den Boden darunter
-  c.globalAlpha = 0.42;
-  c.fillStyle = '#000';
+  // 2. Schlagschatten, weich auslaufend statt harte Kante.
+  // Die Gradienten werden einmal gebaut und wiederverwendet.
+  if (!G._shadowGrads) {
+    const mk = (x0_, y0_, x1_, y1_) => {
+      const g2 = c.createLinearGradient(x0_, y0_, x1_, y1_);
+      g2.addColorStop(0, 'rgba(0,0,0,0.50)');
+      g2.addColorStop(0.55, 'rgba(0,0,0,0.16)');
+      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      return g2;
+    };
+    G._shadowGrads = {
+      top: mk(0, 0, 0, 14), left: mk(0, 0, 12, 0),
+      right: mk(T, 0, T - 12, 0), bottom: mk(0, T, 0, T - 10),
+    };
+  }
+  const SG = G._shadowGrads;
   for (let ty = y0; ty <= y1; ty++) {
     for (let tx = x0; tx <= x1; tx++) {
-      if (solid(tx, ty) || !G.TILES[at(tx, ty)]) continue;
-      if (G.TILES[at(tx, ty)].solid) continue;
+      const tl = G.TILES[at(tx, ty)];
+      if (!tl || tl.solid) continue;
       const x = tx * T - camX, y = ty * T - camY;
-      if (solid(tx, ty - 1)) c.fillRect(x, y, T, 7);            // Wand über mir
-      if (solid(tx - 1, ty)) c.fillRect(x, y, 5, T);            // Wand links
-      if (solid(tx + 1, ty)) c.fillRect(x + T - 5, y, 5, T);    // Wand rechts
-      if (solid(tx - 1, ty - 1) && !solid(tx, ty - 1) && !solid(tx - 1, ty)) c.fillRect(x, y, 5, 5);
+      c.save(); c.translate(x, y);
+      if (solid(tx, ty - 1)) { c.fillStyle = SG.top; c.fillRect(0, 0, T, 14); }
+      if (solid(tx - 1, ty)) { c.fillStyle = SG.left; c.fillRect(0, 0, 12, T); }
+      if (solid(tx + 1, ty)) { c.fillStyle = SG.right; c.fillRect(T - 12, 0, 12, T); }
+      if (solid(tx, ty + 1)) { c.fillStyle = SG.bottom; c.fillRect(0, T - 10, T, 10); }
+      c.restore();
     }
   }
-  c.globalAlpha = 1;
 
   // 3. Kantenlicht auf den Wänden, dort wo Begehbares angrenzt
   for (let ty = y0; ty <= y1; ty++) {
@@ -4437,7 +4734,9 @@ G.drawBigLight = (c, camX, camY, t) => {
       const [r, i0] = spec;
       const x = tx * T + T / 2 - camX, y = ty * T + T / 2 - camY;
       const pal = G.BIOMES[M.biomeAt(tx, ty)] || G.pal;
-      const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + tx * 1.7 + ty * 2.3));
+      // Nachts stark, mittags fast unsichtbar
+      const amb = G.dayMood().amb;
+      const flick = i0 * (0.82 + 0.18 * Math.sin(t * 6 + tx * 1.7 + ty * 2.3)) * (1.25 - amb * 0.95);
       const grd = c.createRadialGradient(x, y, 0, x, y, r);
       grd.addColorStop(0, pal.glow);
       grd.addColorStop(1, 'rgba(0,0,0,0)');
@@ -4540,6 +4839,49 @@ G.mapSolid = (px, py) => {
   const ch = (M.tiles[ty] || '')[tx] || '.';
   const tile = G.TILES[ch];
   return tile ? tile.solid : false;
+};
+
+
+// ------------------------------------------------------------
+// Wolkenschatten: eine langsamer ziehende Ebene. In der Draufsicht
+// ist das die ehrlichste Form von Parallaxe.
+// ------------------------------------------------------------
+G.drawClouds = (c, camX, camY, t, biome) => {
+  const str = (G.CLOUD_STRENGTH[biome] !== undefined) ? G.CLOUD_STRENGTH[biome] : 0.5;
+  if (str <= 0) return;
+  if (!G.cloudTex) G.buildClouds();
+  const mood = G.dayMood();
+  const night = Math.max(0, 1 - mood.amb * 1.4);
+  const alpha = str * (0.55 - night * 0.45);
+  if (alpha <= 0.02) return;
+  // Faktor 0.6 = Parallaxe, t*9 = Wind
+  const ox = -(camX * 0.6 + t * 9) % 256, oy = -(camY * 0.6 + t * 3) % 256;
+  c.globalAlpha = alpha;
+  for (let y = oy - 256; y < G.FIELD_H + 256; y += 256) {
+    for (let x = ox - 256; x < G.W + 256; x += 256) {
+      c.drawImage(G.cloudTex, Math.round(x), Math.round(y));
+    }
+  }
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Tageszeit als Farbstimmung. Kommt nach der Welt und vor dem Licht.
+// ------------------------------------------------------------
+G.drawDayTint = (c) => {
+  const m = G.dayMood();
+  if (m.alpha < 0.02) return;
+  // Absenken in der Stimmungsfarbe
+  c.globalAlpha = m.alpha;
+  c.fillStyle = `rgb(${m.r},${m.g},${m.b})`;
+  c.globalCompositeOperation = 'multiply';
+  c.fillRect(0, 0, G.W, G.FIELD_H);
+  // Leichte warme Anhebung, damit es nicht nur dunkler wird
+  c.globalCompositeOperation = 'screen';
+  c.globalAlpha = m.alpha * 0.22;
+  c.fillRect(0, 0, G.W, G.FIELD_H);
+  c.globalCompositeOperation = 'source-over';
+  c.globalAlpha = 1;
 };
 
 </script>
