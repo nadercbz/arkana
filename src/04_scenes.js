@@ -137,16 +137,69 @@ G.DialogScene = (lines, onDone) => {
 };
 
 // ------------------------------------------------------------
+// Persönliche Deutung: verbindet ein Fragment mit der Signatur
+// ------------------------------------------------------------
+G.deutungFor = (frag) => {
+  const s = G.state && G.state.sig;
+  const d = G.DEUTUNG && G.DEUTUNG[frag.modul];
+  if (!s || !d) return null;
+  // Welche Achse gezeigt wird, hängt am Fragment selbst. So bekommt
+  // der Spieler über die Sammlung hinweg alle drei Blickwinkel.
+  const achsen = ['element', 'zahl', 'phase'];
+  const pick = achsen[G.hashStr(frag.id) % 3];
+  let kern = '';
+  if (pick === 'element') kern = d.element[s.element];
+  else if (pick === 'zahl') kern = d.zahl[s.zahl];
+  else kern = d.phase[s.saturn.name];
+  if (!kern) kern = d.element[s.element] || d.zahl[s.zahl] || '';
+  return {
+    intro: (d.intro || '').replace(/\{name\}/g, s.name),
+    kern,
+    achse: pick,
+    thema: d.thema || '',
+  };
+};
+
+// Gesamtbild aus allen gesammelten Fragmenten
+G.buildGesamtbild = () => {
+  const s = G.state.sig, st = G.state.stats, GB = G.GESAMTBILD;
+  const n = G.state.fragmente.length, total = G.FRAGMENTS.length;
+  const anteil = total ? n / total : 0;
+  const stufe = anteil >= 0.999 ? 'alle' : anteil >= 0.5 ? 'viel' : anteil >= 0.2 ? 'mittel' : 'wenig';
+  const haltung = st.geprueft > st.geglaubt * 1.3 ? 'zweifel'
+    : st.geglaubt > st.geprueft * 1.3 ? 'glaube' : 'gleichgewicht';
+  const seiten = [];
+  seiten.push(`${s.name.toUpperCase()}\n${s.sym} ${s.zeichen} · ${s.element} · ${s.planet}\nNamenszahl ${s.zahl} · ${s.gabe.name}\n${s.saturn.name}\n\nFragmente: ${n} von ${total}`);
+  seiten.push(GB.eroeffnung[stufe]);
+  seiten.push(GB.element[s.element]);
+  seiten.push(GB.zahl[s.zahl] || GB.zahl[9]);
+  seiten.push(GB.phase[s.saturn.name]);
+  seiten.push(GB.haltung[haltung]);
+  // Die gesammelten Themen als Spur der eigenen Reise
+  const module = [...new Set(G.state.fragmente.map((id) => {
+    const f = G.FRAGMENTS.find((x) => x.id === id); return f ? f.modul : null;
+  }).filter(Boolean))];
+  if (module.length) {
+    const themen = module.map((m) => (G.DEUTUNG[m] && G.DEUTUNG[m].thema) || '').filter(Boolean);
+    if (themen.length) seiten.push('Deine Spur führte durch:\n\n' + themen.join(', ') + '.');
+  }
+  seiten.push(GB.schluss);
+  return seiten;
+};
+
+// ------------------------------------------------------------
 // Fragment
 // ------------------------------------------------------------
 G.FragmentScene = (frag) => {
   let sel = 0; let stage = 0; let t = 0; let appear = 0;
+  const deut = G.deutungFor(frag);
   return {
     translucent: true,
     enter() { G.doShake(2, 0.2); },
     update(dt) {
       t += dt; appear = Math.min(1, appear + dt * 3.5);
-      if (stage === 0) { if (G.input.pressed('action')) stage = 1; }
+      if (stage === 0) { if (G.input.pressed('action')) stage = deut ? 1 : 2; }
+      else if (stage === 1) { if (G.input.pressed('action')) stage = 2; }
       else {
         if (G.input.pressed('left') || G.input.pressed('right')) sel = 1 - sel;
         if (G.input.pressed('action')) {
@@ -173,12 +226,27 @@ G.FragmentScene = (frag) => {
         c.fillRect(bx, by, 14, 3); c.fillRect(bx, by, 3, 14);
       });
       G.textGlow(c, '✦', G.W / 2, y0 + 24, p.main, 26);
-      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
-      const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
-      tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
-      const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
-      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
-      if (stage === 0) {
+      if (stage <= 0) {
+        G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
+        const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
+        tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
+        const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
+        wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
+      } else {
+        // Der persönliche Teil: was das Thema über den Spieler sagt
+        const label = { element: 'DEIN ELEMENT', zahl: 'DEINE ZAHL', phase: 'DEINE PHASE' }[deut.achse];
+        G.text(c, label, G.W / 2, y0 + 60, p.main, 15, 'center');
+        const s2 = G.state.sig;
+        const sub = { element: `${s2.element} · ${s2.sym} ${s2.zeichen}`, zahl: `${s2.zahl} · ${s2.gabe.name}`, phase: s2.saturn.name }[deut.achse];
+        G.text(c, sub, G.W / 2, y0 + 84, p.textBright, 17, 'center');
+        let yy = y0 + 122;
+        G.wrapText(c, deut.intro, G.W - 76, 15).slice(0, 4).forEach((l) => { G.text(c, l, 38, yy, p.textDim, 15); yy += 19; });
+        yy += 10;
+        c.fillStyle = p.main; c.globalAlpha = 0.5 * appear; c.fillRect(38, yy - 6, G.W - 76, 1); c.globalAlpha = appear;
+        yy += 8;
+        G.wrapText(c, deut.kern, G.W - 76, 17).slice(0, 7).forEach((l) => { G.text(c, l, 38, yy, p.textBright, 17); yy += 22; });
+      }
+      if (stage <= 1) {
         if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 16, 'center');
       } else {
         G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 19, 'center');
@@ -293,6 +361,68 @@ G.buildReading = () => {
   lines.push('Geh weiter, Suchender. Das Muster ist noch nicht fertig mit dir.');
   lines.push('(Ende von Kapitel 1. Die Reise geht weiter.)');
   return lines;
+};
+
+
+// ------------------------------------------------------------
+// Spiegelschrein: das Gesamtbild über die eigene Person
+// ------------------------------------------------------------
+G.SpiegelScene = () => {
+  const seiten = G.buildGesamtbild();
+  let i = 0, t = 0, fade = 0;
+  return {
+    translucent: true,
+    enter() { G.doShake(3, 0.5); },
+    update(dt) {
+      t += dt; fade = Math.min(1, fade + dt * 2.2);
+      if (G.input.pressed('action')) {
+        i++; fade = 0;
+        if (i >= seiten.length) { G.save(); G.popScene(); }
+      }
+      if (G.input.pressed('cancel')) { G.save(); G.popScene(); }
+      if (Math.random() < 0.25) {
+        G.spawnParticle({ x: Math.random() * G.W, y: G.H, vx: (Math.random() - 0.5) * 12,
+          vy: -18 - Math.random() * 22, life: 5, fade: 2, color: G.pal.glow, size: 2, alpha: 0.4 });
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.globalAlpha = 0.9; c.fillStyle = '#000'; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      G.drawParticles(c);
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(16, 16, G.W - 32, G.H - 32);
+      c.fillStyle = p.main;
+      [[18, 18], [G.W - 44, 18], [18, G.H - 44], [G.W - 44, G.H - 44]].forEach(([bx, by]) => {
+        c.fillRect(bx, by, 26, 3); c.fillRect(bx, by, 3, 26);
+      });
+      G.textGlow(c, '◈', G.W / 2, G.SAFE_Y + 44, p.main, 24);
+      G.text(c, 'DER SPIEGEL', G.W / 2, G.SAFE_Y + 78, p.main, 15, 'center');
+
+      c.globalAlpha = fade;
+      const txt = seiten[Math.min(i, seiten.length - 1)];
+      const blocks = txt.split('\n');
+      let y = G.SAFE_Y + 150;
+      for (const b of blocks) {
+        if (!b.trim()) { y += 14; continue; }
+        const big = i === 0 && b === blocks[0];
+        const lines = G.wrapText(c, b, G.W - 84, big ? 24 : 17);
+        for (const l of lines) {
+          G.text(c, l, G.W / 2, y, big ? p.bright : p.textBright, big ? 24 : 17, 'center');
+          y += big ? 32 : 25;
+        }
+      }
+      c.globalAlpha = 1;
+
+      // Fortschrittsanzeige
+      const n = G.state.fragmente.length, tot = G.FRAGMENTS.length;
+      const bw = G.W - 100, bx = 50, by = G.H - 84;
+      c.fillStyle = p.card; c.fillRect(bx, by, bw, 5);
+      c.fillStyle = p.main; c.fillRect(bx, by, Math.round(bw * (n / tot)), 5);
+      G.text(c, `${n} von ${tot} Fragmenten`, G.W / 2, by + 12, p.textDim, 13, 'center');
+      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) {
+        G.text(c, i < seiten.length - 1 ? '[ OK ]' : '[ OK ] schließen', G.W / 2, G.H - 48, p.textDim, 14, 'center');
+      }
+    },
+  };
 };
 
 // ------------------------------------------------------------
@@ -419,8 +549,33 @@ G.OverworldScene = () => {
       ambientTimer -= dt;
       if (ambientTimer <= 0) {
         ambientTimer = 0.09;
-        const amb = area().ambient;
-        if (amb === 'asche') {
+        const r0 = room();
+        const bio = (r0 && r0.biome) || area().ambient;
+        if (bio === 'sumpf') {
+          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*6, vy: -10 - Math.random()*14,
+            life: 9, fade: 2.5, color: '#4fbf7f', size: 2, alpha: 0.28, drift: 1.4 });
+        } else if (bio === 'kristall') {
+          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H, vx: 0, vy: -6 - Math.random()*8,
+            life: 4, fade: 1.6, color: '#c4baff', size: 2, alpha: 0.5 });
+        } else if (bio === 'wueste') {
+          G.spawnParticle({ x: -4, y: Math.random() * G.FIELD_H, vx: 70 + Math.random()*60, vy: 6,
+            life: 5, fade: 1.2, color: '#e8b040', size: 1, alpha: 0.35 });
+        } else if (bio === 'unterwelt') {
+          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*14, vy: -26 - Math.random()*20,
+            life: 3.5, fade: 1.4, color: '#f5705a', size: 2, alpha: 0.6, drift: 2.2 });
+        } else if (bio === 'sternen') {
+          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H * 0.5, vx: 0, vy: 3,
+            life: 6, fade: 2, color: '#b4dcff', size: 1, alpha: 0.7 });
+        } else if (bio === 'mond') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*10, vy: 9 + Math.random()*10,
+            life: 8, fade: 2.4, color: '#dce6f5', size: 1, alpha: 0.4, drift: 1.8 });
+        } else if (bio === 'hain') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*18, vy: 14 + Math.random()*12,
+            life: 7, fade: 2, color: '#bce870', size: 2, alpha: 0.35, drift: 2.6 });
+        } else if (bio === 'bibliothek') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 11 + Math.random()*9,
+            life: 8, fade: 2.2, color: '#d99a4a', size: 1, alpha: 0.32, drift: 1.5 });
+        } else if (bio === 'asche') {
           G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random() - 0.5) * 8, vy: 12 + Math.random() * 16,
             life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.5, drift: 2 });
         } else if (amb === 'regen') {
@@ -505,7 +660,7 @@ G.OverworldScene = () => {
         if (it) {
           if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
           else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
-          else if (it.type === 'shrine') { G.pushScene(G.DialogScene(G.buildReading(), () => G.save())); }
+          else if (it.type === 'shrine') { G.pushScene(G.SpiegelScene()); }
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
         }
       }
@@ -513,7 +668,9 @@ G.OverworldScene = () => {
     },
 
     draw(c) {
-      const p = G.pal;
+      // Die Palette kommt aus dem Biom des aktuellen Raums
+      const rp = G.roomPal(room());
+      const p = rp || G.pal;
       c.fillStyle = p.bgDeep; c.fillRect(0, 0, G.W, G.FIELD_H);
 
       if (transition) {
@@ -569,7 +726,9 @@ G.OverworldScene = () => {
       // ---- HUD ----
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
-      const areaName = G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ASCHENSTADT';
+      const r = room();
+      const areaName = (r && r.name) ? r.name.toUpperCase()
+        : (G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ARKANA');
       G.text(c, areaName, 20, G.HUD_Y + 16, p.textDim, 15);
       if (G.state.phase === 'arkana') {
         G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
@@ -659,7 +818,7 @@ G.TerminalScene = () => {
         }
         if (t > 2.8) {
           G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
-          G.state.room = '1,1'; G.state.px = 167; G.state.py = 330;
+          G.state.room = '2,2'; G.state.px = 167; G.state.py = 270;
           G.pal = G.PAL.amber; G.particles.length = 0; G.save();
           G.replaceScene(G.OverworldScene());
           G.pushScene(G.DialogScene([

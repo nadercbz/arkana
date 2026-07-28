@@ -147,6 +147,35 @@ G.ELEMENT_COLORS = {
   Luft: { robe: '#5a4a7a', robeHi: '#7f6ba8', robeDark: '#312844', trim: '#d8c8f0', core: '#b89ee8' },
 };
 
+// --- Biome: jede Region hat eine eigene Farbwelt ---
+// Erben von der Amber-Basis, überschreiben nur was anders sein soll.
+G.BIOMES = {
+  asche:   { bg:'#1a0d05', bgDeep:'#0d0602', bgVoid:'#050301', card:'#2d1b0e', cardLight:'#3d2817', cardHi:'#4d3420',
+             main:'#ff8c00', bright:'#ffa500', glow:'#ffb347', dim:'#cc6600', text:'#ffd580', textBright:'#ffe8c2', textDim:'#ad6e21' },
+  sumpf:   { bg:'#0d1a12', bgDeep:'#061009', bgVoid:'#030805', card:'#1a2d20', cardLight:'#26402e', cardHi:'#33543d',
+             main:'#4fbf7f', bright:'#6fd99a', glow:'#8fe8b4', dim:'#2f8f5a', text:'#a8e0c0', textBright:'#d0f0dd', textDim:'#4a8f68' },
+  kristall:{ bg:'#0f0d20', bgDeep:'#080614', bgVoid:'#04030a', card:'#1e1a3a', cardLight:'#2c2652', cardHi:'#3d356e',
+             main:'#8a7fff', bright:'#a99cff', glow:'#c4baff', dim:'#5a4fbf', text:'#c0b8f0', textBright:'#e0dcff', textDim:'#6a5fa0' },
+  wueste:  { bg:'#241a0e', bgDeep:'#160f07', bgVoid:'#0a0704', card:'#3d2d17', cardLight:'#54401f', cardHi:'#6e552b',
+             main:'#e8b040', bright:'#ffc960', glow:'#ffdb8f', dim:'#a87c28', text:'#f0d89a', textBright:'#fff0c8', textDim:'#a08850' },
+  sternen: { bg:'#08101f', bgDeep:'#040914', bgVoid:'#02050a', card:'#12203a', cardLight:'#1b2e52', cardHi:'#264070',
+             main:'#5fa8ff', bright:'#8ac4ff', glow:'#b4dcff', dim:'#3a6fb0', text:'#a8ccf0', textBright:'#d8ecff', textDim:'#5a7fa8' },
+  bibliothek:{ bg:'#1c1208', bgDeep:'#100a05', bgVoid:'#070402', card:'#33230f', cardLight:'#4a3418', cardHi:'#664824',
+             main:'#d99a4a', bright:'#f0b468', glow:'#ffcd90', dim:'#996b30', text:'#e8c895', textBright:'#ffe4c0', textDim:'#9a7a50' },
+  mond:    { bg:'#101420', bgDeep:'#080b14', bgVoid:'#040609', card:'#1e2436', cardLight:'#2c344c', cardHi:'#3d4766',
+             main:'#c0d0e8', bright:'#dce6f5', glow:'#f0f5ff', dim:'#7f8fa8', text:'#c8d4e4', textBright:'#eaf0fa', textDim:'#7a8496' },
+  unterwelt:{ bg:'#1a0808', bgDeep:'#100404', bgVoid:'#080202', card:'#2e1212', cardLight:'#421c1a', cardHi:'#5c2824',
+             main:'#e0503f', bright:'#f5705a', glow:'#ff9480', dim:'#a03428', text:'#e8a898', textBright:'#ffd0c4', textDim:'#9a5a4c' },
+  hain:    { bg:'#12180c', bgDeep:'#0a0f07', bgVoid:'#050803', card:'#22301a', cardLight:'#324528', cardHi:'#455e36',
+             main:'#9fd94f', bright:'#bce870', glow:'#d6f79a', dim:'#6a9a33', text:'#c8e4a0', textBright:'#e8f8cc', textDim:'#7a9a58' },
+  grau:    { bg:'#15161a', bgDeep:'#0b0c0e', bgVoid:'#050506', card:'#22242a', cardLight:'#2e3138', cardHi:'#3a3e46',
+             main:'#8b8f99', bright:'#a8adb8', glow:'#c0c5d0', dim:'#565a63', text:'#9aa0ac', textBright:'#c7ccd6', textDim:'#5c616b' },
+};
+// Fehlende Schlüssel aus Amber ergänzen, damit nichts undefined ist
+for (const b of Object.values(G.BIOMES)) {
+  for (const k in G.PAL.amber) if (b[k] === undefined) b[k] = G.PAL.amber[k];
+}
+
 // --- Einstellungen ---
 G.settings = { crt: true, partikel: true };
 
@@ -661,6 +690,218 @@ G.updateAnim = (an, dt, vx, vy, moving) => {
   return an.stepFlash && !wasDown;
 };
 
+// --- Erweiterte Kacheln für die verschiedenen Habitate ---
+
+// Fels, unregelmäßiger als die Mauer, für Höhlen
+G.TILES['R'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight;
+  c.fillRect(x+2, y+1, T-6, 4); c.fillRect(x+1, y+8, 8, 5);
+  c.fillStyle = p.cardHi; c.fillRect(x+4+Math.floor(n*8), y+2, 7, 2);
+  c.fillStyle = p.bgDeep;
+  c.fillRect(x+Math.floor(n*20), y+18, 9, 4);
+  c.fillRect(x+3, y+T-5, T-8, 5);
+  c.fillRect(x+22, y+9, 5, 7);
+} };
+
+// Kristall, leuchtet und pulsiert
+G.TILES['c'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), pu = 0.5+0.4*Math.sin(t*1.6+n*8);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.globalAlpha = pu*0.22; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20,y+20,19,0,6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = p.dim;
+  c.beginPath(); c.moveTo(x+20,y+3); c.lineTo(x+32,y+22); c.lineTo(x+20,y+36); c.lineTo(x+8,y+22); c.closePath(); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.moveTo(x+20,y+7); c.lineTo(x+28,y+22); c.lineTo(x+20,y+32); c.lineTo(x+13,y+22); c.closePath(); c.fill();
+  c.globalAlpha = pu; c.fillStyle = p.bright;
+  c.beginPath(); c.moveTo(x+20,y+11); c.lineTo(x+24,y+22); c.lineTo(x+20,y+28); c.closePath(); c.fill();
+  c.globalAlpha = 1;
+} };
+
+// Sand, hell und weich
+G.TILES['s'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight;
+  c.fillRect(x, y+Math.floor(n*14)+3, T, 2);
+  c.fillRect(x, y+Math.floor(n*16)+21, T, 2);
+  c.fillStyle = p.cardHi;
+  c.fillRect(x+Math.floor(n*24), y+Math.floor(n*30), 4, 1);
+} };
+
+// Gras und Kräuter
+G.TILES['g'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card;
+  for (let i=0;i<5;i++) {
+    const gx = x+3+((i*13+Math.floor(n*20))%34), gy = y+8+((i*9+Math.floor(n*17))%26);
+    const sway = Math.sin(t*1.4+gx*0.3)*1.2;
+    c.fillRect(Math.round(gx+sway), gy, 1, 5);
+    c.fillRect(Math.round(gx+sway*1.4), gy-2, 1, 3);
+  }
+  c.fillStyle = p.dim;
+  if (n>0.6) { const sw = Math.sin(t*1.1+tx)*1.5; c.fillRect(Math.round(x+18+sw), y+14, 2, 8); }
+} };
+
+// Blühende Pflanze
+G.TILES['p'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*1.2+n*7)*1.8;
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.dim; c.fillRect(Math.round(x+19+sw*0.4), y+18, 2, 14);
+  c.fillStyle = p.card; c.fillRect(Math.round(x+14+sw*0.6), y+22, 5, 2); c.fillRect(Math.round(x+21+sw*0.6), y+26, 5, 2);
+  const bx = Math.round(x+16+sw), by = y+10;
+  c.fillStyle = p.main; c.fillRect(bx, by, 8, 8);
+  c.fillStyle = p.bright; c.fillRect(bx+2, by+2, 4, 4);
+  c.globalAlpha = 0.4+0.3*Math.sin(t*2+n*5); c.fillStyle = p.glow;
+  c.fillRect(bx+3, by+3, 2, 2); c.globalAlpha = 1;
+} };
+
+// Säule
+G.TILES['o'] = { solid: true, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+35,11,3.5,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.card; c.fillRect(x+11, y+4, 18, 30);
+  c.fillStyle = p.cardLight; c.fillRect(x+13, y+4, 5, 30);
+  c.fillStyle = p.cardHi; c.fillRect(x+8, y+2, 24, 5); c.fillRect(x+9, y+30, 22, 5);
+  c.fillStyle = p.bgDeep; c.fillRect(x+22, y+8, 2, 22);
+} };
+
+// Bücherregal
+G.TILES['b'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x+1,y+1,T-2,T-2);
+  c.fillStyle = p.cardHi; c.fillRect(x+1,y+1,T-2,2);
+  for (let row=0; row<3; row++) {
+    const ry = y+5+row*11;
+    c.fillStyle = p.bgDeep; c.fillRect(x+2, ry+8, T-4, 2);
+    for (let b=0; b<5; b++) {
+      const h = 5 + ((Math.floor(n*100)+b*7+row*3)%4);
+      c.fillStyle = [p.dim, p.main, p.cardLight, p.textDim][(b+row)%4];
+      c.fillRect(x+3+b*7, ry+8-h, 5, h);
+    }
+  }
+} };
+
+// Statue
+G.TILES['x'] = { solid: true, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+36,12,3.5,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.cardLight; c.fillRect(x+8, y+31, 24, 6);
+  c.fillStyle = p.card; c.fillRect(x+13, y+13, 14, 19);
+  c.fillStyle = p.cardHi; c.fillRect(x+15, y+15, 4, 16);
+  c.fillRect(x+15, y+5, 10, 9);
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+8, 2, 3); c.fillRect(x+22, y+8, 2, 3);
+  c.fillStyle = p.card; c.fillRect(x+9, y+16, 4, 11); c.fillRect(x+27, y+16, 4, 11);
+} };
+
+// Fackel, wirft Licht
+G.TILES['f'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), fl = 0.6+0.4*Math.sin(t*7+n*9);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y+T-3,T,3);
+  c.globalAlpha = fl*0.25; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20,y+14,22,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.dim; c.fillRect(x+18, y+16, 4, 16);
+  c.fillStyle = p.main; c.fillRect(x+16, y+8+Math.sin(t*9+n)*1, 8, 9);
+  c.fillStyle = p.bright; c.fillRect(x+18, y+5+Math.sin(t*11+n)*1.4, 4, 8);
+  c.globalAlpha = fl; c.fillStyle = p.textBright; c.fillRect(x+19, y+7, 2, 4); c.globalAlpha = 1;
+} };
+
+// Abgrund, nicht begehbar
+G.TILES['v'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  c.fillStyle = p.bgVoid; c.fillRect(x,y,T,T);
+  const n = noise2(tx,ty);
+  c.globalAlpha = 0.3+0.2*Math.sin(t*0.7+n*6); c.fillStyle = p.dim;
+  c.fillRect(x+Math.floor(n*30), y+Math.floor(n*34), 2, 2);
+  c.fillRect(x+Math.floor((n*71)%34), y+Math.floor((n*53)%36), 1, 1);
+  c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep;
+  c.fillRect(x, y, T, 2); c.fillRect(x, y+T-2, T, 2);
+} };
+
+// Brücke über den Abgrund
+G.TILES['B'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  c.fillStyle = p.bgVoid; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x, y+6, T, 28);
+  c.fillStyle = p.cardLight; c.fillRect(x, y+6, T, 2);
+  c.fillStyle = p.bgDeep;
+  for (let i=0;i<4;i++) c.fillRect(x+2+i*10, y+8, 1, 24);
+  c.fillRect(x, y+32, T, 2);
+} };
+
+// Flaches Wasser, begehbar
+G.TILES['w'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.5; c.fillStyle = p.dim;
+  const o = Math.sin(t*1.5+n*6)*5;
+  c.fillRect(x+4+o, y+11, 13, 2); c.fillRect(x+20-o, y+25, 11, 2);
+  c.globalAlpha = 0.25; c.fillStyle = p.glow;
+  c.fillRect(x+8-o, y+31, 9, 1); c.fillRect(x+24+o, y+6, 8, 1);
+  c.globalAlpha = 1;
+} };
+
+// Eis
+G.TILES['i'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight; c.fillRect(x+1,y+1,T-2,T-2);
+  c.fillStyle = p.cardHi;
+  c.beginPath(); c.moveTo(x+6+n*12, y+3); c.lineTo(x+30, y+18+n*8); c.lineTo(x+12, y+34); c.closePath(); c.fill();
+  c.globalAlpha = 0.4+0.2*Math.sin(t*1.2+n*7); c.fillStyle = p.bright;
+  c.fillRect(x+7, y+6, 12, 1); c.fillRect(x+21, y+24, 9, 1);
+  c.globalAlpha = 1;
+} };
+
+// Monolith mit eingraviertem Zeichen
+G.TILES['M'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+37,10,3,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep; c.fillRect(x+11, y+2, 18, 36);
+  c.fillStyle = p.card; c.fillRect(x+12, y+3, 15, 34);
+  c.fillStyle = p.cardLight; c.fillRect(x+13, y+4, 4, 32);
+  const glow = 0.4+0.35*Math.sin(t*1.3+n*8);
+  c.globalAlpha = glow; c.fillStyle = p.main;
+  c.fillRect(x+17, y+11, 6, 2); c.fillRect(x+19, y+13, 2, 8);
+  c.fillRect(x+16, y+23, 8, 2);
+  c.globalAlpha = 1;
+} };
+
+// Treppe
+G.TILES['^'] = { solid: false, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  for (let i=0;i<4;i++) {
+    c.fillStyle = i%2 ? p.card : p.cardLight;
+    c.fillRect(x+i*2, y+i*10, T-i*4, 9);
+    c.fillStyle = p.bgDeep; c.fillRect(x+i*2, y+i*10+9, T-i*4, 1);
+  }
+} };
+
+// Wurzelwerk, begehbar aber dicht
+G.TILES['r'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.strokeStyle = p.card; c.lineWidth = 3; c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(x, y+8+n*12); c.quadraticCurveTo(x+20, y+20+n*8, x+T, y+14+n*10);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(x+6+n*10, y); c.quadraticCurveTo(x+18, y+22, x+12+n*14, y+T);
+  c.stroke();
+  c.strokeStyle = p.cardLight; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x, y+9+n*12); c.quadraticCurveTo(x+20, y+21+n*8, x+T, y+15+n*10); c.stroke();
+} };
+
+
 // ------------------------------------------------------------
 // MENSCH. Sprite-Box 26 breit, 42 hoch. Füße bei py+40.
 // Aufbau: Haar, Kopf, Hals, Rumpf, Arme, Beine, Stiefel.
@@ -993,9 +1234,14 @@ G.drawShrine = (c, px, py, p, t) => {
 // ------------------------------------------------------------
 // Raum zeichnen
 // ------------------------------------------------------------
+G.roomTiles = (r) => (r && r.tiles) ? r.tiles : r;
+G.roomPal = (r) => (r && r.biome && G.BIOMES[r.biome]) ? G.BIOMES[r.biome] : null;
+
 G.drawRoom = (c, room, p, t) => {
+  const tiles = G.roomTiles(room);
+  p = G.roomPal(room) || p;
   for (let ty = 0; ty < G.ROOM_H; ty++) {
-    const row = room[ty] || '';
+    const row = tiles[ty] || '';
     for (let tx = 0; tx < G.ROOM_W; tx++) {
       const ch = row[tx] || '.';
       (G.TILES[ch] || G.TILES['.']).draw(c, tx * T, ty * T, p, t, tx, ty);
@@ -1004,9 +1250,10 @@ G.drawRoom = (c, room, p, t) => {
 };
 
 G.isSolid = (room, px, py) => {
+  const tiles = G.roomTiles(room);
   const tx = Math.floor(px / T), ty = Math.floor(py / T);
   if (tx < 0 || tx >= G.ROOM_W || ty < 0 || ty >= G.ROOM_H) return false;
-  const ch = (room[ty] || '')[tx] || '.';
+  const ch = (tiles[ty] || '')[tx] || '.';
   const tile = G.TILES[ch];
   return tile ? tile.solid : false;
 };
@@ -1196,81 +1443,381 @@ function buildStadt() {
   };
 }
 
+
+
 // ------------------------------------------------------------
-// ARKANA: die Aschenstadt
+// ARKANA: 20 Räume, neun Habitate, jeder Raum eigen gestaltet
 // ------------------------------------------------------------
 function buildAsche() {
   const rooms = {};
+  rooms['0,1'] = { biome: 'sumpf', name: 'Ufer der Vergessenen', tiles: [
+      '~~~~~~~~~',
+      '~~~~~~~~~',
+      '~~..~~..~',
+      '~.g....g~',
+      '~.......~',
+      '~..BBB..~',
+      '~...B...~',
+      '~...B...~',
+      '~...B...~',
+      '~..www..~',
+      '~.g...g.~',
+      '~.......~',
+      '~~.....~~',
+      '~~~...~~~',
+  ] };
+  rooms['0,2'] = { biome: 'sumpf', name: 'Nebelsumpf', tiles: [
+      '~~~...~~~',
+      '~~......~',
+      '~..g..g.~',
+      '~.g..g..~',
+      '~..~~~..~',
+      '~.g...g.~',
+      '~...w....',
+      '~..ww....',
+      '~...w....',
+      '~.g...g.~',
+      '~..~~~..~',
+      '~.g..g..~',
+      '~~.....~~',
+      '~~~...~~~',
+  ] };
+  rooms['0,3'] = { biome: 'mond', name: 'Stille Bucht', tiles: [
+      '~~~...~~~',
+      '~~.....~~',
+      '~.......~',
+      '~..iii..~',
+      '~.i...i.~',
+      '~.i.p.i.~',
+      '#.i...i.#',
+      '#.i...i.#',
+      '#..iii..#',
+      '~.......~',
+      '~~.....~~',
+      '~~~~~~~~~',
+      '~~~~~~~~~',
+      '#########',
+  ] };
+  rooms['1,0'] = { biome: 'mond', name: 'Halle der stillen Spiegel', tiles: [
+      '#########',
+      '#iii.iii#',
+      '#i.....i#',
+      '#i..x..i#',
+      '#i.....i#',
+      '#..iii..#',
+      '#.......#',
+      '#..iii..#',
+      '#.......#',
+      '#i.....i#',
+      '#ii...ii#',
+      '#iii.iii#',
+      '#.......#',
+      '###...###',
+  ] };
+  rooms['1,1'] = { biome: 'bibliothek', name: 'Verbrannte Bibliothek', tiles: [
+      '###...###',
+      '#bb...bb#',
+      '#b.....b#',
+      '#b.bbb.b#',
+      '#..b.b..#',
+      '#.bb.bb.#',
+      '#........',
+      '#...x....',
+      '#........',
+      '#.bb.bb.#',
+      '#..b.b..#',
+      '#b.bbb.b#',
+      '#.......#',
+      '#########',
+  ] };
+  rooms['1,2'] = { biome: 'hain', name: 'Wurzelhain', tiles: [
+      '#########',
+      '#T.rrr.T#',
+      '#.r...r.#',
+      '#r..p..r#',
+      '#.r...r.#',
+      '#..rrr..#',
+      '.........',
+      '...p.p...',
+      '.........',
+      '#..rrr..#',
+      '#.r...r.#',
+      '#r..p..r#',
+      '#T.....T#',
+      '###...###',
+  ] };
+  rooms['1,3'] = { biome: 'mond', name: 'Mondgarten', tiles: [
+      '###...###',
+      '#p.....p#',
+      '#.ii.ii.#',
+      '#..i.i..#',
+      '#p.....p#',
+      '#..www..#',
+      '#.w...w..',
+      '#.w.p.w..',
+      '#.w...w..',
+      '#..www..#',
+      '#p.....p#',
+      '#..i.i..#',
+      '#.ii.ii.#',
+      '#########',
+  ] };
+  rooms['2,0'] = { biome: 'sternen', name: 'Sternenwarte', tiles: [
+      '#########',
+      '###vvv###',
+      '##v...v##',
+      '#v.....v#',
+      '#v..M..v#',
+      '##.....##',
+      '#.......#',
+      '#..o.o..#',
+      '#.......#',
+      '##.....##',
+      '###...###',
+      '##bb.bb##',
+      '##.....##',
+      '###...###',
+  ] };
+  rooms['2,1'] = { biome: 'asche', name: 'Spiegelhof', tiles: [
+      '###...###',
+      '##.....##',
+      '#..ooo..#',
+      '#.o...o.#',
+      '#.o...o.#',
+      '#.......#',
+      '..o...o..',
+      '..o...o..',
+      '..o...o..',
+      '#.o...o.#',
+      '#..ooo..#',
+      '##.....##',
+      '###...###',
+      '###...###',
+  ] };
+  rooms['2,2'] = { biome: 'asche', name: 'Aschenstadt', tiles: [
+      '###...###',
+      '#.......#',
+      '#.f###f.#',
+      '#..#,#..#',
+      '#..#,#..#',
+      '#..#D#..#',
+      '....,....',
+      '....,....',
+      '....,....',
+      '#..o.o..#',
+      '#.......#',
+      '#..*.*..#',
+      '#.......#',
+      '###...###',
+  ] };
+  rooms['2,3'] = { biome: 'asche', name: 'Markt der Mustersucher', tiles: [
+      '###...###',
+      '#==...==#',
+      '#=.....=#',
+      '#=.o.o.=#',
+      '#=.....=#',
+      '#==...==#',
+      '.........',
+      '...f.f...',
+      '.........',
+      '#==...==#',
+      '#=.....=#',
+      '#=.o.o.=#',
+      '#==...==#',
+      '###...###',
+  ] };
+  rooms['2,4'] = { biome: 'unterwelt', name: 'Die Tiefe', tiles: [
+      '###...###',
+      '#RR...RR#',
+      '#R.....R#',
+      '#R.MMM.R#',
+      '#R.M,M.R#',
+      '#R.M,M.R#',
+      'RR.,,,.RR',
+      'RR.....RR',
+      'RRR...RRR',
+      '#RRR.RRR#',
+      '#RR...RR#',
+      '#R.....R#',
+      '#RR...RR#',
+      '###RRR###',
+  ] };
+  rooms['3,0'] = { biome: 'kristall', name: 'Echokammer', tiles: [
+      'RRRRRRRRR',
+      'R.......R',
+      'R.RRRRR.R',
+      'R.R...R.R',
+      'R.R.c.R.R',
+      'R.R.R.R.R',
+      'R.R.R.R.R',
+      'R.R.RRR.R',
+      'R.R.....R',
+      'R.RRRRRRR',
+      'R.......R',
+      'RRRRRRR.R',
+      'R.......R',
+      'RRR...RRR',
+  ] };
+  rooms['3,1'] = { biome: 'kristall', name: 'Kristallkaverne', tiles: [
+      'RRR...RRR',
+      'RRR...RRR',
+      'RR.....RR',
+      'R..c.c..R',
+      'R.......R',
+      'R...c...R',
+      '........R',
+      '....c...R',
+      '........R',
+      'R.......R',
+      'R..c.c..R',
+      'RR.....RR',
+      'RRR...RRR',
+      'RRRRRRRRR',
+  ] };
+  rooms['3,2'] = { biome: 'wueste', name: 'Sandtor', tiles: [
+      '#########',
+      '#sssssss#',
+      '#s.....s#',
+      '#s.M.M.s#',
+      '#s.....s#',
+      '#ss...ss#',
+      '.........',
+      '....M....',
+      '.........',
+      '#ss...ss#',
+      '#s.....s#',
+      '#s.M.M.s#',
+      '#sssssss#',
+      '#########',
+  ] };
+  rooms['3,3'] = { biome: 'unterwelt', name: 'Glutschlund', tiles: [
+      '###RRR###',
+      '#f.....f#',
+      '#.vvvvv.#',
+      '#.v...v.#',
+      '#.v.f.v.#',
+      '#.v...v.#',
+      '..BBBBB.R',
+      '....f...R',
+      '..BBBBB.R',
+      '#.v...v.#',
+      '#.v.f.v.#',
+      '#.v...v.#',
+      '#f.....f#',
+      '###...###',
+  ] };
+  rooms['3,4'] = { biome: 'unterwelt', name: 'Adern des Glutschlunds', tiles: [
+      '###...###',
+      '#RR...RR#',
+      '#R.....R#',
+      '#R.RRR.R#',
+      '#R.R.R.R#',
+      '#R.R.R.R#',
+      'R..R.R..R',
+      'R..R.R..R',
+      'R..RRR..R',
+      '#R.....R#',
+      '#R.fff.R#',
+      '#R.....R#',
+      '#RRR.RRR#',
+      '###RRR###',
+  ] };
+  rooms['4,1'] = { biome: 'wueste', name: 'Wandernde Dünen', tiles: [
+      '#########',
+      '#sssssss#',
+      '#ss...ss#',
+      '#s.....s#',
+      '#s..M..s#',
+      '#s.....s#',
+      '#ss...ss#',
+      '#sssssss#',
+      '#ss...ss#',
+      '#s.....s#',
+      '#s..M..s#',
+      '#ss...ss#',
+      '#ss...ss#',
+      '###...###',
+  ] };
+  rooms['4,2'] = { biome: 'wueste', name: 'Die stumme Pyramide', tiles: [
+      '###...###',
+      '#ss...ss#',
+      '#s#####s#',
+      '#s#,,,#s#',
+      '#s#,x,#s#',
+      '#s#,,,#s#',
+      '...D,,,##',
+      '....,,,##',
+      '...#,,,##',
+      '#s#,,,#s#',
+      '#s#####s#',
+      '#s.....s#',
+      '#ss...ss#',
+      '###...###',
+  ] };
+  rooms['4,3'] = { biome: 'unterwelt', name: 'Obsidianfeld', tiles: [
+      '###...###',
+      '#Rv...vR#',
+      '#v.....v#',
+      '#R..f..R#',
+      '#v.....v#',
+      '#R.....R#',
+      'R...M...R',
+      'R.......R',
+      'R...M...R',
+      '#R.....R#',
+      '#v.....v#',
+      '#R..f..R#',
+      '#v.....v#',
+      '###RRR###',
+  ] };
 
-  // Zentrum: Ruine des Archivs
-  let g = room({ n: true, s: true, w: true, o: true });
-  rect(g, 3, 2, 5, 5, '#');
-  rect(g, 4, 3, 4, 4, ',');
-  put(g, 4, 5, 'D');
-  vline(g, 4, 9, 12, '*');
-  put(g, 1, 2, 'T'); put(g, 7, 2, 'T'); put(g, 1, 11, 'T'); put(g, 7, 11, 'T');
-  rooms['1,1'] = toStrings(g);
-
-  // Westen: Nebelufer
-  g = room({ o: true });
-  rect(g, 1, 1, 3, 5, '~');
-  put(g, 5, 4, 'T'); put(g, 2, 10, 'T'); put(g, 6, 11, 'T');
-  hline(g, 8, 4, 7, '=');
-  rooms['0,1'] = toStrings(g);
-
-  // Osten: Markt der Mustersucher
-  g = room({ w: true, n: true });
-  hline(g, 4, 2, 6, '='); hline(g, 10, 2, 6, '=');
-  put(g, 2, 2, 'T'); put(g, 6, 2, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
-  rooms['2,1'] = toStrings(g);
-
-  // Norden: Spiegelhof mit dem Schrein
-  g = room({ s: true });
-  rect(g, 1, 1, 7, 10, '#');
-  rect(g, 2, 2, 6, 9, ',');
-  hline(g, 10, 3, 5, ',');   // Zugang von unten
-  rooms['1,0'] = toStrings(g);
-
-  // Nordost: Leylinien-Feld. Kein Westausgang, der Spiegelhof hat dort keinen.
-  g = room({ s: true });
-  vline(g, 2, 1, 12, '*'); vline(g, 6, 1, 12, '*');
-  put(g, 4, 3, 'T'); put(g, 4, 10, 'T');
-  rooms['2,0'] = toStrings(g);
-
-  // Süden: Ascheweg
-  g = room({ n: true, o: true });
-  vline(g, 4, 1, 8, '*');
-  hline(g, 10, 2, 6, '=');
-  put(g, 1, 3, 'T'); put(g, 7, 3, 'T'); put(g, 2, 12, 'T'); put(g, 6, 12, 'T');
-  rooms['1,2'] = toStrings(g);
-
-  // Südost: stille Kammer
-  g = room({ w: true });
-  rect(g, 2, 4, 6, 9, '#');
-  rect(g, 3, 5, 5, 8, ',');
-  put(g, 4, 9, 'D');
-  rooms['2,2'] = toStrings(g);
+  const autoFragSpots = {
+    '0,1': [[7,2], [2,2], [1,11], [7,11]],
+    '0,2': [[7,1], [2,1], [1,11], [7,11]],
+    '0,3': [[2,1], [6,1], [1,4], [7,4]],
+    '1,0': [[1,12], [7,12], [2,2], [6,2]],
+    '1,1': [[1,12], [7,12], [3,1], [6,2]],
+    '1,2': [[2,1], [6,1], [1,11], [7,11]],
+    '1,3': [[1,1], [7,1], [1,12], [7,12]],
+    '2,0': [[2,12], [6,12], [3,2], [6,3]],
+    '2,1': [[2,1], [6,1], [1,4], [7,4]],
+    '2,2': [[1,1], [7,1], [1,12], [7,12]],
+    '2,3': [[1,1], [7,1], [1,12], [7,12]],
+    '2,4': [[3,1], [6,2], [2,11], [6,11]],
+    '3,0': [[1,1], [7,1], [1,12], [7,12]],
+    '3,1': [[3,1], [6,2], [1,3], [1,10]],
+    '3,2': [[1,1], [7,1], [1,12], [7,12]],
+    '3,3': [[1,2], [7,2], [1,11], [7,11]],
+    '3,4': [[3,1], [6,2], [2,11], [6,11]],
+    '4,1': [[1,1], [7,1], [1,12], [7,12]],
+    '4,2': [[1,1], [7,1], [1,12], [7,12]],
+    '4,3': [[3,1], [6,2], [2,12], [6,12]],
+  };
 
   return {
     pal: 'amber',
     rooms,
     npcs: {
-      '1,1': [ { x: 2, y: 10, v: 2, dlg: 'asche_wache' } ],
-      '0,1': [ { x: 6, y: 7, v: 3, dlg: 'asche_sucherin' } ],
-      '2,1': [ { x: 4, y: 6, v: 1, dlg: 'asche_haendler' } ],
-      '1,2': [ { x: 6, y: 6, v: 2, dlg: 'asche_kind' } ],
-      '2,2': [ { x: 4, y: 11, v: 3, dlg: 'asche_alter' } ],
+      '2,2': [ { x: 2, y: 10, v: 2, dlg: 'asche_wache' } ],
+      '2,1': [ { x: 4, y: 5, v: 3, dlg: 'hof_hueterin' } ],
+      '2,3': [ { x: 3, y: 3, v: 1, dlg: 'asche_haendler' }, { x: 5, y: 11, v: 2, dlg: 'asche_kind' } ],
+      '1,1': [ { x: 4, y: 12, v: 3, dlg: 'biblio_archivar' } ],
+      '1,2': [ { x: 4, y: 2, v: 2, dlg: 'hain_alte' } ],
+      '0,2': [ { x: 4, y: 10, v: 3, dlg: 'sumpf_faehrmann' } ],
+      '3,1': [ { x: 4, y: 11, v: 1, dlg: 'kristall_hoerer' } ],
+      '3,2': [ { x: 4, y: 11, v: 2, dlg: 'wueste_wanderer' } ],
+      '3,3': [ { x: 4, y: 11, v: 1, dlg: 'glut_schmied' } ],
+      '1,3': [ { x: 4, y: 2, v: 3, dlg: 'mond_gaertnerin' } ],
+      '2,0': [ { x: 4, y: 12, v: 2, dlg: 'sternwarte_deuterin' } ],
+      '2,4': [ { x: 4, y: 11, v: 3, dlg: 'tiefe_stimme' } ],
+      '4,2': [ { x: 4, y: 11, v: 1, dlg: 'pyramide_waechter' } ],
     },
-    shrines: { '1,0': { x: 2 * 40, y: 3 * 40 } },
-    fragSpots: {
-      '1,1': [ [2, 2], [6, 10] ],
-      '0,1': [ [6, 2], [2, 12] ],
-      '2,1': [ [4, 2], [3, 12] ],
-      '1,2': [ [2, 5], [6, 11] ],
-      '2,0': [ [4, 6], [1, 11], [7, 4] ],
-      '2,2': [ [2, 2], [6, 12] ],
-      '1,0': [ [2, 12] ],
+    shrines: {
+      '2,1': { x: 3 * 40, y: 4 * 40 },
+      '4,2': { x: 3 * 40, y: 3 * 40 },
+      '2,4': { x: 3 * 40, y: 8 * 40 },
     },
+    fragSpots: autoFragSpots,
     ambient: 'asche',
   };
 }
@@ -1288,11 +1835,20 @@ G.DIALOGE = {
   stadt_parkmann: ['Früher war der Park voller Stimmen. Jetzt sitzen alle woanders. Ich weiß auch nicht wo.'],
   stadt_kind: ['Psst. Der Laden da hinten hat kein Schild.', 'Aber um 3 Uhr 33 leuchtet er. Ich habs gesehen. Mir glaubt ja keiner.'],
   stadt_obdachloser: ['Ich hab aufgehört, die Tage zu zählen. Aber die Zahlen zählen weiter, das merk ich schon.'],
-  asche_wache: ['Halt. Du trägst kein Siegel des Index.', '... und doch stehst du hier. Das Muster hat dich durchgelassen.', 'Willkommen in der Aschenstadt, Suchender. Sammle, was der Index verstreut hat. Die Fragmente leuchten nur für die, die schauen.'],
-  asche_sucherin: ['Wir nennen uns Mustersucher. Wir sammeln, was nicht verbrannt ist.', 'Der Index sagt, Wissen schützt uns nicht. Wir sagen, ohne Wissen gibt es nichts zu schützen.'],
-  asche_haendler: ['Fragmente, Splitter, halbe Wahrheiten. Alles im Angebot.', 'Kleiner Rat unter uns: Nicht alles, was leuchtet, ist echt.', 'Prüfen kostet Zeit. Glauben kostet mehr.'],
-  asche_kind: ['Ich hab von der großen Bibliothek geträumt. Da waren Bücher, die es gar nicht mehr gibt.', 'Mama sagt, träumen ist nicht verboten. Noch nicht.'],
-  asche_alter: ['Der Spiegelhof im Norden zeigt dir nicht die Zukunft.', 'Er zeigt dir, wer du gerade bist. Das ist unbequemer.'],
+  asche_wache: ['Halt. Du trägst kein Siegel des Index.', '... und doch stehst du hier. Das Muster hat dich durchgelassen.', 'Willkommen in der Aschenstadt. Neun Regionen liegen vor dir. Die Fragmente leuchten nur für die, die schauen.'],
+  hof_hueterin: ['Der Spiegelhof zeigt dir nicht die Zukunft. Er zeigt dir, wer du gerade bist.', 'Je mehr du gesammelt hast, desto mehr sieht er. Komm wieder, wenn du weiter bist.'],
+  asche_haendler: ['Fragmente, Splitter, halbe Wahrheiten. Alles im Angebot.', 'Kleiner Rat: Nicht alles, was leuchtet, ist echt. Prüfen kostet Zeit. Glauben kostet mehr.'],
+  asche_kind: ['Ich hab von der großen Bibliothek geträumt. Da waren Bücher, die es gar nicht mehr gibt.', 'Im Westen steht sie noch. Halb verbrannt, aber sie steht.'],
+  biblio_archivar: ['Sie haben die Bücher verbrannt, nicht die Sätze.', 'Was einmal gedacht wurde, findet immer einen Weg zurück. Manchmal dauert es Jahrhunderte.'],
+  hain_alte: ['Die Wurzeln hier sind älter als die Stadt. Sie waren schon da, bevor jemand Mauern für nötig hielt.', 'Wenn du nach Westen gehst, wird der Boden weich. Pass auf, wo du auftrittst.'],
+  sumpf_faehrmann: ['Der Nebel nimmt dir die Richtung, nicht den Weg.', 'Im Norden liegt das Ufer der Vergessenen. Im Süden die stille Bucht. Beide führen zurück, wenn du geduldig bist.'],
+  kristall_hoerer: ['Halt still. Hörst du das?', 'Die Kristalle geben zurück, was man hineinruft. Nur etwas später und etwas ehrlicher.'],
+  wueste_wanderer: ['Der Sand vergisst jede Spur. Deshalb bauten sie hier aus Stein.', 'Weiter östlich steht die Pyramide. Sie hat nie jemandem gehört. Vielleicht ist sie deshalb noch da.'],
+  glut_schmied: ['Vorsicht auf den Brücken. Was da unten glüht, ist älter als Feuer.', 'Manche sagen, der Schlund sei eine Wunde. Ich sage, er ist ein Ofen. Beides stimmt.'],
+  mond_gaertnerin: ['Hier wächst nur, was nachts wach ist.', 'Das Wasser hier zieht sich zurück und kommt wieder. Wie alles, was lebt.'],
+  sternwarte_deuterin: ['Von hier sieht man das Gewölbe am besten. Die Zeichen ziehen langsam, aber sie ziehen.', 'Der Index hat den Himmel geschwärzt. Ein Loch haben sie übersehen. Das über uns.'],
+  tiefe_stimme: ['Du bist tief gekommen. Die meisten drehen vorher um.', 'Hier unten ist es still genug, dass man sich selbst hört. Das halten nicht viele aus.'],
+  pyramide_waechter: ['Sie ist leer. Das war sie immer.', 'Die Leute erfinden lieber einen Schatz, als eine leere Kammer zu ertragen. Das ist der ganze Trick.'],
 };
 
 // ===== 04_scenes.js =====
@@ -1435,16 +1991,69 @@ G.DialogScene = (lines, onDone) => {
 };
 
 // ------------------------------------------------------------
+// Persönliche Deutung: verbindet ein Fragment mit der Signatur
+// ------------------------------------------------------------
+G.deutungFor = (frag) => {
+  const s = G.state && G.state.sig;
+  const d = G.DEUTUNG && G.DEUTUNG[frag.modul];
+  if (!s || !d) return null;
+  // Welche Achse gezeigt wird, hängt am Fragment selbst. So bekommt
+  // der Spieler über die Sammlung hinweg alle drei Blickwinkel.
+  const achsen = ['element', 'zahl', 'phase'];
+  const pick = achsen[G.hashStr(frag.id) % 3];
+  let kern = '';
+  if (pick === 'element') kern = d.element[s.element];
+  else if (pick === 'zahl') kern = d.zahl[s.zahl];
+  else kern = d.phase[s.saturn.name];
+  if (!kern) kern = d.element[s.element] || d.zahl[s.zahl] || '';
+  return {
+    intro: (d.intro || '').replace(/\{name\}/g, s.name),
+    kern,
+    achse: pick,
+    thema: d.thema || '',
+  };
+};
+
+// Gesamtbild aus allen gesammelten Fragmenten
+G.buildGesamtbild = () => {
+  const s = G.state.sig, st = G.state.stats, GB = G.GESAMTBILD;
+  const n = G.state.fragmente.length, total = G.FRAGMENTS.length;
+  const anteil = total ? n / total : 0;
+  const stufe = anteil >= 0.999 ? 'alle' : anteil >= 0.5 ? 'viel' : anteil >= 0.2 ? 'mittel' : 'wenig';
+  const haltung = st.geprueft > st.geglaubt * 1.3 ? 'zweifel'
+    : st.geglaubt > st.geprueft * 1.3 ? 'glaube' : 'gleichgewicht';
+  const seiten = [];
+  seiten.push(`${s.name.toUpperCase()}\n${s.sym} ${s.zeichen} · ${s.element} · ${s.planet}\nNamenszahl ${s.zahl} · ${s.gabe.name}\n${s.saturn.name}\n\nFragmente: ${n} von ${total}`);
+  seiten.push(GB.eroeffnung[stufe]);
+  seiten.push(GB.element[s.element]);
+  seiten.push(GB.zahl[s.zahl] || GB.zahl[9]);
+  seiten.push(GB.phase[s.saturn.name]);
+  seiten.push(GB.haltung[haltung]);
+  // Die gesammelten Themen als Spur der eigenen Reise
+  const module = [...new Set(G.state.fragmente.map((id) => {
+    const f = G.FRAGMENTS.find((x) => x.id === id); return f ? f.modul : null;
+  }).filter(Boolean))];
+  if (module.length) {
+    const themen = module.map((m) => (G.DEUTUNG[m] && G.DEUTUNG[m].thema) || '').filter(Boolean);
+    if (themen.length) seiten.push('Deine Spur führte durch:\n\n' + themen.join(', ') + '.');
+  }
+  seiten.push(GB.schluss);
+  return seiten;
+};
+
+// ------------------------------------------------------------
 // Fragment
 // ------------------------------------------------------------
 G.FragmentScene = (frag) => {
   let sel = 0; let stage = 0; let t = 0; let appear = 0;
+  const deut = G.deutungFor(frag);
   return {
     translucent: true,
     enter() { G.doShake(2, 0.2); },
     update(dt) {
       t += dt; appear = Math.min(1, appear + dt * 3.5);
-      if (stage === 0) { if (G.input.pressed('action')) stage = 1; }
+      if (stage === 0) { if (G.input.pressed('action')) stage = deut ? 1 : 2; }
+      else if (stage === 1) { if (G.input.pressed('action')) stage = 2; }
       else {
         if (G.input.pressed('left') || G.input.pressed('right')) sel = 1 - sel;
         if (G.input.pressed('action')) {
@@ -1471,12 +2080,27 @@ G.FragmentScene = (frag) => {
         c.fillRect(bx, by, 14, 3); c.fillRect(bx, by, 3, 14);
       });
       G.textGlow(c, '✦', G.W / 2, y0 + 24, p.main, 26);
-      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
-      const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
-      tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
-      const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
-      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
-      if (stage === 0) {
+      if (stage <= 0) {
+        G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 15, 'center');
+        const tl = G.wrapText(c, frag.titel, G.W - 80, 19);
+        tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
+        const wrapped = G.wrapText(c, frag.text, G.W - 76, 16);
+        wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 16));
+      } else {
+        // Der persönliche Teil: was das Thema über den Spieler sagt
+        const label = { element: 'DEIN ELEMENT', zahl: 'DEINE ZAHL', phase: 'DEINE PHASE' }[deut.achse];
+        G.text(c, label, G.W / 2, y0 + 60, p.main, 15, 'center');
+        const s2 = G.state.sig;
+        const sub = { element: `${s2.element} · ${s2.sym} ${s2.zeichen}`, zahl: `${s2.zahl} · ${s2.gabe.name}`, phase: s2.saturn.name }[deut.achse];
+        G.text(c, sub, G.W / 2, y0 + 84, p.textBright, 17, 'center');
+        let yy = y0 + 122;
+        G.wrapText(c, deut.intro, G.W - 76, 15).slice(0, 4).forEach((l) => { G.text(c, l, 38, yy, p.textDim, 15); yy += 19; });
+        yy += 10;
+        c.fillStyle = p.main; c.globalAlpha = 0.5 * appear; c.fillRect(38, yy - 6, G.W - 76, 1); c.globalAlpha = appear;
+        yy += 8;
+        G.wrapText(c, deut.kern, G.W - 76, 17).slice(0, 7).forEach((l) => { G.text(c, l, 38, yy, p.textBright, 17); yy += 22; });
+      }
+      if (stage <= 1) {
         if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 16, 'center');
       } else {
         G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 19, 'center');
@@ -1591,6 +2215,68 @@ G.buildReading = () => {
   lines.push('Geh weiter, Suchender. Das Muster ist noch nicht fertig mit dir.');
   lines.push('(Ende von Kapitel 1. Die Reise geht weiter.)');
   return lines;
+};
+
+
+// ------------------------------------------------------------
+// Spiegelschrein: das Gesamtbild über die eigene Person
+// ------------------------------------------------------------
+G.SpiegelScene = () => {
+  const seiten = G.buildGesamtbild();
+  let i = 0, t = 0, fade = 0;
+  return {
+    translucent: true,
+    enter() { G.doShake(3, 0.5); },
+    update(dt) {
+      t += dt; fade = Math.min(1, fade + dt * 2.2);
+      if (G.input.pressed('action')) {
+        i++; fade = 0;
+        if (i >= seiten.length) { G.save(); G.popScene(); }
+      }
+      if (G.input.pressed('cancel')) { G.save(); G.popScene(); }
+      if (Math.random() < 0.25) {
+        G.spawnParticle({ x: Math.random() * G.W, y: G.H, vx: (Math.random() - 0.5) * 12,
+          vy: -18 - Math.random() * 22, life: 5, fade: 2, color: G.pal.glow, size: 2, alpha: 0.4 });
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.globalAlpha = 0.9; c.fillStyle = '#000'; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      G.drawParticles(c);
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(16, 16, G.W - 32, G.H - 32);
+      c.fillStyle = p.main;
+      [[18, 18], [G.W - 44, 18], [18, G.H - 44], [G.W - 44, G.H - 44]].forEach(([bx, by]) => {
+        c.fillRect(bx, by, 26, 3); c.fillRect(bx, by, 3, 26);
+      });
+      G.textGlow(c, '◈', G.W / 2, G.SAFE_Y + 44, p.main, 24);
+      G.text(c, 'DER SPIEGEL', G.W / 2, G.SAFE_Y + 78, p.main, 15, 'center');
+
+      c.globalAlpha = fade;
+      const txt = seiten[Math.min(i, seiten.length - 1)];
+      const blocks = txt.split('\n');
+      let y = G.SAFE_Y + 150;
+      for (const b of blocks) {
+        if (!b.trim()) { y += 14; continue; }
+        const big = i === 0 && b === blocks[0];
+        const lines = G.wrapText(c, b, G.W - 84, big ? 24 : 17);
+        for (const l of lines) {
+          G.text(c, l, G.W / 2, y, big ? p.bright : p.textBright, big ? 24 : 17, 'center');
+          y += big ? 32 : 25;
+        }
+      }
+      c.globalAlpha = 1;
+
+      // Fortschrittsanzeige
+      const n = G.state.fragmente.length, tot = G.FRAGMENTS.length;
+      const bw = G.W - 100, bx = 50, by = G.H - 84;
+      c.fillStyle = p.card; c.fillRect(bx, by, bw, 5);
+      c.fillStyle = p.main; c.fillRect(bx, by, Math.round(bw * (n / tot)), 5);
+      G.text(c, `${n} von ${tot} Fragmenten`, G.W / 2, by + 12, p.textDim, 13, 'center');
+      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) {
+        G.text(c, i < seiten.length - 1 ? '[ OK ]' : '[ OK ] schließen', G.W / 2, G.H - 48, p.textDim, 14, 'center');
+      }
+    },
+  };
 };
 
 // ------------------------------------------------------------
@@ -1717,8 +2403,33 @@ G.OverworldScene = () => {
       ambientTimer -= dt;
       if (ambientTimer <= 0) {
         ambientTimer = 0.09;
-        const amb = area().ambient;
-        if (amb === 'asche') {
+        const r0 = room();
+        const bio = (r0 && r0.biome) || area().ambient;
+        if (bio === 'sumpf') {
+          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*6, vy: -10 - Math.random()*14,
+            life: 9, fade: 2.5, color: '#4fbf7f', size: 2, alpha: 0.28, drift: 1.4 });
+        } else if (bio === 'kristall') {
+          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H, vx: 0, vy: -6 - Math.random()*8,
+            life: 4, fade: 1.6, color: '#c4baff', size: 2, alpha: 0.5 });
+        } else if (bio === 'wueste') {
+          G.spawnParticle({ x: -4, y: Math.random() * G.FIELD_H, vx: 70 + Math.random()*60, vy: 6,
+            life: 5, fade: 1.2, color: '#e8b040', size: 1, alpha: 0.35 });
+        } else if (bio === 'unterwelt') {
+          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*14, vy: -26 - Math.random()*20,
+            life: 3.5, fade: 1.4, color: '#f5705a', size: 2, alpha: 0.6, drift: 2.2 });
+        } else if (bio === 'sternen') {
+          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H * 0.5, vx: 0, vy: 3,
+            life: 6, fade: 2, color: '#b4dcff', size: 1, alpha: 0.7 });
+        } else if (bio === 'mond') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*10, vy: 9 + Math.random()*10,
+            life: 8, fade: 2.4, color: '#dce6f5', size: 1, alpha: 0.4, drift: 1.8 });
+        } else if (bio === 'hain') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*18, vy: 14 + Math.random()*12,
+            life: 7, fade: 2, color: '#bce870', size: 2, alpha: 0.35, drift: 2.6 });
+        } else if (bio === 'bibliothek') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 11 + Math.random()*9,
+            life: 8, fade: 2.2, color: '#d99a4a', size: 1, alpha: 0.32, drift: 1.5 });
+        } else if (bio === 'asche') {
           G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random() - 0.5) * 8, vy: 12 + Math.random() * 16,
             life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.5, drift: 2 });
         } else if (amb === 'regen') {
@@ -1803,7 +2514,7 @@ G.OverworldScene = () => {
         if (it) {
           if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
           else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
-          else if (it.type === 'shrine') { G.pushScene(G.DialogScene(G.buildReading(), () => G.save())); }
+          else if (it.type === 'shrine') { G.pushScene(G.SpiegelScene()); }
           else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
         }
       }
@@ -1811,7 +2522,9 @@ G.OverworldScene = () => {
     },
 
     draw(c) {
-      const p = G.pal;
+      // Die Palette kommt aus dem Biom des aktuellen Raums
+      const rp = G.roomPal(room());
+      const p = rp || G.pal;
       c.fillStyle = p.bgDeep; c.fillRect(0, 0, G.W, G.FIELD_H);
 
       if (transition) {
@@ -1867,7 +2580,9 @@ G.OverworldScene = () => {
       // ---- HUD ----
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
-      const areaName = G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ASCHENSTADT';
+      const r = room();
+      const areaName = (r && r.name) ? r.name.toUpperCase()
+        : (G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ARKANA');
       G.text(c, areaName, 20, G.HUD_Y + 16, p.textDim, 15);
       if (G.state.phase === 'arkana') {
         G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
@@ -1957,7 +2672,7 @@ G.TerminalScene = () => {
         }
         if (t > 2.8) {
           G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
-          G.state.room = '1,1'; G.state.px = 167; G.state.py = 330;
+          G.state.room = '2,2'; G.state.px = 167; G.state.py = 270;
           G.pal = G.PAL.amber; G.particles.length = 0; G.save();
           G.replaceScene(G.OverworldScene());
           G.pushScene(G.DialogScene([
@@ -2038,6 +2753,698 @@ G.TerminalScene = () => {
 // ------------------------------------------------------------
 fitCanvas();
 G.pushScene(G.TitleScene());
+
+// ===== 05_deutung.js =====
+'use strict';
+// ============================================================
+// ARKANA Deutungen: verbinden ein Wissensgebiet mit der Signatur des Spielers
+// Jeder Text ist ein Spiegel, keine Vorhersage.
+// ============================================================
+
+G.DEUTUNG = {
+
+  '01_Numerologie': {
+    thema: 'Zahlen',
+    intro: 'Zahlen sind Muster, {name}, keine Magie. Sie zeigen, wie oft du dieselbe Entscheidung schon getroffen hast.',
+    element: {
+      Feuer: 'Du rechnest selten nach. Du entscheidest nach Gefühl und begründest es hinterher mit Zahlen, die dir gerade passen.',
+      Wasser: 'Du merkst dir Daten, an denen etwas kippte. Dein Gedächtnis ordnet dein Leben nach Gefühlen, nicht nach Kalender.',
+      Erde: 'Du zählst gern nach. Das schützt dich vor Illusionen und hält dich manchmal auch von Sprüngen ab, die sich gelohnt hätten.',
+      Luft: 'Du siehst Muster in allem, auch dort, wo keine sind. Deine Stärke ist Verknüpfung, deine Falle ist die zu schnelle Verknüpfung.',
+    },
+    zahl: {
+      1: 'Deine Zahl beginnt Dinge. Du bist oft der Erste im Raum und selten der, der aufräumt.',
+      2: 'Deine Zahl ist die Zwischenzahl. Du bringst zusammen und vergisst dabei regelmäßig, was du selbst wolltest.',
+      3: 'Deine Zahl will heraus. Du denkst laut, und manches wäre besser erst zu Ende gedacht worden.',
+      4: 'Deine Zahl baut. Du machst Dinge tragfähig und wirst nervös, wenn niemand einen Plan hat.',
+      5: 'Deine Zahl bewegt sich. Du brauchst Wechsel wie andere Ruhe, und du verwechselst Flucht gelegentlich mit Freiheit.',
+      6: 'Deine Zahl trägt Verantwortung. Du kümmerst dich, auch wenn niemand darum gebeten hat, und rechnest es später auf.',
+      7: 'Deine Zahl geht nach innen. Du prüfst lieber zweimal, als einmal falsch zu glauben. Das kostet dich Nähe.',
+      8: 'Deine Zahl misst in Ergebnissen. Du willst, dass etwas zählbar da ist, und übersiehst dabei, was sich nicht zählen lässt.',
+      9: 'Deine Zahl schließt ab. Du erkennst früh, wenn etwas vorbei ist, und hältst es trotzdem noch eine Weile fest.',
+      11: 'Deine Zahl ist dünnhäutig. Du nimmst Signale auf, bevor andere sie sehen, und zahlst mit Unruhe dafür.',
+      22: 'Deine Zahl denkt in Bauwerken. Du willst etwas hinstellen, das bleibt, und unterschätzt regelmäßig die Zeit, die das braucht.',
+      33: 'Deine Zahl will weitergeben. Du erklärst gern, und manchmal erklärst du, um nicht selbst gefragt zu werden.',
+    },
+    phase: {
+      'Der erste Ring': 'Deine Zahlen sind noch Rohmaterial. Vieles an dir ist Behauptung, die sich erst beweisen muss.',
+      'Die Rückkehr': 'Jetzt zeigt sich, welche deiner Zahlen gelebt wurde und welche du nur behauptet hast.',
+      'Der Weise': 'Du kennst deine Zahlen inzwischen aus Erfahrung. Der Reiz liegt nicht mehr im Deuten, sondern im Weitergeben.',
+    },
+  },
+
+  '02_Astrologie_Planeten': {
+    thema: 'Planeten',
+    intro: 'Die Planeten sind Namen für Kräfte, die in dir sowieso arbeiten, {name}. Der Himmel liefert nur das Vokabular.',
+    element: {
+      Feuer: 'In dir arbeitet ein Antrieb, der schneller ist als deine Vorsicht. Du kommst an, bevor du geprüft hast, ob du ankommen wolltest.',
+      Wasser: 'In dir arbeitet ein Sog. Du wirst von innen bewegt und erklärst es dir von außen, meist mit dem Verhalten anderer.',
+      Erde: 'In dir arbeitet ein Widerstand gegen alles Unfertige. Das macht dich verlässlich und gelegentlich zäh.',
+      Luft: 'In dir arbeitet ein Ordner, der alles benennen will. Was du nicht benennen kannst, wird schnell zu Nichts erklärt.',
+    },
+    zahl: {
+      1: 'Bei dir dominiert der Impuls. Du fragst nach Erlaubnis erst, wenn es schon losgegangen ist.',
+      2: 'Bei dir dominiert die Wahrnehmung des anderen. Du spürst Stimmung im Raum, bevor jemand spricht.',
+      3: 'Bei dir dominiert der Bote. Du überträgst, verbindest, erzählst weiter, manchmal zu schnell und zu bunt.',
+      4: 'Bei dir dominiert die Grenze. Du merkst früh, was nicht geht, und musst dich zwingen, das Mögliche zu sehen.',
+      5: 'Bei dir dominiert die Unruhe. Ein Zustand hält bei dir nur so lange, wie er neu ist.',
+      6: 'Bei dir dominiert die Anziehung. Du willst, dass es zwischen Menschen stimmt, und opferst dafür deine Klarheit.',
+      7: 'Bei dir dominiert der Beobachter. Du stehst gern einen Schritt daneben und nennst das dann Objektivität.',
+      8: 'Bei dir dominiert der Druck. Du funktionierst unter Last besser als in Ruhe. Ruhe fühlt sich für dich verdächtig an.',
+      9: 'Bei dir dominiert die Weite. Du denkst über den Rahmen hinaus und vergisst, dass jemand den Rahmen halten muss.',
+      11: 'Bei dir dominiert die Antenne. Du empfängst mehr, als du verarbeiten kannst, und wirst davon müde.',
+      22: 'Bei dir dominiert die Statik. Du prüfst, ob es hält, bevor du dich freust.',
+      33: 'Bei dir dominiert die Zuwendung. Du richtest deine Kraft nach außen, bis nichts mehr für dich übrig ist.',
+    },
+    phase: {
+      'Der erste Ring': 'Deine inneren Kräfte streiten noch. Keine hat sich bisher durchgesetzt, und das fühlt sich wie Chaos an.',
+      'Die Rückkehr': 'Die Kraft, die du am längsten ignoriert hast, meldet sich jetzt lauter. Sie geht nicht mehr weg.',
+      'Der Weise': 'Du weißt inzwischen, welche deiner Kräfte du bedienen musst, damit die anderen ruhig bleiben.',
+    },
+  },
+
+  '03_Sternenkonstellationen': {
+    thema: 'Sterne',
+    intro: 'Sterne stehen nicht in Bildern, {name}. Menschen haben Linien dazwischen gezogen, um sich zu orientieren. Du machst das auch.',
+    element: {
+      Feuer: 'Du suchst dir einen fernen Punkt und läufst los. Ob der Punkt stimmt, überprüfst du erst nach vielen Kilometern.',
+      Wasser: 'Du orientierst dich an Menschen statt an Punkten. Wenn ein Mensch geht, verlierst du kurz die ganze Karte.',
+      Erde: 'Du glaubst nur, was du wiederfindest. Deine Orientierung ist langsam, aber sie hält auch bei schlechtem Wetter.',
+      Luft: 'Du ziehst die Linien zwischen den Punkten selbst. Danach hältst du dein Bild leicht für die Wirklichkeit.',
+    },
+    zahl: {
+      1: 'Du brauchst einen einzigen hellen Punkt. Zu viele Ziele lähmen dich mehr als gar keines.',
+      2: 'Du peilst am liebsten zu zweit. Allein zweifelst du an Richtungen, die du zu zweit sofort erkennst.',
+      3: 'Du siehst überall Bilder. Das macht dich zum guten Erzähler und zum unzuverlässigen Kartografen.',
+      4: 'Du brauchst feste Bezugspunkte. Wenn sich Grundlagen verschieben, wirst du härter statt beweglicher.',
+      5: 'Du wechselst den Fixstern, sobald du ihn erreicht hast. Ankommen ist bei dir kein Zustand, sondern ein Wendepunkt.',
+      6: 'Du richtest dich an dem aus, was andere brauchen. Deine eigene Peilung liegt oft ganz woanders.',
+      7: 'Du misst lieber nach, als dich führen zu lassen. Deshalb bist du selten verloren und oft allein unterwegs.',
+      8: 'Du peilst auf Gipfel. Wenn du oben bist, dauert die Zufriedenheit ungefähr eine Woche.',
+      9: 'Du siehst das ganze Feld statt einzelner Sterne. Deshalb fällt dir der nächste konkrete Schritt schwer.',
+      11: 'Du reagierst auf Signale, die noch schwach sind. Das ist ein Vorsprung, solange du nicht jedes Flackern ernst nimmst.',
+      22: 'Du willst eine Karte bauen, die auch anderen dient. Dafür verschiebst du deine eigene Reise immer wieder.',
+      33: 'Du zeigst anderen den Weg gern früher, als du ihn selbst gegangen bist.',
+    },
+    phase: {
+      'Der erste Ring': 'Du sammelst noch Fixpunkte. Manche davon wirst du später bewusst wieder streichen.',
+      'Die Rückkehr': 'Einige Sterne, nach denen du dich gerichtet hast, sind längst erloschen. Du siehst nur noch altes Licht.',
+      'Der Weise': 'Du brauchst weniger Punkte als früher. Drei verlässliche reichen dir inzwischen völlig.',
+    },
+  },
+
+  '04_Mond_Sonnenzyklen': {
+    thema: 'Rhythmus',
+    intro: 'Alles an dir läuft in Wellen, {name}. Die Frage ist nur, ob du deine Wellen kennst oder gegen sie arbeitest.',
+    element: {
+      Feuer: 'Dein Rhythmus ist Spitze und Absturz. Du gibst alles und wunderst dich dann, warum drei Tage nichts geht.',
+      Wasser: 'Dein Element folgt dem Mond wie die Gezeiten. Du merkst früher als andere, wenn sich eine Stimmung dreht.',
+      Erde: 'Dein Rhythmus ist langsam und gleichmäßig. Du unterschätzt, wie viel du dadurch schaffst, und wie schwer du umzustellen bist.',
+      Luft: 'Dein Rhythmus ist unregelmäßig, weil dein Kopf keinen Feierabend kennt. Müdigkeit merkst du erst, wenn sie schon da ist.',
+    },
+    zahl: {
+      1: 'Du bist morgens stark und abends fahrig. Deine wichtigsten Entscheidungen gehören in die erste Tageshälfte.',
+      2: 'Dein Zustand hängt an den Zuständen anderer. Du steigst und fällst mit dem Raum, in dem du sitzt.',
+      3: 'Du hast kurze, helle Hochphasen. Was du in diesen Fenstern nicht fertig machst, bleibt oft für immer liegen.',
+      4: 'Du hältst Takt, auch wenn er nichts bringt. Pausen musst du dir planen, sonst nimmst du keine.',
+      5: 'Du brauchst Bruch statt Regelmäßigkeit. Ein zu gleichmäßiger Rhythmus macht dich unruhig und unaufmerksam.',
+      6: 'Du richtest deinen Tag nach fremden Terminen aus. Deine eigene beste Zeit verschenkst du regelmäßig.',
+      7: 'Du brauchst eine stille Phase pro Zyklus. Ohne sie wirst du dünn und leicht reizbar.',
+      8: 'Du fährst lange über deine Grenze und nennst das Disziplin. Der Zusammenbruch kommt bei dir mit Verspätung.',
+      9: 'Du spürst Enden früh. Du beendest Dinge innerlich lange bevor du sie äußerlich beendest.',
+      11: 'Deine Schwankungen sind größer, als du zeigst. Nach außen wirkst du stabiler, als es sich anfühlt.',
+      22: 'Du denkst in Jahren, nicht in Tagen. Deshalb ignorierst du kleine Warnsignale zu lange.',
+      33: 'Du lädst dich über Kontakt auf und leerst dich über Kontakt. Das ist derselbe Hahn.',
+    },
+    phase: {
+      'Der erste Ring': 'Du kennst deinen Rhythmus noch nicht und hältst jedes Tief für ein Versagen.',
+      'Die Rückkehr': 'Der Zyklus schließt sich zum ersten Mal ganz. Themen von früher kommen zurück, nur mit anderem Gesicht.',
+      'Der Weise': 'Du hast genug Runden gesehen, um Tiefs auszuhalten, ohne sie zu dramatisieren.',
+    },
+  },
+
+  '05_Historische_Zyklen': {
+    thema: 'Wiederholung',
+    intro: 'Geschichte wiederholt sich nicht wörtlich, {name}. Sie reimt sich. Dein Leben übrigens auch.',
+    element: {
+      Feuer: 'Du glaubst, deine Situation sei einmalig. Meist ist sie die dritte Auflage derselben Geschichte mit neuen Namen.',
+      Wasser: 'Du erinnerst dich an Stimmungen ganzer Jahre. Deshalb erkennst du Wiederholungen früher, als du sie zugeben willst.',
+      Erde: 'Du lernst aus dem, was schon einmal schiefging, gründlich. Manchmal so gründlich, dass du Chancen mitverbietest.',
+      Luft: 'Du erkennst die Muster sofort und ziehst trotzdem selten Konsequenzen. Verstehen und ändern sind bei dir zwei Räume.',
+    },
+    zahl: {
+      1: 'Dein wiederkehrendes Muster heißt Neuanfang. Du startest lieber neu, als etwas Altes zu reparieren.',
+      2: 'Dein wiederkehrendes Muster heißt Anpassung. Du wartest, bis die Lage entscheidet, und ärgerst dich danach.',
+      3: 'Dein wiederkehrendes Muster heißt Zerstreuung. Drei gute Sachen gleichzeitig, keine davon zu Ende.',
+      4: 'Dein wiederkehrendes Muster heißt Festhalten. Du baust weiter an Sachen, die längst niemand mehr betritt.',
+      5: 'Dein wiederkehrendes Muster heißt Absprung. Immer kurz bevor es unbequem und wichtig zugleich wird.',
+      6: 'Dein wiederkehrendes Muster heißt Übernahme. Du trägst Lasten, die dir jemand nur ausgeliehen hat.',
+      7: 'Dein wiederkehrendes Muster heißt Rückzug. Du verschwindest, statt den Konflikt zu führen.',
+      8: 'Dein wiederkehrendes Muster heißt Kontrolle. Du greifst zu, wenn Unsicherheit auftaucht, und machst es dadurch enger.',
+      9: 'Dein wiederkehrendes Muster heißt Abschied. Du beendest Kapitel gründlich und fängst zu spät ein neues an.',
+      11: 'Dein wiederkehrendes Muster heißt Vorahnung ohne Handlung. Du hast es kommen sehen und trotzdem nichts geändert.',
+      22: 'Dein wiederkehrendes Muster heißt Verschieben aufs große Ganze. Das Kleine wartet bei dir sehr lange.',
+      33: 'Dein wiederkehrendes Muster heißt Retten. Du übernimmst Rollen in fremden Geschichten und fehlst in deiner.',
+    },
+    phase: {
+      'Der erste Ring': 'Du hast noch keine eigene Wiederholung erlebt. Was du für Muster hältst, ist geerbt.',
+      'Die Rückkehr': 'Jetzt siehst du deine erste eigene Schleife von außen. Das ist unangenehm und sehr nützlich.',
+      'Der Weise': 'Du erkennst deine Schleifen im Ansatz. Der Reiz liegt darin, sie einmal anders zu beenden.',
+    },
+  },
+
+  '06_Kulturelle_Systeme': {
+    thema: 'Herkunft',
+    intro: 'Jede Kultur hat eine eigene Landkarte für dasselbe Gelände, {name}. Du benutzt die, in die du hineingeboren wurdest.',
+    element: {
+      Feuer: 'Du übernimmst fremde Systeme schnell und mit Begeisterung. Nach drei Monaten liegt das nächste auf dem Tisch.',
+      Wasser: 'Du spürst, ob ein System echt gelebt wird oder nur zitiert. Auf Folklore reagierst du empfindlich.',
+      Erde: 'Du hältst an dem fest, was in deiner Familie galt, auch an dem, was dir nie gut getan hat.',
+      Luft: 'Du vergleichst Systeme miteinander und findest überall Widersprüche. Zugehörigkeit ersetzt du gern durch Übersicht.',
+    },
+    zahl: {
+      1: 'Du willst dich von deiner Herkunft abgrenzen und trägst genau deshalb ihre Handschrift.',
+      2: 'Du bewegst dich zwischen zwei Welten und wirst in beiden für halb gehalten.',
+      3: 'Du erzählst deine Herkunft besser, als du sie lebst. Die Geschichte ist schon fertig, das Verhältnis nicht.',
+      4: 'Du hütest Regeln, deren Ursprung du nie hinterfragt hast. Manche davon schützen dich noch, andere nicht mehr.',
+      5: 'Du fühlst dich überall etwas zuhause und nirgends ganz. Das ist Freiheit und Heimatlosigkeit im selben Paket.',
+      6: 'Du hältst Familienstrukturen zusammen, die sich ohne dich sortieren müssten.',
+      7: 'Du studierst deine eigene Kultur wie ein Fremder. Nähe wäre unbequemer als Wissen.',
+      8: 'Du misst Herkunft an Aufstieg. Was deine Leute nicht geschafft haben, willst du beweisen.',
+      9: 'Du siehst in allen Traditionen dasselbe Muster. Manchmal verwischt du dabei echte Unterschiede.',
+      11: 'Du bist Übersetzerin oder Übersetzer zwischen Welten und wirst dabei selten selbst übersetzt.',
+      22: 'Du willst etwas aufbauen, das deiner Herkunft standhält und über sie hinausgeht. Beides gleichzeitig ist schwer.',
+      33: 'Du gibst weiter, was du selbst nie in Ruhe bekommen hast.',
+    },
+    phase: {
+      'Der erste Ring': 'Du grenzt dich noch ab. Was du ablehnst, sagt gerade mehr über dich als das, was du wählst.',
+      'Die Rückkehr': 'Alte Prägungen tauchen wieder auf, diesmal aus deinem eigenen Mund. Das erschreckt viele Menschen an dieser Stelle.',
+      'Der Weise': 'Du kannst inzwischen behalten, was trägt, und den Rest ohne Streit liegen lassen.',
+    },
+  },
+
+  '07_Weltereignisse_Korrelationen': {
+    thema: 'Zusammenhänge',
+    intro: 'Zwei Dinge, die gleichzeitig passieren, haben oft nichts miteinander zu tun, {name}. Dein Kopf verbindet sie trotzdem.',
+    element: {
+      Feuer: 'Bei Krisen willst du sofort handeln. Deine schnellste Reaktion ist selten deine beste.',
+      Wasser: 'Nachrichten gehen bei dir tiefer, als du zugibst. Fremdes Leid setzt sich in deinem Körper fest.',
+      Erde: 'Du bewertest Lagen an konkreten Folgen. Was nicht in deinem Alltag ankommt, hältst du für Lärm.',
+      Luft: 'Du bastelst aus Meldungen ein Gesamtbild. Es ist schlüssig, gut erzählt und häufig zu früh.',
+    },
+    zahl: {
+      1: 'Du willst bei großen Ereignissen eine Position haben. Meinung kommt bei dir vor Prüfung.',
+      2: 'Du übernimmst die Stimmung deiner Umgebung. Deine Angst ist oft geliehen.',
+      3: 'Du verbreitest weiter, was dich beeindruckt hat. Die Quelle prüfst du später, wenn überhaupt.',
+      4: 'Du willst Fakten und Belege. Das schützt dich, macht dich aber langsam in Lagen, die Tempo verlangen.',
+      5: 'Du reagierst auf Umbrüche mit Aufbruch. Chaos empfindest du heimlich als Erleichterung.',
+      6: 'Du fragst zuerst, wem es schadet. Dein Blick ist menschlich und übersieht manchmal die Struktur dahinter.',
+      7: 'Du misstraust den offiziellen Erklärungen. Berechtigt, solange du nicht jeden Zweifel für einen Beweis hältst.',
+      8: 'Du schaust auf Interessen und Geld. Damit liegst du oft richtig und wirst leicht zynisch.',
+      9: 'Du siehst das Ende von Epochen kommen. Ob es in deinem Leben ankommt, ist eine andere Frage.',
+      11: 'Du spürst Kippunkte, bevor sie messbar sind. Beweisen kannst du das nie, und das nagt an dir.',
+      22: 'Du fragst nach dem, was nach der Krise gebaut werden muss. Das ist selten die populäre Frage.',
+      33: 'Du willst helfen und stehst regelmäßig vor der eigenen Ohnmacht.',
+    },
+    phase: {
+      'Der erste Ring': 'Jede Krise fühlt sich für dich noch wie die erste an. Vergleichswerte fehlen dir.',
+      'Die Rückkehr': 'Du hast inzwischen zwei oder drei große Umbrüche erlebt und merkst, wie ähnlich die Reaktionen laufen.',
+      'Der Weise': 'Du bleibst ruhiger als andere, weil du weißt, wie viele Weltuntergänge schon ausgeblieben sind.',
+    },
+  },
+
+  '08_Symbolik': {
+    thema: 'Bilder',
+    intro: 'Ein Symbol wirkt, weil dein Kopf es füllt, {name}. Was du in ein Bild hineinliest, gehört dir.',
+    element: {
+      Feuer: 'Du reagierst auf starke Bilder sofort. Ein gutes Symbol kann dich zu Dingen bewegen, die du nüchtern nie tun würdest.',
+      Wasser: 'Bilder erreichen dich vor Worten. Deshalb wirken Filme, Räume und Farben bei dir länger nach als Argumente.',
+      Erde: 'Du willst wissen, wofür ein Zeichen konkret steht. Mehrdeutigkeit macht dich ungeduldig.',
+      Luft: 'Du liest Zeichen wie eine Sprache. Manchmal übersetzt du so gründlich, dass die Wirkung verloren geht.',
+    },
+    zahl: {
+      1: 'Dein Zeichen ist die senkrechte Linie. Klar, allein, ohne Verbindung nach rechts oder links.',
+      2: 'Dein Zeichen ist die Spiegelung. Du erkennst dich in Gegenüber, im Guten wie im Anstrengenden.',
+      3: 'Dein Zeichen ist das Dreieck. Aus zwei Dingen machst du ein drittes und nennst es dann deine Idee.',
+      4: 'Dein Zeichen ist das Quadrat. Es hält alles, was du hineinlegst, und lässt nur schwer wieder etwas hinaus.',
+      5: 'Dein Zeichen ist der Wegweiser. An jeder Kreuzung fühlst du dich lebendiger als auf der Strecke.',
+      6: 'Dein Zeichen ist die Schale. Du fasst etwas ein, damit es nicht ausläuft, auch wenn dich das schwer macht.',
+      7: 'Dein Zeichen ist die verschlossene Tür. Du sammelst Schlüssel und öffnest selten.',
+      8: 'Dein Zeichen ist die Waage mit ungleichen Schalen. Du merkst genau, wo du zu kurz kommst.',
+      9: 'Dein Zeichen ist der geschlossene Kreis. Schön, vollständig, und ohne Eingang für Neues.',
+      11: 'Dein Zeichen sind zwei Säulen mit Lücke dazwischen. Du lebst im Durchgang, nicht in einem der Räume.',
+      22: 'Dein Zeichen ist das Fundament unter der Erde. Niemand sieht es, alles ruht darauf.',
+      33: 'Dein Zeichen ist die Brücke. Menschen gehen über dich und merken die Last selten.',
+    },
+    phase: {
+      'Der erste Ring': 'Du sammelst noch Symbole, die dir gefallen. Welche zu dir gehören, weißt du noch nicht.',
+      'Die Rückkehr': 'Manche Zeichen, die du dir früher zugelegt hast, passen nicht mehr. Ablegen fällt schwerer als Anlegen.',
+      'Der Weise': 'Du brauchst kaum noch Zeichen. Was du bist, muss nicht mehr angezeigt werden.',
+    },
+  },
+
+  '09_Esoterik_Modern': {
+    thema: 'Selbstbild',
+    intro: 'Jedes Typensystem gibt dir ein Etikett, {name}. Nützlich als Werkzeug, gefährlich als Ausrede.',
+    element: {
+      Feuer: 'Du probierst Methoden mit vollem Einsatz und wirfst sie weg, sobald der erste Rausch weg ist.',
+      Wasser: 'Du erkennst dich in fast jeder Beschreibung wieder. Das macht dich empfänglich für jedes System, das dich sehen will.',
+      Erde: 'Du willst Ergebnisse sehen. Wenn nach acht Wochen nichts anders ist, bist du raus, und meistens zu Recht.',
+      Luft: 'Du vergleichst die Systeme untereinander statt sie anzuwenden. Wissen über Methoden ersetzt bei dir die Übung.',
+    },
+    zahl: {
+      1: 'Du willst dein eigenes System. Fremde Anleitungen fühlen sich für dich wie Fremdbestimmung an.',
+      2: 'Du übernimmst gern eine Deutung, die jemand anders dir gibt. Prüfe, wem sie nützt.',
+      3: 'Du sprichst die Sprache dieser Welten flüssig. Nicht alles, was du gut sagen kannst, hast du auch getan.',
+      4: 'Du brauchst eine Struktur, sonst wird alles Wischiwaschi. Struktur allein macht aber noch keine Veränderung.',
+      5: 'Du wechselst die Methode, sobald sie unbequem wird. Genau an der Stelle hätte sie gewirkt.',
+      6: 'Du nutzt diese Werkzeuge lieber für andere als für dich. Deine eigene Baustelle bleibt offen.',
+      7: 'Du zerlegst jedes System, bis nichts mehr übrig ist. Am Ende stehst du klug und leer da.',
+      8: 'Du fragst, was es dir bringt. Eine ehrliche Frage, die dir aber alles verschließt, was nicht sofort zahlt.',
+      9: 'Du hast das meiste schon gesehen. Vorsicht, Übersättigung sieht Weisheit sehr ähnlich.',
+      11: 'Du hältst deine Empfindlichkeit für eine Gabe. Sie ist zuerst eine Belastung, die du regulieren musst.',
+      22: 'Du willst aus Einsichten etwas Praktisches machen. Das ist der seltenste und nützlichste Zugang hier.',
+      33: 'Du fängst früh an, andere zu begleiten. Achte darauf, dass du nicht vor dir selbst davonhilfst.',
+    },
+    phase: {
+      'Der erste Ring': 'Du suchst noch eine Sprache für dich. Nimm die Etiketten locker, sie sind Leihgaben.',
+      'Die Rückkehr': 'Du merkst, welche Selbstbeschreibungen dich geschützt und welche dich klein gehalten haben.',
+      'Der Weise': 'Du brauchst kein System mehr, um dich zu erklären. Du benutzt sie nur noch zum Übersetzen.',
+    },
+  },
+
+  '11_Verborgene_Geschichte': {
+    thema: 'Verschüttetes',
+    intro: 'Unter jeder erzählten Geschichte liegt eine, die niemand aufgeschrieben hat, {name}. In deiner Familie auch.',
+    element: {
+      Feuer: 'Du gräbst gern auf und redest sofort darüber. Was ausgegraben wird, braucht aber Zeit an der Luft.',
+      Wasser: 'Du spürst, dass in deiner Herkunft etwas fehlt, bevor du weißt, was. Dieses Loch hat eine Form.',
+      Erde: 'Du willst Belege, keine Andeutungen. Damit findest du weniger und irrst dich seltener.',
+      Luft: 'Du fügst Lücken mit Theorien. Eine gute Theorie fühlt sich für dich fast so gut an wie ein Fund.',
+    },
+    zahl: {
+      1: 'Du willst der Erste sein, der etwas ausspricht. Manches wurde aber aus gutem Grund noch nicht ausgesprochen.',
+      2: 'Du hütest fremde Geheimnisse zuverlässig. Deine eigenen erzählst du dafür zu schnell.',
+      3: 'Du erzählst Vergangenes bunter, als es war. Die Erinnerung passt sich bei dir dem Publikum an.',
+      4: 'Du bewahrst Dokumente, Fotos, Ordner. Du bist das Archiv deiner Leute, ohne dass es jemand bestellt hat.',
+      5: 'Du lässt Vergangenes gern hinter dir. Was du nicht anschaust, reist trotzdem mit.',
+      6: 'Du schützt die Familienerzählung, auch wenn du weißt, dass sie nicht ganz stimmt.',
+      7: 'Du kennst die dunklen Stellen deiner Herkunft besser als alle anderen und sagst nichts.',
+      8: 'Du interessierst dich für das, was verschwunden ist. Besitz, Land, Namen. Verlust ist bei dir ein Thema.',
+      9: 'Du willst abschließen, was Generationen vor dir offen gelassen haben. Das ist ein großer Auftrag.',
+      11: 'Du reagierst auf alte Orte und alte Fotos körperlich. Was das bedeutet, bleibt offen.',
+      22: 'Du willst festhalten, was sonst verloren geht. Fang an, bevor die Menschen weg sind, die es noch wissen.',
+      33: 'Du trägst Geschichten anderer weiter und stellst dabei deine eigene hinten an.',
+    },
+    phase: {
+      'Der erste Ring': 'Du kennst die offizielle Version deiner Familie. Die Fragen dazu kommen später.',
+      'Die Rückkehr': 'Jetzt beginnst du, hinter die Erzählung zu schauen. Meist ist der Auslöser ein Verlust.',
+      'Der Weise': 'Du bist inzwischen selbst Quelle. Was du nicht erzählst, verschwindet mit dir.',
+    },
+  },
+
+  '12_Geheimgesellschaften': {
+    thema: 'Kreise',
+    intro: 'Jede Gruppe hat eine Tür, {name}. Die spannende Frage ist nicht, wer drinnen sitzt, sondern warum du unbedingt rein willst.',
+    element: {
+      Feuer: 'Du willst dazugehören und gleichzeitig der Störfaktor sein. Beides gleichzeitig hält keine Gruppe lange aus.',
+      Wasser: 'Du spürst sofort, wer im Raum wirklich entscheidet. Das ist keine Verschwörung, das ist Wahrnehmung.',
+      Erde: 'Du misstraust geschlossenen Kreisen und bleibst deshalb draußen. Manchmal auch dort, wo dir offen stand.',
+      Luft: 'Du analysierst Netzwerke gern von außen. Zugehörigkeit ersetzt du durch Durchblick.',
+    },
+    zahl: {
+      1: 'Du willst keinen Kreis, dem du beitrittst, sondern einen, den du gründest.',
+      2: 'Du bist die Person, der man Dinge anvertraut. Diese Rolle bringt Nähe und auch eine Last.',
+      3: 'Du redest gern über Interna. Vertraulichkeit ist bei dir eine Übungssache.',
+      4: 'Du hältst Regeln ein, auch wenn niemand hinschaut. Genau darum vertraut man dir Schlüssel an.',
+      5: 'Du hältst es in keinem Kreis lange aus. Bindung fühlt sich für dich schnell nach Verpflichtung an.',
+      6: 'Du kittest Gruppen, die auseinanderfallen wollen. Frag dich, ob sie es sollten.',
+      7: 'Du bleibst am Rand und beobachtest. Von dort siehst du viel und wirst selten gefragt.',
+      8: 'Dich interessiert Einfluss, nicht Mitgliedschaft. Du willst wissen, wo der Hebel liegt.',
+      9: 'Du hast mehrere Gruppen kommen und gehen sehen. Deshalb bindest du dich nur noch halb.',
+      11: 'Du spürst Unstimmigkeiten in Gruppen früh und wirst dafür gern zum Unruhestifter erklärt.',
+      22: 'Du baust selbst Strukturen. Achte darauf, wie durchlässig deine Türen sind.',
+      33: 'Du öffnest Türen für andere. Prüf gelegentlich, ob jemand deine je offen gehalten hat.',
+    },
+    phase: {
+      'Der erste Ring': 'Dazugehören ist gerade wichtiger, als du zugeben willst. Das ist normal und formt viel.',
+      'Die Rückkehr': 'Du sortierst deine Kreise. Einige Zugehörigkeiten waren Gewohnheit, keine Verbindung.',
+      'Der Weise': 'Du weißt, dass die meisten geschlossenen Türen nur Langeweile verstecken.',
+    },
+  },
+
+  '13_Unterdruecktes_Wissen': {
+    thema: 'Widerstand',
+    intro: 'Nicht alles Unterdrückte ist wahr, {name}, und nicht alles Anerkannte ist richtig. Beides zu trennen ist Arbeit.',
+    element: {
+      Feuer: 'Du stellst dich gegen Autorität, manchmal aus Überzeugung und manchmal nur aus Reflex.',
+      Wasser: 'Du merkst, wenn eine Erklärung nicht stimmt, kannst es aber nicht begründen. Deshalb schweigst du oft.',
+      Erde: 'Du glaubst dem etablierten Weg, bis er dich persönlich enttäuscht. Dann kippt dein Vertrauen sehr weit.',
+      Luft: 'Du kannst jede Position gut vertreten. Diese Fähigkeit macht dich anfällig für die elegantere statt die wahrere Version.',
+    },
+    zahl: {
+      1: 'Du willst nicht recht behalten, du willst frei sein. Das verwechseln andere ständig.',
+      2: 'Du sagst selten offen, was du wirklich denkst, wenn der Raum anders gestimmt ist.',
+      3: 'Du bringst unbequeme Themen ins Gespräch und machst dann einen Witz daraus.',
+      4: 'Du prüfst Behauptungen gründlich. Damit bist du in diesem Feld eine seltene Erscheinung.',
+      5: 'Du liebst die Idee, dass es einen verborgenen Ausweg gibt. Der Wunsch ist älter als dein Wissen.',
+      6: 'Du hältst Wissen zurück, um Menschen zu schonen. Ob das Schutz ist, entscheidest du oft zu schnell allein.',
+      7: 'Du zweifelst professionell. Achte darauf, dass Zweifel nicht zu deiner bequemen Endstation wird.',
+      8: 'Du fragst immer, wer davon profitiert. Diese Frage öffnet viel und macht dich hart.',
+      9: 'Du hast so viel gesehen, dass dich Empörung nicht mehr trägt. Müdigkeit ist keine Klarheit.',
+      11: 'Du hältst deine Ahnungen für Erkenntnis. Notiere sie, prüfe sie später, dann weißt du mehr über dich.',
+      22: 'Du willst nicht nur aufdecken, du willst eine funktionierende Alternative. Das ist zehnmal schwerer.',
+      33: 'Du willst andere aufwecken. Wach wird niemand, weil du lauter wirst.',
+    },
+    phase: {
+      'Der erste Ring': 'Dein Widerspruch ist noch pauschal. Er richtet sich gegen alles, was älter ist als du.',
+      'Die Rückkehr': 'Du unterscheidest jetzt zwischen Systemen, die dich enttäuscht haben, und Systemen, die nicht funktionieren.',
+      'Der Weise': 'Du weißt, wann Widerstand etwas ändert und wann er nur Kraft kostet.',
+    },
+  },
+
+  '14_UFOs_UAP_Disclosure': {
+    thema: 'Das Fremde',
+    intro: 'Am Himmel gibt es Dinge, die niemand erklären kann, {name}. Wie du damit umgehst, sagt viel über dich.',
+    element: {
+      Feuer: 'Du willst Kontakt, Bewegung, Antwort. Ein offenes Rätsel hältst du kaum aus, ohne es zu füllen.',
+      Wasser: 'Das Unerklärliche berührt bei dir eine alte Sehnsucht. Nicht nach Beweisen, sondern danach, nicht allein zu sein.',
+      Erde: 'Du willst etwas anfassen können. Ohne Material ist es für dich Erzählung, und damit hast du meistens recht.',
+      Luft: 'Du liebst die Frage mehr als die Antwort. Eine geklärte Sache verliert für dich sofort an Reiz.',
+    },
+    zahl: {
+      1: 'Du willst selbst sehen, nicht nachlesen. Zeugenberichte anderer bedeuten dir wenig.',
+      2: 'Du glaubst dem, der es dir erzählt, weil du ihm vertraust. Vertrauen ist aber kein Beleg.',
+      3: 'Du erzählst solche Geschichten gern weiter und schmückst sie im Erzählen aus, ohne es zu merken.',
+      4: 'Du willst Daten, Radar, Akten. Damit bist du in diesem Feld der unbequemste Gesprächspartner.',
+      5: 'Du magst die Vorstellung, dass es woanders weitergeht. Das sagt mehr über dein Hier als über das Dort.',
+      6: 'Dich interessiert weniger die Technik als die Frage, ob es freundlich wäre.',
+      7: 'Du sammelst Fälle und ordnest sie still. Öffentlich sagst du dazu fast nichts.',
+      8: 'Dich interessiert, wer davon weiß und es zurückhält. Für dich ist es ein Machtthema, kein Sternenthema.',
+      9: 'Du siehst darin die Frage nach dem großen Rahmen. Antworten erwartest du nicht mehr wirklich.',
+      11: 'Du fühlst dich von dem Thema angezogen, ohne es begründen zu können. Der Sog selbst ist die Information.',
+      22: 'Du fragst, was sich praktisch ändern würde. Meist lautet die ehrliche Antwort wenig.',
+      33: 'Du hoffst auf etwas, das die Menschen zusammenbringt. Das ist eine Sehnsucht, keine Prognose.',
+    },
+    phase: {
+      'Der erste Ring': 'Das Unbekannte fasziniert dich, weil dein eigenes Leben noch unbekannt ist.',
+      'Die Rückkehr': 'Du merkst, dass die Frage nach dem Fremden bei dir eigentlich eine Frage nach Bedeutung war.',
+      'Der Weise': 'Du kannst ein Rätsel offen stehen lassen, ohne dass es dich beunruhigt.',
+    },
+  },
+
+  '16_Magick_Okkulte_Systeme': {
+    thema: 'Wille',
+    intro: 'Ritual ist konzentrierte Absicht mit Ablauf, {name}. Du machst das täglich, du nennst es nur Gewohnheit.',
+    element: {
+      Feuer: 'Dein Wille ist stark und kurz. Du kannst enorm viel anstoßen und wenig davon über Monate halten.',
+      Wasser: 'Dein Wille arbeitet indirekt. Du wirkst über Stimmung und Beziehung, nicht über Ansagen.',
+      Erde: 'Dein Wille zeigt sich in Wiederholung. Was du dreihundert Mal machst, wird bei dir wahr.',
+      Luft: 'Dein Wille bleibt oft im Kopf. Zwischen Vorstellung und Vollzug liegt bei dir die eigentliche Strecke.',
+    },
+    zahl: {
+      1: 'Deine Absicht ist klar und ungeteilt. Deshalb wirkt sie, und deshalb überfährst du gelegentlich andere.',
+      2: 'Deine Absicht richtet sich meistens auf jemanden. Sei vorsichtig damit, für andere zu wollen.',
+      3: 'Du sprichst Dinge in die Welt. Deine Worte haben mehr Gewicht, als dir bewusst ist.',
+      4: 'Du brauchst festen Ablauf. Ohne Form zerfällt deine Absicht in Stimmung.',
+      5: 'Du willst zu viel gleichzeitig. Gebündelt wärst du erstaunlich wirksam.',
+      6: 'Du setzt deine Kraft für andere ein und schaffst es kaum, etwas für dich selbst zu wollen.',
+      7: 'Du weißt viel über Technik und Systeme und übst wenig. Wissen ist hier keine Abkürzung.',
+      8: 'Du willst Wirkung sehen. Alles, was nicht messbar zurückkommt, gibst du schnell auf.',
+      9: 'Du willst inzwischen weniger. Das kann Reife sein und manchmal auch Resignation.',
+      11: 'Deine Absicht wirkt am stärksten, wenn du sie nicht erzwingst. Druck macht bei dir alles enger.',
+      22: 'Du hältst eine Absicht über Jahre. Das ist die seltenste Form von Kraft in diesem Feld.',
+      33: 'Deine stärkste Wirkung entsteht in der Zuwendung zu einem einzelnen Menschen.',
+    },
+    phase: {
+      'Der erste Ring': 'Du testest gerade, wie viel du bewirken kannst. Vieles davon ist noch Kraftprobe.',
+      'Die Rückkehr': 'Du merkst, dass einige deiner alten Wünsche in Erfüllung gingen und nichts gebracht haben.',
+      'Der Weise': 'Du willst weniger und triffst besser. Das ist der ganze Unterschied.',
+    },
+  },
+
+  '17_Heilige_Texte_Verborgen': {
+    thema: 'Deutung',
+    intro: 'Ein alter Text sagt selten das, was man ihn sagen lässt, {name}. Auch du liest darin vor allem dich.',
+    element: {
+      Feuer: 'Du liest, was dich befeuert, und überspringst die Stellen, die dir widersprechen.',
+      Wasser: 'Du liest mit dem Bauch. Ein Satz kann dich treffen, ohne dass du erklären kannst, warum.',
+      Erde: 'Du hältst dich an den Wortlaut. Das schützt dich vor Willkür und nimmt dir manchmal die Tiefe.',
+      Luft: 'Du liest zwischen den Zeilen und findest dort erstaunlich oft deine eigene Meinung.',
+    },
+    zahl: {
+      1: 'Du willst selbst deuten, ohne Vermittler. Das ist mutig und ohne Korrektiv auch riskant.',
+      2: 'Du übernimmst die Auslegung von Menschen, denen du vertraust. Prüfe, ob sie den Text kennen oder nur die Wirkung.',
+      3: 'Du kannst alte Worte lebendig weitererzählen. Achte darauf, wo Erzählung zur Erfindung wird.',
+      4: 'Du willst wissen, wann etwas geschrieben wurde und von wem. Diese Frage öffnet mehr als jede Meditation.',
+      5: 'Du springst zwischen Traditionen. Sammeln ist einfach, in einer Sache bleiben ist die Übung.',
+      6: 'Du suchst in Texten Trost. Den findest du, aber Trost und Wahrheit sind zwei Dinge.',
+      7: 'Du gräbst nach der verborgenen Schicht. Manchmal ist der Text einfach das, was dasteht.',
+      8: 'Dich interessiert, wer entschieden hat, was drinbleibt und was gestrichen wurde. Gute Frage.',
+      9: 'Du erkennst in allen Überlieferungen denselben Kern. Achte darauf, dass dabei nichts Wichtiges verschwindet.',
+      11: 'Einzelne Sätze treffen dich wie Adressierung. Das ist Resonanz, nicht Botschaft.',
+      22: 'Du fragst, was daraus im Alltag folgt. Damit stehst du ziemlich allein da.',
+      33: 'Du gibst weiter, was dich getragen hat. Achte darauf, dass du nicht deine Deutung zur Regel machst.',
+    },
+    phase: {
+      'Der erste Ring': 'Du suchst noch einen Satz, an dem du dich festhalten kannst. Nimm ihn, aber nicht für immer.',
+      'Die Rückkehr': 'Dieselben Zeilen bedeuten dir jetzt etwas anderes. Nicht der Text hat sich geändert.',
+      'Der Weise': 'Du kannst mit Widersprüchen im selben Buch leben, ohne eine Seite wegzuwerfen.',
+    },
+  },
+
+  '18_Heilige_Geographie': {
+    thema: 'Orte',
+    intro: 'Manche Orte verändern deinen Zustand, sobald du sie betrittst, {name}. Das ist kein Zauber, das ist trotzdem real.',
+    element: {
+      Feuer: 'Du brauchst Orte, an denen etwas passiert. Stille Räume machen dich innerhalb einer Stunde unruhig.',
+      Wasser: 'Du nimmst die Stimmung von Räumen auf. Ein belasteter Ort setzt sich bei dir im Nacken fest.',
+      Erde: 'Du brauchst einen festen Platz. Ohne eigenes Territorium wirst du unrund, auch wenn du es nicht sagst.',
+      Luft: 'Du hältst dich an vielen Orten auf und an keinem ganz. Ankommen ist bei dir eine Entscheidung, kein Gefühl.',
+    },
+    zahl: {
+      1: 'Du willst deinen Platz selbst wählen. Geerbte Orte fühlen sich für dich eng an.',
+      2: 'Ein Ort ist für dich gut, wenn ein bestimmter Mensch dort ist. Ohne ihn wird es sofort fremd.',
+      3: 'Du brauchst Orte mit Menschen und Geräusch. In völliger Stille wirst du unsicher.',
+      4: 'Du verwurzelst dich schnell und ziehst schwer wieder um. Deine Wohnung ist mehr als eine Adresse.',
+      5: 'Du fühlst dich unterwegs am ehesten bei dir. Das ist ehrlich und macht Bindungen schwer.',
+      6: 'Du machst aus jedem Ort ein Zuhause für andere. Für dich selbst richtest du zuletzt ein.',
+      7: 'Du brauchst einen Raum, den niemand betritt. Ohne ihn wirst du reizbar.',
+      8: 'Du misst Orte an Status. Prüfe, ob dir die Gegend gefällt oder nur ihr Ruf.',
+      9: 'Du hast an vielen Orten gelebt und trägst von jedem ein Stück mit dir.',
+      11: 'Du reagierst auf Räume stärker als auf Menschen. Das ist anstrengend und ein gutes Frühwarnsystem.',
+      22: 'Du willst einen Ort schaffen, der andere trägt. Das ist ein Lebensprojekt, kein Umzug.',
+      33: 'Deine Tür steht immer offen. Achte darauf, dass du auch abschließen kannst.',
+    },
+    phase: {
+      'Der erste Ring': 'Du bist noch auf der Suche nach deinem Ort und probierst aus, was passt.',
+      'Die Rückkehr': 'Du kehrst zu Orten von früher zurück und merkst, dass sie geschrumpft sind. Nicht die Orte.',
+      'Der Weise': 'Du trägst deinen Ort inzwischen mit dir. Räume wirken auf dich, sie bestimmen dich aber nicht.',
+    },
+  },
+
+  '19_Prophezeiungen': {
+    thema: 'Zukunft',
+    intro: 'Prophezeiungen treffen ein, weil Menschen sie erfüllen wollen, {name}. Deine eigenen funktionieren genauso.',
+    element: {
+      Feuer: 'Du redest deine Zukunft groß und handelst dann so lange, bis es fast stimmt.',
+      Wasser: 'Du hast düstere Ahnungen und richtest dich unbewusst danach ein. So machst du sie ein Stück weit wahr.',
+      Erde: 'Du planst statt zu weissagen. Deshalb überraschen dich Brüche, die andere längst kommen sahen.',
+      Luft: 'Du entwirfst mehrere Zukünfte gleichzeitig. Wenn eine eintritt, sagst du, du hättest es gewusst.',
+    },
+    zahl: {
+      1: 'Du willst deine Zukunft machen, nicht erfahren. Vorhersagen sind für dich eher Beleidigung als Hilfe.',
+      2: 'Du fragst andere, was aus dir wird. Ihre Antworten haben bei dir zu viel Gewicht.',
+      3: 'Du erzählst deine Pläne, bevor sie stehen. Das Erzählen fühlt sich fast so gut an wie das Tun.',
+      4: 'Du rechnest mit dem Schlechtesten und nennst das Vorsorge. Manchmal ist es einfach Angst mit Tabelle.',
+      5: 'Du willst dir nichts verbauen und hältst deshalb alle Türen offen. Offene Türen bauen nichts.',
+      6: 'Deine Zukunftsbilder haben immer andere Menschen darin. Deine eigene Rolle bleibt unscharf.',
+      7: 'Du erwartest wenig, um nicht enttäuscht zu werden. Das schützt dich und kostet dich viel.',
+      8: 'Du denkst in Zielen und Zahlen. Was du erreichst, ersetzt bei dir schnell die Frage nach dem Wozu.',
+      9: 'Du siehst Enden klarer als Anfänge. Deshalb wirkst du auf andere manchmal düsterer, als du bist.',
+      11: 'Du hast Vorahnungen, die manchmal stimmen. Zähle auch die, die nicht eingetroffen sind.',
+      22: 'Du denkst in Jahrzehnten. Das ist selten und verlangt Geduld, die du nicht immer hast.',
+      33: 'Du machst dir Sorgen um die Zukunft anderer. Deine eigene bleibt dabei erstaunlich unbeschrieben.',
+    },
+    phase: {
+      'Der erste Ring': 'Deine Zukunft ist noch ein leeres Blatt und fühlt sich deshalb gleichzeitig frei und bedrohlich an.',
+      'Die Rückkehr': 'Einige deiner alten Vorhersagen über dich selbst sind nicht eingetroffen. Das ist eher Befreiung als Verlust.',
+      'Der Weise': 'Du machst weniger Prognosen und behältst häufiger recht. Erfahrung schlägt Vision.',
+    },
+  },
+
+  '20_Bewusstseinsforschung': {
+    thema: 'Aufmerksamkeit',
+    intro: 'Du siehst nie die Welt, {name}, du siehst dein Modell davon. Es wird laufend aktualisiert, nur nicht von allem.',
+    element: {
+      Feuer: 'Deine Aufmerksamkeit ist ein Scheinwerfer. Was gerade beleuchtet ist, existiert. Der Rest fällt weg.',
+      Wasser: 'Deine Wahrnehmung ist durchlässig. Du bekommst mehr mit, als dir gut tut, und filterst schlecht.',
+      Erde: 'Du nimmst über den Körper wahr. Was dein Körper ablehnt, kannst du dir noch so gut ausreden.',
+      Luft: 'Du lebst viel im Kommentar über das Erlebte. Zwischen dir und dem Moment liegt ständig eine Stimme.',
+    },
+    zahl: {
+      1: 'Du kannst dich stark fokussieren und blendest dabei ganze Bereiche deines Lebens aus.',
+      2: 'Deine Aufmerksamkeit hängt am Gegenüber. Allein wird dein Kopf schnell leer oder laut.',
+      3: 'Du springst schnell zwischen Reizen. Tiefe entsteht bei dir nur, wenn du dich zwingst zu bleiben.',
+      4: 'Du kannst lange bei einer Sache bleiben. Umschalten kostet dich mehr Kraft als Durchhalten.',
+      5: 'Du suchst neue Zustände, Reize, Perspektiven. Prüf ehrlich, wovon du dabei wegwillst.',
+      6: 'Deine Aufmerksamkeit scannt permanent, wie es anderen geht. Dich selbst scannst du selten.',
+      7: 'Du beobachtest dich beim Erleben. Deshalb bist du selten ganz drin und selten ganz raus.',
+      8: 'Du richtest deinen Blick auf das Ergebnis. Der Weg dahin läuft bei dir größtenteils unbemerkt ab.',
+      9: 'Du nimmst das Ganze wahr und verlierst Details. Menschen fühlen sich von dir manchmal übersehen.',
+      11: 'Dein Nervensystem ist schnell überladen. Du brauchst mehr Reizpausen als die Leute um dich herum.',
+      22: 'Du kannst Aufmerksamkeit über Jahre auf eine Sache richten. Das ist deine eigentliche Fähigkeit.',
+      33: 'Deine Aufmerksamkeit fließt nach außen. Innen wird es leise, und irgendwann merkst du es kaum noch.',
+    },
+    phase: {
+      'Der erste Ring': 'Dein Kopf ist voll und schnell. Ruhe hältst du gerade eher für Verlust als für Gewinn.',
+      'Die Rückkehr': 'Du merkst, wie stark deine Wahrnehmung dich all die Jahre gefiltert hat, meistens zu deinen Ungunsten.',
+      'Der Weise': 'Du kannst deine Aufmerksamkeit lenken statt ihr zu folgen. Das ist der ganze Trick.',
+    },
+  },
+
+  '21_Spirituelle_Anatomie': {
+    thema: 'Körper',
+    intro: 'Was du nicht aussprichst, sucht sich einen Platz im Körper, {name}. Du weißt vermutlich, wo deiner ist.',
+    element: {
+      Feuer: 'Du sitzt in der Brust und im Kiefer. Du drückst, bis etwas nachgibt, meistens du selbst.',
+      Wasser: 'Du sitzt im Bauch. Deine Verdauung und deine ungelösten Themen hängen enger zusammen, als dir lieb ist.',
+      Erde: 'Du sitzt im Rücken und im Nacken. Du trägst, und Tragen ist bei dir schwer von Können zu unterscheiden.',
+      Luft: 'Du sitzt im Kopf und im Atem. Wenn es eng wird, atmest du flach und merkst es als Letztes.',
+    },
+    zahl: {
+      1: 'Deine Kraft sitzt vorn. Du gehst mit dem Kopf zuerst durch Türen, auch durch geschlossene.',
+      2: 'Du spannst dich an, wenn Stimmung im Raum kippt. Dein Körper reagiert vor deinem Verstand.',
+      3: 'Deine Energie sitzt im Hals. Ungesagtes bemerkst du dort zuerst, oft als Kratzen oder Enge.',
+      4: 'Deine Spannung sitzt in den Schultern. Du hältst Positionen, die niemand mehr von dir verlangt.',
+      5: 'Deine Unruhe sitzt in den Beinen. Stillsitzen fühlt sich für dich körperlich falsch an.',
+      6: 'Deine Belastung sitzt im unteren Rücken. Du trägst Gewicht, das nicht dir gehört.',
+      7: 'Du bist wenig im Körper zuhause. Zwischen Wahrnehmung und Empfindung ist bei dir Abstand.',
+      8: 'Du überhörst Signale, bis sie schreien. Erschöpfung meldet sich bei dir erst ganz zum Schluss.',
+      9: 'Du spürst mehr, als du benennen kannst. Diffuse Müdigkeit ist bei dir oft unerledigte Trauer.',
+      11: 'Dein System ist fein eingestellt und schnell überreizt. Reizarme Zeiten sind für dich keine Faulheit.',
+      22: 'Du hast viel Ausdauer. Genau deshalb überschreitest du deine Grenze regelmäßig um Monate.',
+      33: 'Du gibst so lange, bis dein Körper eine Grenze setzt, die du selbst nicht ziehen wolltest.',
+    },
+    phase: {
+      'Der erste Ring': 'Dein Körper verzeiht dir noch alles. Deshalb behandelst du ihn wie ein Werkzeug.',
+      'Die Rückkehr': 'Dein Körper stellt jetzt Rechnungen. Er ist dabei nicht dein Gegner, sondern die letzte ehrliche Instanz.',
+      'Der Weise': 'Du hörst früher hin als früher. Was du jetzt pflegst, entscheidet über die nächsten zwanzig Jahre.',
+    },
+  },
+
+  '22_Banned_Books': {
+    thema: 'Verbotenes',
+    intro: 'Verbote sagen dir, wovor jemand Angst hatte, {name}. Deine eigenen Tabus funktionieren genauso.',
+    element: {
+      Feuer: 'Ein Verbot macht eine Sache für dich erst interessant. Der Reiz ist der Widerstand, nicht der Inhalt.',
+      Wasser: 'Du merkst, welche Themen im Raum nicht gesagt werden dürfen, und passt dich lautlos an.',
+      Erde: 'Du hältst dich an Regeln, auch an ungeschriebene. Ein Teil davon schützt dich, ein Teil beschneidet dich.',
+      Luft: 'Du willst alles lesen dürfen und alles diskutieren. Wirkung von Worten unterschätzt du dabei manchmal.',
+    },
+    zahl: {
+      1: 'Du sagst gern das, was alle denken. Manchmal aus Mut und manchmal, um vorn zu stehen.',
+      2: 'Du hältst dich zurück, um niemanden zu verletzen. Dein wichtigster Satz bleibt oft ungesagt.',
+      3: 'Du sprichst Tabus aus und lachst danach. Das Lachen nimmt dem Satz das Gewicht, das er gebraucht hätte.',
+      4: 'Du hältst Ordnung hoch. Was sie stört, hältst du zuerst für falsch statt für neu.',
+      5: 'Du überschreitest Grenzen aus Neugier. Nicht jede Grenze war Willkür.',
+      6: 'Du zensierst dich selbst, um den Frieden zu halten. Der Frieden hält, du nicht.',
+      7: 'Du liest, was verboten ist, und redest mit niemandem darüber. Wissen ohne Austausch bleibt fest.',
+      8: 'Du fragst, wer das Verbot durchsetzt und warum. Damit landest du meistens sehr schnell bei Geld.',
+      9: 'Du hast erlebt, wie sich Verbote verschieben. Das macht dich gelassen und gelegentlich gleichgültig.',
+      11: 'Du spürst Tabus, bevor jemand sie benennt, und stolperst genau deshalb regelmäßig hinein.',
+      22: 'Du willst nichts verbrennen und nichts verherrlichen. Du willst es einordnen. Das ist die mühsame Position.',
+      33: 'Du willst schützen, indem du Dinge nicht sagst. Frage dich, ob du dabei jemanden entmündigst.',
+    },
+    phase: {
+      'Der erste Ring': 'Du testest gerade Grenzen aus. Welche du selbst ziehen willst, weißt du noch nicht.',
+      'Die Rückkehr': 'Du merkst, welche Sätze du dein halbes Leben nicht ausgesprochen hast und warum.',
+      'Der Weise': 'Du kennst den Unterschied zwischen Schweigen aus Angst und Schweigen aus Entscheidung.',
+    },
+  },
+
+  '23_Chinesische_Metaphysik': {
+    thema: 'Fluss',
+    intro: 'Hier zählt nicht dein Charakter, {name}, sondern dein Timing und deine Umgebung. Beides kannst du ändern.',
+    element: {
+      Feuer: 'Du bringst Wärme und Sichtbarkeit. Ohne Nachschub brennst du schnell auf Reserve und wirst dann scharf.',
+      Wasser: 'Du bringst Beweglichkeit und Tiefe. Ohne Ufer verläufst du dich, und Ufer nennst du oft Einschränkung.',
+      Erde: 'Du bringst Halt und Sammlung. Zu viel davon wird Stillstand, den du dann Geduld nennst.',
+      Luft: 'Du bringst Bewegung und Verbreitung. Was du berührst, verteilt sich schnell, im Guten wie im Unfertigen.',
+    },
+    zahl: {
+      1: 'Deine Kraft läuft nach außen. In stützender Umgebung wirkst du enorm, allein zermahlst du dich.',
+      2: 'Du bist auf Verbindung angewiesen. Falsches Umfeld schwächt dich schneller als jede eigene Schwäche.',
+      3: 'Du verbreitest Energie schneller, als du sie aufbaust. Nachfüllen musst du bewusst einplanen.',
+      4: 'Du sammelst und hältst. Das gibt Stabilität und blockiert dich, wenn nichts mehr abfließt.',
+      5: 'Du gehörst in die Mitte, zwischen Bereiche. Reine Fachrollen machen dich nach kurzer Zeit unruhig.',
+      6: 'Du nährst dein Umfeld. Ohne Ausgleich gibst du aus Substanz statt aus Ertrag.',
+      7: 'Du ziehst dich in dichte Phasen zurück. Diese Rückzüge sind kein Aussetzer, sie sind dein Aufbau.',
+      8: 'Du ziehst Ressourcen an, wenn du in Bewegung bist. Im Stillstand fühlt sich alles bei dir eng an.',
+      9: 'Du stehst am Ende eines Zyklus. Loslassen bringt dir gerade mehr als jedes neue Projekt.',
+      11: 'Dein Zustand schwankt mit deiner Umgebung. Der falsche Raum kostet dich mehr Kraft als die falsche Aufgabe.',
+      22: 'Du baust langsam und tief. Deine Ergebnisse zeigen sich später, als sie sollten, und halten länger.',
+      33: 'Du wirkst über andere. Deine Bilanz siehst du erst, wenn du auf die Menschen um dich schaust.',
+    },
+    phase: {
+      'Der erste Ring': 'Deine Umgebung formt dich gerade stärker als deine Absicht. Wähle sie sorgfältiger als deine Ziele.',
+      'Die Rückkehr': 'Dein Timing kippt in dieser Phase. Was jahrelang funktionierte, greift plötzlich nicht mehr.',
+      'Der Weise': 'Du erkennst, wann ein Zeitfenster offen ist, und musst nicht mehr in jedes hineinspringen.',
+    },
+  },
+
+};
+
+// ============================================================
+// Bausteine für das Gesamtbild, das der Spieler am Ende erhält
+// ============================================================
+
+G.GESAMTBILD = {
+
+  eroeffnung: {
+    wenig: 'Du hast nur ein paar Fragmente gesammelt. Das reicht für einen Umriss, nicht für ein Bild. Was jetzt kommt, ist eher eine erste Vermutung über dich. Nimm sie mit der Vorsicht, die ein halb ausgeleuchteter Raum verdient.',
+    mittel: 'Du hast genug gesammelt, dass sich Linien zeigen. Ein paar Stellen bleiben dunkel, und genau die sind meist die interessanten. Was jetzt kommt, ist ein Zwischenstand, kein Ergebnis.',
+    viel: 'Du hast tief gegraben. Aus den Fragmenten lässt sich ein zusammenhängendes Bild lesen, mit Stärken und mit Stellen, die weh tun. Lies beides. Das eine ohne das andere ergibt keinen Menschen.',
+    alle: 'Du hast alles zusammengetragen, was hier zu finden war. Das Bild ist vollständig, soweit ein Bild das je sein kann. Es zeigt nicht, wer du bist. Es zeigt, wie du dich bewegst, wenn niemand zusieht.',
+  },
+
+  element: {
+    Feuer: 'Du bewegst dich zuerst und begründest später. Das bringt dir Vorsprung und regelmäßig auch Scherben. Deine größte Kraft ist der Start, deine größte Schwäche ist der zweite Teil der Strecke. Wenn du lernst, zu bleiben, wenn der Reiz weg ist, wirst du zu jemandem, den man nicht mehr aufhalten kann.',
+    Wasser: 'Du nimmst mehr auf, als du verarbeiten kannst, und hältst das für Empfindlichkeit. Es ist Wahrnehmung ohne Filter. Deine Tiefe ist echt, dein Schutz ist es nicht. Solange du nicht unterscheidest, was von dir kommt und was von anderen, trägst du Lasten, die dir nie gehört haben.',
+    Erde: 'Du hältst, was du hältst. Menschen verlassen sich auf dich, weil du nicht wackelst. Der Preis ist Trägheit an genau den Stellen, wo Bewegung überfällig wäre. Du verwechselst Ausharren mit Treue. Manchmal ist Loslassen die stabilere Entscheidung.',
+    Luft: 'Du verstehst schneller, als du fühlst. Das gibt dir Übersicht und einen Abstand, den andere als Kühle lesen. Du kannst dein Leben erklären, ohne es zu betreten. Deine Aufgabe ist nicht mehr Denken. Sie ist, einmal etwas zu tun, bevor du es zu Ende analysiert hast.',
+  },
+
+  zahl: {
+    1: 'Du fängst an, wo andere zögern. Deine Zahl gibt dir Richtung und macht dich einsam, weil du selten fragst, ob jemand mitkommt. Führung ohne Rücksicht bleibt Einzelgang. Deine eigentliche Reife beginnt an dem Tag, an dem du etwas zu Ende bringst, das nicht deine Idee war.',
+    2: 'Du merkst, was zwischen Menschen passiert, bevor es ausgesprochen ist. Diese Feinheit ist ein echtes Können. Sie wird zur Falle, wenn du dich selbst dabei aus dem Bild nimmst. Du bist nicht der Kitt für alles. Deine eigene Position darf im Raum vorkommen.',
+    3: 'Du kannst ausdrücken, wofür andere keine Worte finden. Das öffnet dir Türen und lenkt dich ständig ab. Deine Gefahr ist nicht Faulheit, sie ist Vielfalt. Eine Sache, drei Jahre, konsequent. Das wäre für dich die eigentliche Herausforderung.',
+    4: 'Du baust, was hält. In einer Welt voller Ankündigungen bist du selten geworden. Deine Grenze ist die Angst vor dem Unfertigen. Nicht alles muss ein Fundament haben, bevor man den ersten Stein legt. Manchmal darfst du bauen, ohne den ganzen Plan zu kennen.',
+    5: 'Du brauchst Bewegung wie Luft. Das hat dir Erfahrungen gebracht, die andere nur aus Erzählungen kennen. Es hat dich auch aus Situationen geholt, in denen Bleiben mehr gebracht hätte. Frag dich einmal ehrlich, wovor du zuletzt gegangen bist. Die Antwort ordnet vieles.',
+    6: 'Du trägst mehr, als dir aufgetragen wurde. Menschen kommen zu dir, weil bei dir Platz ist. Dass du dabei selten selbst gefragt wirst, hast du dir langsam angewöhnt zu akzeptieren. Fürsorge ohne Gegenseitigkeit ist keine Tugend, sie ist ein Muster.',
+    7: 'Du prüfst, bevor du glaubst, und stehst deshalb oft allein da mit deinem klaren Blick. Dein Rückzug schützt dich zuverlässig, auch vor Dingen, die dir gut getan hätten. Zwischen Distanz und Nähe gibt es einen Bereich, den du kaum betreten hast.',
+    8: 'Du willst Ergebnisse, die man anfassen kann. Damit hast du dir einiges erarbeitet, das dir niemand geschenkt hätte. Der wunde Punkt ist die Frage nach dem Wozu. Du beantwortest sie mit dem nächsten Ziel, und das funktioniert, bis es plötzlich nicht mehr funktioniert.',
+    9: 'Du erkennst früh, wenn etwas zu Ende ist, und hältst es trotzdem länger, als nötig wäre. Deine Weite lässt dich das große Bild sehen und macht dich für konkrete nächste Schritte schwerfällig. Loslassen ist bei dir kein Verlust, es ist die Voraussetzung dafür, dass wieder etwas beginnt.',
+    11: 'Du nimmst Signale auf, bevor andere sie sehen. Das ist kein Geschenk, das ist eine Belastung, die erst nutzbar wird, wenn du sie regulierst. Ohne Pausen wirst du dünn und reizbar, und dein Vorsprung kippt in Unruhe. Deine Aufgabe ist nicht mehr Wahrnehmung. Sie ist Ruhe.',
+    22: 'Du denkst in Bauwerken statt in Wochen. Was du anfängst, soll tragen, auch wenn du nicht mehr da bist. Das macht dich langsam und tief. Deine Gefahr ist, dass du auf den perfekten Anfang wartest und dabei Jahre verstreichen lässt, die du nicht zurückbekommst.',
+    33: 'Du gibst weiter, und zwar mehr, als zurückkommt. Menschen werden durch dich sicherer, klüger, ruhiger. Was dabei fehlt, bist meistens du selbst. Dienen ist erst dann eine Stärke, wenn du auch empfangen kannst, ohne dich dafür zu entschuldigen.',
+  },
+
+  phase: {
+    'Der erste Ring': 'Du bist noch im ersten Umlauf. Vieles an dir ist geliehen, von Familie, von Freunden, von dem, was gerade gilt. Das ist keine Schwäche, das ist der normale Zustand dieser Strecke. Was du jetzt für deinen Charakter hältst, ist zum Teil noch Kostüm. Probiere weiter, aber merk dir, was sich echt anfühlt.',
+    'Die Rückkehr': 'Du bist an der Stelle, an der sich der erste große Kreis schließt. Alte Themen kommen zurück, nur mit anderem Gesicht, und sie lassen sich nicht mehr wegarbeiten. Das ist unangenehm und die beste Gelegenheit, die du bekommst. Was du hier korrigierst, trägt die nächsten dreißig Jahre.',
+    'Der Weise': 'Du hast genug Runden gesehen, um zu wissen, welche Dramen sich von selbst erledigen. Deine Gefahr ist nicht Naivität, sie ist Müdigkeit, die sich als Weisheit verkleidet. Was du weißt, nützt niemandem, solange du es für dich behältst. Der Rest deines Weges ist eine Frage der Weitergabe.',
+  },
+
+  haltung: {
+    glaube: 'Du hast unterwegs mehr angenommen als geprüft. Das hat dich weit gebracht, weil Offenheit Türen öffnet, die Skepsis verschlossen hält. Es macht dich auch zu einem leichten Ziel für jeden, der eine überzeugende Geschichte erzählt. Frag öfter, wem eine Erklärung nützt. Nicht um kalt zu werden, sondern um nicht benutzt zu werden.',
+    zweifel: 'Du hast unterwegs mehr geprüft als angenommen. Damit bist du selten hereingefallen, und du hast auch selten etwas an dich herangelassen. Zweifel ist ein gutes Werkzeug und ein schlechter Wohnort. Irgendwann musst du dich für etwas entscheiden, ohne Beweis. Sonst bleibt dein Leben eine sehr saubere Analyse.',
+    gleichgewicht: 'Du hast angenommen und geprüft, ungefähr im gleichen Maß. Das ist die schwierigere Haltung, weil sie in keine Richtung Zugehörigkeit bringt. Die einen halten dich für zu kritisch, die anderen für zu weich. Genau dazwischen entsteht ein eigenes Urteil. Halte das aus, es ist der wertvollste Teil deiner Sammlung.',
+  },
+
+  schluss: 'Nichts davon ist ein Urteil über dich. Das hier ist ein Spiegel aus Mustern, und ein Spiegel zeigt nur, was du in dem Moment mitgebracht hast. Nichts an dir ist festgeschrieben. Was du behältst, was du verwirfst und was du ab morgen anders machst, entscheidest nur du.',
+
+};
 
 </script>
 </body>

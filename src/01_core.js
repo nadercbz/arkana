@@ -47,6 +47,35 @@ G.ELEMENT_COLORS = {
   Luft: { robe: '#5a4a7a', robeHi: '#7f6ba8', robeDark: '#312844', trim: '#d8c8f0', core: '#b89ee8' },
 };
 
+// --- Biome: jede Region hat eine eigene Farbwelt ---
+// Erben von der Amber-Basis, überschreiben nur was anders sein soll.
+G.BIOMES = {
+  asche:   { bg:'#1a0d05', bgDeep:'#0d0602', bgVoid:'#050301', card:'#2d1b0e', cardLight:'#3d2817', cardHi:'#4d3420',
+             main:'#ff8c00', bright:'#ffa500', glow:'#ffb347', dim:'#cc6600', text:'#ffd580', textBright:'#ffe8c2', textDim:'#ad6e21' },
+  sumpf:   { bg:'#0d1a12', bgDeep:'#061009', bgVoid:'#030805', card:'#1a2d20', cardLight:'#26402e', cardHi:'#33543d',
+             main:'#4fbf7f', bright:'#6fd99a', glow:'#8fe8b4', dim:'#2f8f5a', text:'#a8e0c0', textBright:'#d0f0dd', textDim:'#4a8f68' },
+  kristall:{ bg:'#0f0d20', bgDeep:'#080614', bgVoid:'#04030a', card:'#1e1a3a', cardLight:'#2c2652', cardHi:'#3d356e',
+             main:'#8a7fff', bright:'#a99cff', glow:'#c4baff', dim:'#5a4fbf', text:'#c0b8f0', textBright:'#e0dcff', textDim:'#6a5fa0' },
+  wueste:  { bg:'#241a0e', bgDeep:'#160f07', bgVoid:'#0a0704', card:'#3d2d17', cardLight:'#54401f', cardHi:'#6e552b',
+             main:'#e8b040', bright:'#ffc960', glow:'#ffdb8f', dim:'#a87c28', text:'#f0d89a', textBright:'#fff0c8', textDim:'#a08850' },
+  sternen: { bg:'#08101f', bgDeep:'#040914', bgVoid:'#02050a', card:'#12203a', cardLight:'#1b2e52', cardHi:'#264070',
+             main:'#5fa8ff', bright:'#8ac4ff', glow:'#b4dcff', dim:'#3a6fb0', text:'#a8ccf0', textBright:'#d8ecff', textDim:'#5a7fa8' },
+  bibliothek:{ bg:'#1c1208', bgDeep:'#100a05', bgVoid:'#070402', card:'#33230f', cardLight:'#4a3418', cardHi:'#664824',
+             main:'#d99a4a', bright:'#f0b468', glow:'#ffcd90', dim:'#996b30', text:'#e8c895', textBright:'#ffe4c0', textDim:'#9a7a50' },
+  mond:    { bg:'#101420', bgDeep:'#080b14', bgVoid:'#040609', card:'#1e2436', cardLight:'#2c344c', cardHi:'#3d4766',
+             main:'#c0d0e8', bright:'#dce6f5', glow:'#f0f5ff', dim:'#7f8fa8', text:'#c8d4e4', textBright:'#eaf0fa', textDim:'#7a8496' },
+  unterwelt:{ bg:'#1a0808', bgDeep:'#100404', bgVoid:'#080202', card:'#2e1212', cardLight:'#421c1a', cardHi:'#5c2824',
+             main:'#e0503f', bright:'#f5705a', glow:'#ff9480', dim:'#a03428', text:'#e8a898', textBright:'#ffd0c4', textDim:'#9a5a4c' },
+  hain:    { bg:'#12180c', bgDeep:'#0a0f07', bgVoid:'#050803', card:'#22301a', cardLight:'#324528', cardHi:'#455e36',
+             main:'#9fd94f', bright:'#bce870', glow:'#d6f79a', dim:'#6a9a33', text:'#c8e4a0', textBright:'#e8f8cc', textDim:'#7a9a58' },
+  grau:    { bg:'#15161a', bgDeep:'#0b0c0e', bgVoid:'#050506', card:'#22242a', cardLight:'#2e3138', cardHi:'#3a3e46',
+             main:'#8b8f99', bright:'#a8adb8', glow:'#c0c5d0', dim:'#565a63', text:'#9aa0ac', textBright:'#c7ccd6', textDim:'#5c616b' },
+};
+// Fehlende Schlüssel aus Amber ergänzen, damit nichts undefined ist
+for (const b of Object.values(G.BIOMES)) {
+  for (const k in G.PAL.amber) if (b[k] === undefined) b[k] = G.PAL.amber[k];
+}
+
 // --- Einstellungen ---
 G.settings = { crt: true, partikel: true };
 

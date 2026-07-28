@@ -203,6 +203,218 @@ G.updateAnim = (an, dt, vx, vy, moving) => {
   return an.stepFlash && !wasDown;
 };
 
+// --- Erweiterte Kacheln für die verschiedenen Habitate ---
+
+// Fels, unregelmäßiger als die Mauer, für Höhlen
+G.TILES['R'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight;
+  c.fillRect(x+2, y+1, T-6, 4); c.fillRect(x+1, y+8, 8, 5);
+  c.fillStyle = p.cardHi; c.fillRect(x+4+Math.floor(n*8), y+2, 7, 2);
+  c.fillStyle = p.bgDeep;
+  c.fillRect(x+Math.floor(n*20), y+18, 9, 4);
+  c.fillRect(x+3, y+T-5, T-8, 5);
+  c.fillRect(x+22, y+9, 5, 7);
+} };
+
+// Kristall, leuchtet und pulsiert
+G.TILES['c'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), pu = 0.5+0.4*Math.sin(t*1.6+n*8);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.globalAlpha = pu*0.22; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20,y+20,19,0,6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = p.dim;
+  c.beginPath(); c.moveTo(x+20,y+3); c.lineTo(x+32,y+22); c.lineTo(x+20,y+36); c.lineTo(x+8,y+22); c.closePath(); c.fill();
+  c.fillStyle = p.main;
+  c.beginPath(); c.moveTo(x+20,y+7); c.lineTo(x+28,y+22); c.lineTo(x+20,y+32); c.lineTo(x+13,y+22); c.closePath(); c.fill();
+  c.globalAlpha = pu; c.fillStyle = p.bright;
+  c.beginPath(); c.moveTo(x+20,y+11); c.lineTo(x+24,y+22); c.lineTo(x+20,y+28); c.closePath(); c.fill();
+  c.globalAlpha = 1;
+} };
+
+// Sand, hell und weich
+G.TILES['s'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight;
+  c.fillRect(x, y+Math.floor(n*14)+3, T, 2);
+  c.fillRect(x, y+Math.floor(n*16)+21, T, 2);
+  c.fillStyle = p.cardHi;
+  c.fillRect(x+Math.floor(n*24), y+Math.floor(n*30), 4, 1);
+} };
+
+// Gras und Kräuter
+G.TILES['g'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card;
+  for (let i=0;i<5;i++) {
+    const gx = x+3+((i*13+Math.floor(n*20))%34), gy = y+8+((i*9+Math.floor(n*17))%26);
+    const sway = Math.sin(t*1.4+gx*0.3)*1.2;
+    c.fillRect(Math.round(gx+sway), gy, 1, 5);
+    c.fillRect(Math.round(gx+sway*1.4), gy-2, 1, 3);
+  }
+  c.fillStyle = p.dim;
+  if (n>0.6) { const sw = Math.sin(t*1.1+tx)*1.5; c.fillRect(Math.round(x+18+sw), y+14, 2, 8); }
+} };
+
+// Blühende Pflanze
+G.TILES['p'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), sw = Math.sin(t*1.2+n*7)*1.8;
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.fillStyle = p.dim; c.fillRect(Math.round(x+19+sw*0.4), y+18, 2, 14);
+  c.fillStyle = p.card; c.fillRect(Math.round(x+14+sw*0.6), y+22, 5, 2); c.fillRect(Math.round(x+21+sw*0.6), y+26, 5, 2);
+  const bx = Math.round(x+16+sw), by = y+10;
+  c.fillStyle = p.main; c.fillRect(bx, by, 8, 8);
+  c.fillStyle = p.bright; c.fillRect(bx+2, by+2, 4, 4);
+  c.globalAlpha = 0.4+0.3*Math.sin(t*2+n*5); c.fillStyle = p.glow;
+  c.fillRect(bx+3, by+3, 2, 2); c.globalAlpha = 1;
+} };
+
+// Säule
+G.TILES['o'] = { solid: true, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+35,11,3.5,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.card; c.fillRect(x+11, y+4, 18, 30);
+  c.fillStyle = p.cardLight; c.fillRect(x+13, y+4, 5, 30);
+  c.fillStyle = p.cardHi; c.fillRect(x+8, y+2, 24, 5); c.fillRect(x+9, y+30, 22, 5);
+  c.fillStyle = p.bgDeep; c.fillRect(x+22, y+8, 2, 22);
+} };
+
+// Bücherregal
+G.TILES['b'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x+1,y+1,T-2,T-2);
+  c.fillStyle = p.cardHi; c.fillRect(x+1,y+1,T-2,2);
+  for (let row=0; row<3; row++) {
+    const ry = y+5+row*11;
+    c.fillStyle = p.bgDeep; c.fillRect(x+2, ry+8, T-4, 2);
+    for (let b=0; b<5; b++) {
+      const h = 5 + ((Math.floor(n*100)+b*7+row*3)%4);
+      c.fillStyle = [p.dim, p.main, p.cardLight, p.textDim][(b+row)%4];
+      c.fillRect(x+3+b*7, ry+8-h, 5, h);
+    }
+  }
+} };
+
+// Statue
+G.TILES['x'] = { solid: true, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+36,12,3.5,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.cardLight; c.fillRect(x+8, y+31, 24, 6);
+  c.fillStyle = p.card; c.fillRect(x+13, y+13, 14, 19);
+  c.fillStyle = p.cardHi; c.fillRect(x+15, y+15, 4, 16);
+  c.fillRect(x+15, y+5, 10, 9);
+  c.fillStyle = p.bgDeep; c.fillRect(x+17, y+8, 2, 3); c.fillRect(x+22, y+8, 2, 3);
+  c.fillStyle = p.card; c.fillRect(x+9, y+16, 4, 11); c.fillRect(x+27, y+16, 4, 11);
+} };
+
+// Fackel, wirft Licht
+G.TILES['f'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty), fl = 0.6+0.4*Math.sin(t*7+n*9);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y+T-3,T,3);
+  c.globalAlpha = fl*0.25; c.fillStyle = p.glow;
+  c.beginPath(); c.arc(x+20,y+14,22,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.dim; c.fillRect(x+18, y+16, 4, 16);
+  c.fillStyle = p.main; c.fillRect(x+16, y+8+Math.sin(t*9+n)*1, 8, 9);
+  c.fillStyle = p.bright; c.fillRect(x+18, y+5+Math.sin(t*11+n)*1.4, 4, 8);
+  c.globalAlpha = fl; c.fillStyle = p.textBright; c.fillRect(x+19, y+7, 2, 4); c.globalAlpha = 1;
+} };
+
+// Abgrund, nicht begehbar
+G.TILES['v'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  c.fillStyle = p.bgVoid; c.fillRect(x,y,T,T);
+  const n = noise2(tx,ty);
+  c.globalAlpha = 0.3+0.2*Math.sin(t*0.7+n*6); c.fillStyle = p.dim;
+  c.fillRect(x+Math.floor(n*30), y+Math.floor(n*34), 2, 2);
+  c.fillRect(x+Math.floor((n*71)%34), y+Math.floor((n*53)%36), 1, 1);
+  c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep;
+  c.fillRect(x, y, T, 2); c.fillRect(x, y+T-2, T, 2);
+} };
+
+// Brücke über den Abgrund
+G.TILES['B'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  c.fillStyle = p.bgVoid; c.fillRect(x,y,T,T);
+  c.fillStyle = p.card; c.fillRect(x, y+6, T, 28);
+  c.fillStyle = p.cardLight; c.fillRect(x, y+6, T, 2);
+  c.fillStyle = p.bgDeep;
+  for (let i=0;i<4;i++) c.fillRect(x+2+i*10, y+8, 1, 24);
+  c.fillRect(x, y+32, T, 2);
+} };
+
+// Flaches Wasser, begehbar
+G.TILES['w'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.5; c.fillStyle = p.dim;
+  const o = Math.sin(t*1.5+n*6)*5;
+  c.fillRect(x+4+o, y+11, 13, 2); c.fillRect(x+20-o, y+25, 11, 2);
+  c.globalAlpha = 0.25; c.fillStyle = p.glow;
+  c.fillRect(x+8-o, y+31, 9, 1); c.fillRect(x+24+o, y+6, 8, 1);
+  c.globalAlpha = 1;
+} };
+
+// Eis
+G.TILES['i'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.card; c.fillRect(x,y,T,T);
+  c.fillStyle = p.cardLight; c.fillRect(x+1,y+1,T-2,T-2);
+  c.fillStyle = p.cardHi;
+  c.beginPath(); c.moveTo(x+6+n*12, y+3); c.lineTo(x+30, y+18+n*8); c.lineTo(x+12, y+34); c.closePath(); c.fill();
+  c.globalAlpha = 0.4+0.2*Math.sin(t*1.2+n*7); c.fillStyle = p.bright;
+  c.fillRect(x+7, y+6, 12, 1); c.fillRect(x+21, y+24, 9, 1);
+  c.globalAlpha = 1;
+} };
+
+// Monolith mit eingraviertem Zeichen
+G.TILES['M'] = { solid: true, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.globalAlpha = 0.32; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x+20,y+37,10,3,0,0,6.283); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = p.bgDeep; c.fillRect(x+11, y+2, 18, 36);
+  c.fillStyle = p.card; c.fillRect(x+12, y+3, 15, 34);
+  c.fillStyle = p.cardLight; c.fillRect(x+13, y+4, 4, 32);
+  const glow = 0.4+0.35*Math.sin(t*1.3+n*8);
+  c.globalAlpha = glow; c.fillStyle = p.main;
+  c.fillRect(x+17, y+11, 6, 2); c.fillRect(x+19, y+13, 2, 8);
+  c.fillRect(x+16, y+23, 8, 2);
+  c.globalAlpha = 1;
+} };
+
+// Treppe
+G.TILES['^'] = { solid: false, draw: (c,x,y,p,t) => {
+  c.fillStyle = p.bgDeep; c.fillRect(x,y,T,T);
+  for (let i=0;i<4;i++) {
+    c.fillStyle = i%2 ? p.card : p.cardLight;
+    c.fillRect(x+i*2, y+i*10, T-i*4, 9);
+    c.fillStyle = p.bgDeep; c.fillRect(x+i*2, y+i*10+9, T-i*4, 1);
+  }
+} };
+
+// Wurzelwerk, begehbar aber dicht
+G.TILES['r'] = { solid: false, draw: (c,x,y,p,t,tx,ty) => {
+  const n = noise2(tx,ty);
+  c.fillStyle = p.bg; c.fillRect(x,y,T,T);
+  c.strokeStyle = p.card; c.lineWidth = 3; c.lineCap = 'round';
+  c.beginPath();
+  c.moveTo(x, y+8+n*12); c.quadraticCurveTo(x+20, y+20+n*8, x+T, y+14+n*10);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(x+6+n*10, y); c.quadraticCurveTo(x+18, y+22, x+12+n*14, y+T);
+  c.stroke();
+  c.strokeStyle = p.cardLight; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x, y+9+n*12); c.quadraticCurveTo(x+20, y+21+n*8, x+T, y+15+n*10); c.stroke();
+} };
+
+
 // ------------------------------------------------------------
 // MENSCH. Sprite-Box 26 breit, 42 hoch. Füße bei py+40.
 // Aufbau: Haar, Kopf, Hals, Rumpf, Arme, Beine, Stiefel.
@@ -535,9 +747,14 @@ G.drawShrine = (c, px, py, p, t) => {
 // ------------------------------------------------------------
 // Raum zeichnen
 // ------------------------------------------------------------
+G.roomTiles = (r) => (r && r.tiles) ? r.tiles : r;
+G.roomPal = (r) => (r && r.biome && G.BIOMES[r.biome]) ? G.BIOMES[r.biome] : null;
+
 G.drawRoom = (c, room, p, t) => {
+  const tiles = G.roomTiles(room);
+  p = G.roomPal(room) || p;
   for (let ty = 0; ty < G.ROOM_H; ty++) {
-    const row = room[ty] || '';
+    const row = tiles[ty] || '';
     for (let tx = 0; tx < G.ROOM_W; tx++) {
       const ch = row[tx] || '.';
       (G.TILES[ch] || G.TILES['.']).draw(c, tx * T, ty * T, p, t, tx, ty);
@@ -546,9 +763,10 @@ G.drawRoom = (c, room, p, t) => {
 };
 
 G.isSolid = (room, px, py) => {
+  const tiles = G.roomTiles(room);
   const tx = Math.floor(px / T), ty = Math.floor(py / T);
   if (tx < 0 || tx >= G.ROOM_W || ty < 0 || ty >= G.ROOM_H) return false;
-  const ch = (room[ty] || '')[tx] || '.';
+  const ch = (tiles[ty] || '')[tx] || '.';
   const tile = G.TILES[ch];
   return tile ? tile.solid : false;
 };
