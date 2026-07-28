@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0602">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ARKANA">
+<meta name="description" content="ARKANA — ein mystisches Retro-Adventure. Finde dein verborgenes Muster.">
+<title>ARKANA — Das verborgene Muster</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #050301; touch-action: none;
+  font-family: 'Courier New', ui-monospace, monospace;
+  overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none;
+}
+#wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+#game {
+  image-rendering: pixelated; image-rendering: crisp-edges;
+  background: #050301; display: block;
+}
+#scanlines { position: absolute; pointer-events: none; mix-blend-mode: multiply; opacity: 0.75; }
+
+/* Touch-Steuerung liegt als Overlay über dem Bild, kostet also keine Fläche */
+#touchzone { position: fixed; inset: 0; z-index: 5; display: none; }
+body.touch #touchzone { display: block; }
+
+#stick {
+  position: fixed; width: 120px; height: 120px; z-index: 6; display: none;
+  pointer-events: none; border: 2px solid rgba(255,140,0,0.30); border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,140,0,0.10), rgba(255,140,0,0.02));
+}
+#stick-knob {
+  position: absolute; left: 38px; top: 38px; width: 44px; height: 44px;
+  border-radius: 50%; background: rgba(255,140,0,0.42);
+  border: 2px solid rgba(255,180,71,0.75);
+}
+#pad { position: fixed; inset: 0; pointer-events: none; display: none; z-index: 7; }
+body.touch #pad { display: block; }
+.pbtn {
+  position: absolute; pointer-events: auto;
+  border: 2px solid rgba(255,140,0,0.45); border-radius: 50%;
+  background: rgba(255,140,0,0.12); color: rgba(255,232,194,0.9);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Courier New', monospace; font-weight: bold;
+  transition: background 0.08s, transform 0.08s;
+}
+.pbtn:active, .pbtn.on { background: rgba(255,140,0,0.42); transform: scale(0.93); }
+#p-a { right: 22px; bottom: calc(84px + env(safe-area-inset-bottom, 0px)); width: 88px; height: 88px; font-size: 19px; }
+#p-b { right: 34px; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; font-size: 13px; }
+/* Steuerkreuz nur am Rechner sichtbar, am Handy übernimmt der Stick */
+#p-up, #p-down, #p-left, #p-right { display: none; }
+
+#nameform {
+  position: fixed; inset: 0; z-index: 20; display: none;
+  align-items: center; justify-content: center; flex-direction: column;
+  background: rgba(4,2,0,0.95); padding: 20px;
+}
+#nameform.show { display: flex; }
+#nameform label { color: #ff8c00; font-size: 16px; letter-spacing: 3px; margin-bottom: 20px; text-align: center; line-height: 1.7; }
+#nameform input {
+  background: #1a0d05; border: 2px solid #cc6600; color: #ffe8c2;
+  font-family: 'Courier New', monospace; font-size: 24px; text-align: center;
+  padding: 14px; width: min(80vw, 320px); outline: none; border-radius: 4px;
+}
+#nameform input:focus { border-color: #ff8c00; box-shadow: 0 0 14px rgba(255,140,0,0.35); }
+#nameform button {
+  margin-top: 22px; background: #ff8c00; border: none; color: #1a0d05;
+  font-family: 'Courier New', monospace; font-size: 17px; font-weight: bold;
+  padding: 14px 40px; border-radius: 4px; letter-spacing: 3px;
+}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="360" height="640"></canvas>
+  <div id="scanlines"></div>
+</div>
+<div id="touchzone"></div>
+<div id="stick"><div id="stick-knob"></div></div>
+<div id="pad">
+  <div class="pbtn" id="p-up">▲</div>
+  <div class="pbtn" id="p-down">▼</div>
+  <div class="pbtn" id="p-left">◀</div>
+  <div class="pbtn" id="p-right">▶</div>
+  <div class="pbtn" id="p-a">OK</div>
+  <div class="pbtn" id="p-b">MENÜ</div>
+</div>
+<div id="nameform">
+  <label id="nameform-label">WIE LAUTET DEIN NAME?</label>
+  <input id="nameform-input" maxlength="16" autocomplete="off" autocapitalize="words" spellcheck="false">
+  <button id="nameform-ok">WEITER</button>
+</div>
+<script>
+// ===== 01_core.js =====
+'use strict';
+// ============================================================
+// ARKANA Core: 9:16 Hochformat, DPR-scharfes Rendering,
+// Input, Engine, Partikel, Text
+// ============================================================
+const G = {};
+
+// --- Auflösung ---
+// Breite fest 360. Spielfeld immer 15x22 Tiles à 24px, damit alle
+// Spieler exakt gleich viel sehen. Die Höhe wächst mit dem Gerät:
+// auf langen Handys (19.5:9) wird der HUD-Bereich größer, statt
+// schwarze Balken zu lassen. Basis bleibt 9:16.
+G.W = 360;
+G.H_BASE = 640;          // 9:16 Referenz
+G.H = G.H_BASE;
+G.TILE = 24;
+G.ROOM_W = 15; G.ROOM_H = 22;
+G.FIELD_H = G.ROOM_H * G.TILE; // 528
+G.HUD_Y = G.FIELD_H;
+G.HUD_H = G.H - G.FIELD_H;
+G.SAFE_Y = 0;            // Offset, um Vollbild-Menüs vertikal zu zentrieren
+
+// --- Paletten ---
+G.PAL = {
+  amber: {
+    bg: '#1a0d05', bgDeep: '#0d0602', bgVoid: '#050301',
+    card: '#2d1b0e', cardLight: '#3d2817', cardHi: '#4d3420',
+    main: '#ff8c00', bright: '#ffa500', glow: '#ffb347', dim: '#cc6600',
+    text: '#ffd580', textBright: '#ffe8c2', textDim: '#ad6e21',
+    accent: '#7ec97e', danger: '#d96a6a',
+  },
+  gray: {
+    bg: '#15161a', bgDeep: '#0b0c0e', bgVoid: '#050506',
+    card: '#22242a', cardLight: '#2e3138', cardHi: '#3a3e46',
+    main: '#8b8f99', bright: '#a8adb8', glow: '#c0c5d0', dim: '#565a63',
+    text: '#9aa0ac', textBright: '#c7ccd6', textDim: '#5c616b',
+    accent: '#7a86a0', danger: '#8a6a6a',
+  },
+};
+G.pal = G.PAL.gray;
+
+// Element-Färbung des Spielers, kommt aus dem Sternzeichen
+G.ELEMENT_COLORS = {
+  Feuer: { robe: '#c4502a', robeHi: '#e8703f', robeDark: '#6b2a16', trim: '#ffb347', core: '#ff8c00' },
+  Wasser: { robe: '#2a5f7a', robeHi: '#3f86a8', robeDark: '#163544', trim: '#9fd8e8', core: '#7ec8e8' },
+  Erde: { robe: '#4a5a2a', robeHi: '#6b803f', robeDark: '#283016', trim: '#c4d88a', core: '#a8c060' },
+  Luft: { robe: '#5a4a7a', robeHi: '#7f6ba8', robeDark: '#312844', trim: '#d8c8f0', core: '#b89ee8' },
+};
+
+// --- Einstellungen ---
+G.settings = { crt: true, partikel: true };
+
+// --- Canvas, DPR-bewusst ---
+G.canvas = document.getElementById('game');
+G.ctx = G.canvas.getContext('2d', { alpha: false });
+G.ctx.imageSmoothingEnabled = false;
+
+function fitCanvas() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+
+  // Interne Höhe an das Geräteverhältnis anpassen, damit der Bildschirm
+  // ohne Balken gefüllt wird. Das Spielfeld bleibt konstant, nur das
+  // HUD wächst. Begrenzt, damit das Layout nicht auseinanderfällt.
+  const wanted = Math.round(G.W * (vh / vw) / 2) * 2;
+  G.H = Math.max(G.H_BASE, Math.min(wanted, 860));
+  G.HUD_H = G.H - G.FIELD_H;
+  G.SAFE_Y = Math.round((G.H - G.H_BASE) / 2);
+
+  const scale = Math.min(vw / G.W, vh / G.H);
+  const cssW = Math.round(G.W * scale), cssH = Math.round(G.H * scale);
+  G.canvas.style.width = cssW + 'px';
+  G.canvas.style.height = cssH + 'px';
+
+  // Backing-Store an das physische Pixelraster koppeln: scharfe Kanten
+  // auch auf Retina, ohne dass der Browser weichzeichnet.
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+  if (G.canvas.width !== bw || G.canvas.height !== bh) {
+    G.canvas.width = bw; G.canvas.height = bh;
+  }
+  G.renderScale = bw / G.W;
+  G.ctx.imageSmoothingEnabled = false;
+
+  const sl = document.getElementById('scanlines');
+  const r = G.canvas.getBoundingClientRect();
+  sl.style.left = r.left + 'px'; sl.style.top = r.top + 'px';
+  sl.style.width = cssW + 'px'; sl.style.height = cssH + 'px';
+  sl.style.display = G.settings.crt ? 'block' : 'none';
+  // Scanline-Dichte an die Skalierung koppeln, sonst moiriert es
+  const period = Math.max(2, Math.round(scale * 2));
+  sl.style.backgroundImage = `repeating-linear-gradient(0deg, rgba(0,0,0,0.20) 0px, rgba(0,0,0,0.20) ${period / 2}px, transparent ${period / 2}px, transparent ${period}px)`;
+}
+window.addEventListener('resize', () => fitCanvas());
+window.addEventListener('orientationchange', () => setTimeout(fitCanvas, 100));
+
+// --- Input: Tastatur, Touch-Pad, Wischen ---
+G.input = (() => {
+  const held = {}; const pressed = {};
+  // Analoger Richtungsvektor, damit die Figur weich beschleunigt
+  const vec = { x: 0, y: 0 };
+  const map = {
+    ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+    w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
+    Enter: 'action', ' ': 'action', e: 'action', E: 'action',
+    Escape: 'cancel', q: 'cancel', Q: 'cancel',
+  };
+  window.addEventListener('keydown', (e) => {
+    const k = map[e.key];
+    if (!k) return;
+    e.preventDefault();
+    if (!held[k]) pressed[k] = true;
+    held[k] = true;
+  });
+  window.addEventListener('keyup', (e) => { const k = map[e.key]; if (k) held[k] = false; });
+
+  function bindBtn(id, key) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const on = (e) => { e.preventDefault(); if (!held[key]) pressed[key] = true; held[key] = true; el.classList.add('on'); };
+    const off = (e) => { e.preventDefault(); held[key] = false; el.classList.remove('on'); };
+    el.addEventListener('touchstart', on, { passive: false });
+    el.addEventListener('touchend', off, { passive: false });
+    el.addEventListener('touchcancel', off, { passive: false });
+    el.addEventListener('mousedown', on);
+    el.addEventListener('mouseup', off);
+    el.addEventListener('mouseleave', off);
+  }
+  if ('ontouchstart' in window || navigator.maxTouchPoints > 0) document.body.classList.add('touch');
+  ['up', 'down', 'left', 'right'].forEach((d) => bindBtn('p-' + d, d));
+  bindBtn('p-a', 'action'); bindBtn('p-b', 'cancel');
+
+  // Virtueller Stick: Daumen irgendwo auf der linken Bildhälfte aufsetzen
+  const stick = { active: false, id: null, cx: 0, cy: 0, dx: 0, dy: 0 };
+  const stickEl = document.getElementById('stick');
+  const knobEl = document.getElementById('stick-knob');
+  function stickStart(e) {
+    for (const t of e.changedTouches) {
+      if (t.clientX > window.innerWidth * 0.55) continue; // rechte Hälfte = Aktionen
+      stick.active = true; stick.id = t.identifier;
+      stick.cx = t.clientX; stick.cy = t.clientY;
+      stickEl.style.display = 'block';
+      stickEl.style.left = (stick.cx - 60) + 'px';
+      stickEl.style.top = (stick.cy - 60) + 'px';
+      knobEl.style.transform = 'translate(0px,0px)';
+      e.preventDefault();
+      break;
+    }
+  }
+  function stickMove(e) {
+    if (!stick.active) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier !== stick.id) continue;
+      let dx = t.clientX - stick.cx, dy = t.clientY - stick.cy;
+      const len = Math.hypot(dx, dy), max = 46;
+      if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+      stick.dx = dx / max; stick.dy = dy / max;
+      knobEl.style.transform = `translate(${dx}px,${dy}px)`;
+      e.preventDefault();
+      break;
+    }
+  }
+  function stickEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== stick.id) continue;
+      stick.active = false; stick.dx = 0; stick.dy = 0;
+      stickEl.style.display = 'none';
+      break;
+    }
+  }
+  const zone = document.getElementById('touchzone');
+  if (zone) {
+    zone.addEventListener('touchstart', stickStart, { passive: false });
+    zone.addEventListener('touchmove', stickMove, { passive: false });
+    zone.addEventListener('touchend', stickEnd, { passive: false });
+    zone.addEventListener('touchcancel', stickEnd, { passive: false });
+  }
+
+  return {
+    held: (k) => !!held[k],
+    pressed: (k) => !!pressed[k],
+    // Richtungsvektor aus Stick oder Tasten, normalisiert
+    dir() {
+      if (stick.active && (Math.abs(stick.dx) > 0.15 || Math.abs(stick.dy) > 0.15)) {
+        return { x: stick.dx, y: stick.dy };
+      }
+      let x = 0, y = 0;
+      if (held.left) x -= 1; if (held.right) x += 1;
+      if (held.up) y -= 1; if (held.down) y += 1;
+      const l = Math.hypot(x, y);
+      if (l > 1) { x /= l; y /= l; }
+      return { x, y };
+    },
+    endFrame: () => { for (const k in pressed) delete pressed[k]; },
+    clearAll: () => { for (const k in held) held[k] = false; for (const k in pressed) delete pressed[k]; stick.active = false; stick.dx = 0; stick.dy = 0; if (stickEl) stickEl.style.display = 'none'; },
+  };
+})();
+
+// --- Szenen-Stack ---
+G.scenes = [];
+G.pushScene = (s) => { G.scenes.push(s); if (s.enter) s.enter(); };
+G.popScene = () => { const s = G.scenes.pop(); if (s && s.exit) s.exit(); };
+G.replaceScene = (s) => { while (G.scenes.length) G.popScene(); G.pushScene(s); };
+G.topScene = () => G.scenes[G.scenes.length - 1];
+
+// --- Partikel-System (Asche, Funken, Staub) ---
+G.particles = [];
+G.spawnParticle = (p) => { if (G.settings.partikel && G.particles.length < 220) G.particles.push(p); };
+G.updateParticles = (dt) => {
+  for (let i = G.particles.length - 1; i >= 0; i--) {
+    const p = G.particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { G.particles.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.drift) p.x += Math.sin(p.life * p.drift) * 6 * dt;
+    if (p.grav) p.vy += p.grav * dt;
+  }
+};
+G.drawParticles = (c) => {
+  for (const p of G.particles) {
+    const a = Math.min(1, p.life / (p.fade || 1));
+    c.globalAlpha = a * (p.alpha || 1);
+    c.fillStyle = p.color;
+    const s = p.size || 2;
+    c.fillRect(Math.round(p.x), Math.round(p.y), s, s);
+  }
+  c.globalAlpha = 1;
+};
+
+// --- Bildschirm-Erschütterung ---
+G.shake = { t: 0, mag: 0 };
+G.doShake = (mag, dur) => { G.shake.mag = mag; G.shake.t = dur; };
+
+// --- Game Loop (fester Timestep, rAF plus Fallback) ---
+(() => {
+  let last = performance.now(); let acc = 0; let lastTick = 0;
+  const STEP = 1000 / 60;
+  function tick() {
+    const now = performance.now();
+    lastTick = now;
+    acc += Math.min(now - last, 100); last = now;
+    let steps = 0;
+    while (acc >= STEP && steps < 5) {
+      const s = G.topScene();
+      if (s) s.update(STEP / 1000);
+      G.updateParticles(STEP / 1000);
+      if (G.shake.t > 0) G.shake.t -= STEP / 1000;
+      G.input.endFrame();
+      acc -= STEP; steps++;
+    }
+    if (acc > STEP * 5) acc = 0;
+
+    const ctx = G.ctx;
+    ctx.save();
+    ctx.scale(G.renderScale || 1, G.renderScale || 1);
+    ctx.fillStyle = G.pal.bgVoid;
+    ctx.fillRect(0, 0, G.W, G.H);
+    if (G.shake.t > 0) {
+      const m = G.shake.mag * (G.shake.t);
+      ctx.translate(Math.round((Math.random() - 0.5) * m), Math.round((Math.random() - 0.5) * m));
+    }
+    const s = G.topScene();
+    if (s) {
+      if (s.translucent && G.scenes.length > 1) G.scenes[G.scenes.length - 2].draw(ctx);
+      s.draw(ctx);
+    }
+    ctx.restore();
+  }
+  function frame() { tick(); requestAnimationFrame(frame); }
+  requestAnimationFrame(frame);
+  setInterval(() => { if (performance.now() - lastTick > 50) tick(); }, 33);
+  G._tick = tick;
+})();
+
+// --- Text ---
+G.FONT = "'Courier New', ui-monospace, monospace";
+G.text = (ctx, str, x, y, color, size = 14, align = 'left', weight = '') => {
+  ctx.font = `${weight} ${size}px ${G.FONT}`.trim();
+  ctx.textAlign = align; ctx.textBaseline = 'top';
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+};
+G.textGlow = (ctx, str, x, y, color, size = 14, align = 'center') => {
+  ctx.save();
+  ctx.shadowColor = color; ctx.shadowBlur = 8;
+  G.text(ctx, str, x, y, color, size, align, 'bold');
+  ctx.restore();
+};
+G.wrapText = (ctx, str, maxWidth, size = 14) => {
+  ctx.font = `${size}px ${G.FONT}`;
+  const words = str.split(' '); const lines = []; let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+};
+
+// --- Vignette ---
+G.vignette = (c, strength = 0.55) => {
+  const g = c.createRadialGradient(G.W / 2, G.FIELD_H / 2, G.W * 0.28, G.W / 2, G.FIELD_H / 2, G.W * 0.85);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, `rgba(0,0,0,${strength})`);
+  c.fillStyle = g;
+  c.fillRect(0, 0, G.W, G.FIELD_H);
+};
+
+// --- Zufall mit Seed ---
+G.mulberry32 = (seed) => {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+G.hashStr = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+};
+
+// --- Spielstand ---
+G.state = null;
+G.save = () => { try { localStorage.setItem('arkana_save', JSON.stringify(G.state)); } catch (e) { /* ignoriert */ } };
+G.load = () => { try { const r = localStorage.getItem('arkana_save'); return r ? JSON.parse(r) : null; } catch (e) { return null; } };
+G.clearSave = () => { try { localStorage.removeItem('arkana_save'); } catch (e) { /* ignoriert */ } };
+
+// ===== 02_world.js =====
+'use strict';
+// ============================================================
+// ARKANA World: 24px Tiles, organische Charakter-Animation
+// ============================================================
+
+const T = 24; // Tile-Größe
+
+// ------------------------------------------------------------
+// TILES. Prozedural gezeichnet, mehrere Schattierungen pro Tile.
+// ------------------------------------------------------------
+function noise2(x, y) { // deterministisches Pseudo-Rauschen pro Tile
+  let h = (x * 374761393 + y * 668265263) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0; h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+G.TILES = {
+  // Leerer Grund
+  '.': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
+    const n = noise2(tx, ty);
+    if (n > 0.72) { c.fillStyle = p.bgDeep; c.fillRect(x + Math.floor(n * 18), y + Math.floor((n * 37) % 20), 2, 1); }
+    if (n < 0.12) { c.fillStyle = p.card; c.fillRect(x + 5, y + 14, 3, 1); }
+  } },
+  // Boden mit Struktur
+  ',': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
+    const n = noise2(tx, ty);
+    c.fillStyle = p.bgDeep;
+    c.fillRect(x + 3 + Math.floor(n * 10), y + 5, 3, 1);
+    c.fillRect(x + 14, y + 12 + Math.floor(n * 6), 2, 1);
+    c.fillRect(x + 8, y + 19, 4, 1);
+  } },
+  // Mauer, mit Fugen und Kantenlicht
+  '#': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
+    const n = noise2(tx, ty);
+    c.fillStyle = p.card; c.fillRect(x, y, T, T);
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 3);
+    c.fillStyle = p.cardHi; c.fillRect(x, y, T, 1);
+    c.fillStyle = p.bgDeep; c.fillRect(x, y + T - 3, T, 3);
+    // Steinfugen, versetzt je Reihe
+    c.fillStyle = p.bgDeep;
+    const off = (ty % 2) * 12;
+    c.fillRect(x + ((off + 11) % T), y + 3, 1, 9);
+    c.fillRect(x, y + 11, T, 1);
+    c.fillRect(x + ((off + 5) % T), y + 12, 1, 9);
+    if (n > 0.8) { c.fillStyle = p.cardHi; c.fillRect(x + 4, y + 15, 3, 2); }
+  } },
+  // Fenster / toter Bildschirm
+  'W': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.card; c.fillRect(x, y, T, T);
+    c.fillStyle = p.cardLight; c.fillRect(x, y, T, 2);
+    c.fillStyle = p.bgVoid; c.fillRect(x + 4, y + 4, 16, 13);
+    const flick = 0.25 + 0.2 * Math.sin(t * 3 + noise2(tx, ty) * 9);
+    c.globalAlpha = flick; c.fillStyle = p.glow; c.fillRect(x + 5, y + 5, 14, 5); c.globalAlpha = 1;
+    c.fillStyle = p.dim; c.fillRect(x + 4, y + 17, 16, 1);
+  } },
+  // Nebel / Wasser, animiert
+  '~': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.bgDeep; c.fillRect(x, y, T, T);
+    const n = noise2(tx, ty) * 6;
+    c.fillStyle = p.dim; c.globalAlpha = 0.6;
+    const o1 = Math.sin(t * 1.2 + n) * 4, o2 = Math.cos(t * 0.9 + n) * 4;
+    c.fillRect(x + 3 + o1, y + 6, 8, 1);
+    c.fillRect(x + 11 + o2, y + 14, 7, 1);
+    c.globalAlpha = 0.3; c.fillRect(x + 6 + o2, y + 19, 6, 1);
+    c.globalAlpha = 1;
+  } },
+  // Baum / Pfeiler mit Krone
+  'T': { solid: true, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
+    const sway = Math.sin(t * 0.8 + noise2(tx, ty) * 7) * 1.2;
+    c.fillStyle = p.bgDeep; c.fillRect(x + 9, y + 15, 6, 9);        // Stamm-Schatten
+    c.fillStyle = p.dim; c.fillRect(x + 10, y + 14, 4, 10);          // Stamm
+    c.fillStyle = p.card; c.fillRect(x + 3 + sway, y + 2, 18, 13);   // Krone
+    c.fillStyle = p.cardLight; c.fillRect(x + 5 + sway, y + 3, 14, 6);
+    c.fillStyle = p.cardHi; c.fillRect(x + 7 + sway, y + 4, 8, 2);
+    c.fillStyle = p.bgDeep; c.fillRect(x + 4 + sway, y + 12, 16, 2);
+  } },
+  // Pflaster / Weg
+  '=': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.card; c.fillRect(x, y, T, T);
+    c.fillStyle = p.cardLight; c.fillRect(x + 1, y + 1, T - 2, 1);
+    c.fillStyle = p.bg; c.fillRect(x, y + T - 1, T, 1); c.fillRect(x + T - 1, y, 1, T);
+    if (noise2(tx, ty) > 0.75) { c.fillStyle = p.bgDeep; c.fillRect(x + 6, y + 9, 5, 2); }
+  } },
+  // Tür, begehbar
+  'D': { solid: false, draw: (c, x, y, p, t) => {
+    c.fillStyle = p.bgVoid; c.fillRect(x, y, T, T);
+    c.fillStyle = p.dim; c.fillRect(x + 2, y, 2, T); c.fillRect(x + T - 4, y, 2, T); c.fillRect(x + 2, y, T - 4, 2);
+    const a = 0.15 + 0.12 * Math.sin(t * 2);
+    c.globalAlpha = a; c.fillStyle = p.main; c.fillRect(x + 4, y + 2, T - 8, T - 2); c.globalAlpha = 1;
+  } },
+  // Leylinie, pulsierender Pfad
+  '*': { solid: false, draw: (c, x, y, p, t, tx, ty) => {
+    c.fillStyle = p.bg; c.fillRect(x, y, T, T);
+    const pulse = 0.35 + 0.3 * Math.sin(t * 2.5 - (tx + ty) * 0.5);
+    c.globalAlpha = pulse * 0.4; c.fillStyle = p.main; c.fillRect(x + 6, y, 12, T);
+    c.globalAlpha = pulse; c.fillStyle = p.glow; c.fillRect(x + 10, y, 4, T);
+    c.globalAlpha = 1;
+  } },
+};
+
+// ------------------------------------------------------------
+// CHARAKTER: organische Animation mit Feder-Physik
+// ------------------------------------------------------------
+// Ein Zustandsobjekt pro Figur. Die Animation entsteht aus
+// überlagerten Schwingungen plus nachlaufenden Federn, nicht aus
+// festen Einzelbildern. Dadurch wirkt die Bewegung weich.
+G.newAnim = () => ({
+  phase: 0,        // Laufzyklus 0..1
+  speed: 0,        // aktuelle Geschwindigkeit 0..1
+  dir: 'down',
+  facing: 0,       // weicher Richtungswert für Drehung
+  vx: 0, vy: 0,
+  cloakX: 0, cloakY: 0, cloakVX: 0, cloakVY: 0, // Umhang, Feder
+  hoodX: 0, hoodVX: 0,                          // Kapuze, Feder
+  squash: 0, squashV: 0,                        // Stauchen beim Anlaufen/Stoppen
+  breathe: Math.random() * 6.28,
+  blink: 2 + Math.random() * 3,
+  blinking: 0,
+  stepFlash: 0,
+});
+
+// Federschritt: zieht "val" zu "target", mit Dämpfung
+function spring(val, vel, target, stiff, damp, dt) {
+  const a = (target - val) * stiff - vel * damp;
+  vel += a * dt;
+  val += vel * dt;
+  return [val, vel];
+}
+
+G.updateAnim = (an, dt, vx, vy, moving) => {
+  const sp = Math.hypot(vx, vy);
+  an.vx = vx; an.vy = vy;
+
+  // Geschwindigkeit weich nachziehen, das killt das Ruckeln beim Start
+  const targetSpeed = moving ? Math.min(1, sp / 90) : 0;
+  an.speed += (targetSpeed - an.speed) * Math.min(1, dt * 9);
+
+  // Laufzyklus. Frequenz skaliert mit Tempo.
+  if (an.speed > 0.02) an.phase = (an.phase + dt * (1.7 + an.speed * 2.1)) % 1;
+  else an.phase += (0 - (an.phase % 1)) * Math.min(1, dt * 4); // sanft in Ruhepose
+
+  // Blickrichtung
+  if (moving && sp > 4) {
+    if (Math.abs(vx) > Math.abs(vy)) an.dir = vx < 0 ? 'left' : 'right';
+    else an.dir = vy < 0 ? 'up' : 'down';
+  }
+  const facingTarget = an.dir === 'left' ? -1 : an.dir === 'right' ? 1 : 0;
+  an.facing += (facingTarget - an.facing) * Math.min(1, dt * 12);
+
+  // Umhang läuft der Bewegung hinterher (Sekundäranimation)
+  const cloakTargetX = -vx * 0.075, cloakTargetY = -vy * 0.055;
+  [an.cloakX, an.cloakVX] = spring(an.cloakX, an.cloakVX, cloakTargetX, 130, 13, dt);
+  [an.cloakY, an.cloakVY] = spring(an.cloakY, an.cloakVY, cloakTargetY, 130, 13, dt);
+
+  // Kapuze schwingt leicht gegenläufig
+  [an.hoodX, an.hoodVX] = spring(an.hoodX, an.hoodVX, -vx * 0.028, 190, 16, dt);
+
+  // Squash beim Beschleunigen und Abbremsen
+  const accel = targetSpeed - an.speed;
+  [an.squash, an.squashV] = spring(an.squash, an.squashV, accel * 1.4, 210, 15, dt);
+
+  // Atmen im Stand
+  an.breathe += dt * (1.5 + an.speed * 1.2);
+
+  // Blinzeln
+  an.blink -= dt;
+  if (an.blink <= 0) { an.blinking = 0.11; an.blink = 2.4 + Math.random() * 3.4; }
+  if (an.blinking > 0) an.blinking -= dt;
+
+  // Schrittmarker für Staubpartikel
+  const st = Math.sin(an.phase * Math.PI * 2);
+  const wasDown = an.stepFlash;
+  an.stepFlash = (st < -0.9 && an.speed > 0.35) ? 1 : 0;
+  return an.stepFlash && !wasDown;
+};
+
+// Zeichnet die Figur.
+// Sprite-Box 20x30. Aufbau von hinten nach vorn:
+// Schatten, Umhang, hinteres Bein, Torso, vorderes Bein, Arme, Kopf.
+// Die Silhouette bleibt bewusst schmal, damit die Figur lesbar bleibt.
+G.drawPlayer = (c, px, py, an, p, cols, glow) => {
+  const R = Math.round;
+  const w = Math.sin(an.phase * Math.PI * 2);   // Schrittschwingung
+  const w2 = Math.sin(an.phase * Math.PI * 4);  // doppelte Frequenz
+  const sp = an.speed;
+  const side = (an.dir === 'left' || an.dir === 'right');
+  const face = an.dir === 'left' ? -1 : 1;
+
+  const bob = -Math.abs(w2) * 1.6 * sp;                    // Auf und Ab
+  const breath = Math.sin(an.breathe) * 0.5 * (1 - sp);     // Atmen im Stand
+  const sway = w * 0.9 * sp;                                // Wiegen
+  const sq = an.squash;
+  const sY = 1 - sq * 0.14, sX = 1 + sq * 0.10;
+
+  const baseY = py + bob + breath;
+  const cx = px + 10 + sway * 0.5;
+  const footY = py + 29;
+
+  const robe = cols.robe, robeHi = cols.robeHi, trim = cols.trim, core = cols.core;
+  const robeDark = cols.robeDark || '#1a1410';
+  const dark = '#090503';
+
+  // --- Schatten ---
+  c.globalAlpha = 0.34 - sp * 0.08;
+  c.fillStyle = '#000';
+  c.beginPath();
+  c.ellipse(px + 10, footY, (6.5 + sp * 1.5) * sX, 2.4, 0, 0, 6.283);
+  c.fill();
+  c.globalAlpha = 1;
+
+  // --- Schimmer im Prolog ---
+  if (glow) {
+    c.globalAlpha = 0.13 + 0.05 * Math.sin(an.breathe * 1.3);
+    c.fillStyle = glow;
+    c.beginPath(); c.ellipse(px + 10, baseY + 16, 13, 17, 0, 0, 6.283); c.fill();
+    c.globalAlpha = 1;
+  }
+
+  // --- Umhang, hinter allem, kaum breiter als der Körper ---
+  // Er weht entgegen der Laufrichtung und flattert am Saum.
+  const clx = an.cloakX, cly = an.cloakY;
+  const capeTop = baseY + 11, capeH = 15 * sY;
+  c.fillStyle = robeDark;
+  if (side) {
+    // Seitlich: schmale Fahne, die knapp hinter der Schulter weg steht
+    const back = -face;
+    const drift = Math.max(-4, Math.min(4, clx * 0.55));
+    c.beginPath();
+    c.moveTo(R(cx + back * 1.5), R(capeTop));
+    c.lineTo(R(cx + back * 3.5 + drift), R(capeTop + capeH * 0.65));
+    c.lineTo(R(cx + back * 3 + drift), R(capeTop + capeH));
+    c.lineTo(R(cx + back * 0.5), R(capeTop + capeH - 2));
+    c.closePath(); c.fill();
+  } else {
+    const wob = w * 0.9 * sp;
+    const drift = Math.max(-3, Math.min(3, clx * 0.7));
+    c.beginPath();
+    c.moveTo(R(cx - 4), R(capeTop));
+    c.lineTo(R(cx - 6 + drift + wob), R(capeTop + capeH));
+    c.lineTo(R(cx + 6 + drift + wob), R(capeTop + capeH));
+    c.lineTo(R(cx + 4), R(capeTop));
+    c.closePath(); c.fill();
+  }
+  // Saum, flattert leicht nach
+  c.fillStyle = robe;
+  for (let i = 0; i < 3; i++) {
+    const fx = cx - 4 + i * 3.5 + Math.max(-3, Math.min(3, clx * 0.7));
+    const fy = capeTop + capeH - 2 + Math.sin(an.phase * 6.283 + i * 1.3) * 1.2 * sp;
+    c.fillRect(R(fx), R(fy), 3, 2);
+  }
+
+  // --- Beine ---
+  // In Robenfarbe, damit sie gegen den dunklen Boden lesbar bleiben.
+  const legA = w * 2.4 * sp;      // vorderes Bein
+  const legB = -w * 2.4 * sp;     // hinteres Bein
+  const liftA = Math.max(0, w) * 1.7 * sp;
+  const liftB = Math.max(0, -w) * 1.7 * sp;
+  const legTop = baseY + 21;
+  const legH = 8;
+  function leg(offX, lift, shade) {
+    const lx = R(cx + offX), ly = R(legTop - lift), lh = R(legH - lift * 0.6);
+    c.fillStyle = shade; c.fillRect(lx, ly, 3, lh);
+    c.fillStyle = dark; c.fillRect(lx, ly + lh - 2, 3, 2); // Stiefel
+  }
+  // hinteres Bein zuerst, etwas dunkler
+  leg(side ? -1.5 + legB * face : 1.5, liftB, robe);
+
+  // --- Torso ---
+  const bodyW = R(11 * sX), bodyH = R(13 * sY);
+  const bodyX = R(cx - bodyW / 2), bodyY = R(baseY + 11);
+  c.fillStyle = robe; c.fillRect(bodyX, bodyY, bodyW, bodyH);
+  c.fillStyle = robeHi; c.fillRect(bodyX + 1, bodyY + 1, bodyW - 2, 4);
+  c.fillStyle = dark; c.fillRect(bodyX, bodyY + bodyH - 1, bodyW, 1);
+  // Gürtel, nur ein kurzer Akzent
+  c.fillStyle = trim; c.fillRect(bodyX + 2, bodyY + 8, bodyW - 4, 1);
+
+  // --- Leuchtender Kern in der Brust ---
+  const pulse = 0.5 + 0.5 * Math.sin(an.breathe * 1.7);
+  c.globalAlpha = pulse * 0.35; c.fillStyle = core;
+  c.fillRect(bodyX + R(bodyW / 2) - 2, bodyY + 3, 4, 4);
+  c.globalAlpha = pulse; c.fillRect(bodyX + R(bodyW / 2) - 1, bodyY + 4, 2, 2);
+  c.globalAlpha = 1;
+
+  // --- vorderes Bein, heller als das hintere ---
+  leg(side ? -1.5 + legA * face : -4.5, liftA, robeHi);
+
+  // --- Arme ---
+  // Bei Frontansicht liegen sie eng am Körper, sonst wirken sie wie Stummel.
+  const armS = -w * 2.0 * sp;
+  if (side) {
+    c.fillStyle = robeHi;
+    c.fillRect(R(cx - 1 + armS * face), R(baseY + 13), 3, 7);
+    c.fillStyle = trim; c.fillRect(R(cx - 1 + armS * face), R(baseY + 19), 3, 1);
+  } else {
+    c.fillStyle = dark;
+    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 2, 8);
+    c.fillRect(R(bodyX + bodyW - 1), R(baseY + 13 - armS * 0.5), 2, 8);
+    c.fillStyle = robeHi;
+    c.fillRect(R(bodyX - 1), R(baseY + 13 + armS * 0.5), 1, 7);
+    c.fillRect(R(bodyX + bodyW), R(baseY + 13 - armS * 0.5), 1, 7);
+  }
+
+  // --- Kopf mit Kapuze ---
+  const hx = R(cx - 4 + an.hoodX + an.facing * 0.8);
+  const hy = R(baseY + 2 + bob * 0.2);
+  // Kapuze als Silhouette
+  c.fillStyle = robe;
+  c.fillRect(hx - 1, hy + 1, 10, 8);
+  c.fillRect(hx, hy, 8, 2);
+  c.fillStyle = robeHi; c.fillRect(hx + 1, hy, 6, 2);
+  // Gesichtsöffnung
+  c.fillStyle = dark;
+  if (an.dir === 'up') {
+    c.fillRect(hx, hy + 2, 8, 5);   // Rückansicht, keine Öffnung
+  } else if (side) {
+    c.fillRect(hx + (face > 0 ? 3 : 1), hy + 3, 5, 4);
+  } else {
+    c.fillRect(hx + 1, hy + 3, 6, 4);
+  }
+  // Augen
+  if (an.dir !== 'up' && an.blinking <= 0) {
+    c.fillStyle = core; c.globalAlpha = 0.95;
+    if (side) c.fillRect(hx + (face > 0 ? 5 : 2), hy + 4, 2, 2);
+    else { c.fillRect(hx + 2, hy + 4, 2, 2); c.fillRect(hx + 5, hy + 4, 2, 2); }
+    c.globalAlpha = 1;
+  }
+  // Kapuzenzipfel hinten
+  c.fillStyle = robe;
+  if (side) c.fillRect(R(hx + (face > 0 ? -2 : 8)), hy + 2, 2, 4);
+};
+
+// ------------------------------------------------------------
+// NPC: eigene, ruhigere Animation
+// ------------------------------------------------------------
+G.drawNpc = (c, px, py, p, variant, t, seed) => {
+  const x = Math.round(px), y = Math.round(py);
+  const ph = t * 1.1 + (seed || 0) * 2.3;
+  const breath = Math.sin(ph) * 0.7;
+  const tones = [p.textDim, p.dim, p.text, p.accent];
+  const tone = tones[variant % tones.length];
+
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x + 10, y + 28, 7, 2.5, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+
+  const by = y + breath;
+  c.fillStyle = '#0a0604'; c.fillRect(x + 5, by + 22, 4, 6); c.fillRect(x + 12, by + 22, 4, 6);
+  c.fillStyle = tone; c.fillRect(x + 4, by + 9, 13, 14);
+  c.fillStyle = p.cardLight; c.fillRect(x + 5, by + 10, 11, 4);
+  c.fillStyle = p.textDim; c.fillRect(x + 5, by + 1, 11, 9);
+  c.fillStyle = '#0a0604'; c.fillRect(x + 6, by + 4, 9, 5);
+
+  // Variante 0 starrt auf einen Bildschirm: kaltes Flackern vorm Gesicht
+  if (variant === 0) {
+    const f = 0.4 + 0.35 * Math.sin(t * 9 + (seed || 0));
+    c.globalAlpha = f; c.fillStyle = '#8fa8c8';
+    c.fillRect(x + 6, by + 12, 9, 6);
+    c.globalAlpha = f * 0.4; c.fillRect(x + 4, by + 3, 13, 8);
+    c.globalAlpha = 1;
+  }
+};
+
+// ------------------------------------------------------------
+// Begleiter-Geist: schwebt, zieht eine Spur
+// ------------------------------------------------------------
+G.drawSpirit = (c, px, py, p, t, color, trail) => {
+  // Spur
+  if (trail) {
+    for (let i = trail.length - 1; i >= 0; i--) {
+      const tr = trail[i];
+      c.globalAlpha = (i / trail.length) * 0.28;
+      c.fillStyle = color;
+      c.fillRect(Math.round(tr.x), Math.round(tr.y), 3, 3);
+    }
+  }
+  const x = px + Math.sin(t * 1.9) * 3.2;
+  const y = py + Math.cos(t * 2.6) * 3.8;
+  const pulse = 0.7 + 0.3 * Math.sin(t * 4);
+  c.globalAlpha = 0.16 * pulse; c.fillStyle = color;
+  c.beginPath(); c.arc(x + 3, y + 3, 9, 0, 6.283); c.fill();
+  c.globalAlpha = 0.45 * pulse;
+  c.beginPath(); c.arc(x + 3, y + 3, 5, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillRect(Math.round(x + 1), Math.round(y + 1), 4, 4);
+  c.fillStyle = '#fff'; c.globalAlpha = 0.8;
+  c.fillRect(Math.round(x + 2), Math.round(y + 2), 2, 2);
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Fragment: rotierender Splitter mit Lichthof
+// ------------------------------------------------------------
+G.drawFragment = (c, px, py, p, t, seed) => {
+  const x = px + 12, y = py + 12 + Math.sin(t * 1.6 + (seed || 0)) * 2.5;
+  const a = 0.55 + 0.45 * Math.sin(t * 3 + (seed || 0) * 2);
+  c.globalAlpha = a * 0.18; c.fillStyle = p.bright;
+  c.beginPath(); c.arc(x, y, 13, 0, 6.283); c.fill();
+  c.globalAlpha = a * 0.4;
+  c.beginPath(); c.arc(x, y, 7, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  // Rotierender Rhombus
+  const r = t * 1.4 + (seed || 0);
+  c.save(); c.translate(x, y); c.rotate(r);
+  c.fillStyle = p.bright; c.fillRect(-2, -7, 4, 14); c.fillRect(-7, -2, 14, 4);
+  c.fillStyle = p.textBright; c.fillRect(-2, -2, 4, 4);
+  c.restore();
+};
+
+// ------------------------------------------------------------
+// Spiegelschrein
+// ------------------------------------------------------------
+G.drawShrine = (c, px, py, p, t) => {
+  const x = Math.round(px), y = Math.round(py);
+  c.globalAlpha = 0.3; c.fillStyle = '#000';
+  c.beginPath(); c.ellipse(x + 24, y + 46, 24, 6, 0, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  // Sockel
+  c.fillStyle = p.card; c.fillRect(x + 4, y + 24, 40, 22);
+  c.fillStyle = p.cardLight; c.fillRect(x + 6, y + 26, 36, 4);
+  c.fillStyle = p.bgDeep; c.fillRect(x + 10, y + 32, 28, 12);
+  // Spiegelfläche
+  const a = 0.45 + 0.35 * Math.sin(t * 1.8);
+  c.globalAlpha = a * 0.3; c.fillStyle = p.main;
+  c.beginPath(); c.arc(x + 24, y + 14, 22, 0, 6.283); c.fill();
+  c.globalAlpha = 1;
+  c.fillStyle = p.bgVoid; c.fillRect(x + 12, y + 2, 24, 24);
+  c.fillStyle = p.dim; c.fillRect(x + 12, y + 2, 24, 2); c.fillRect(x + 12, y + 24, 24, 2);
+  c.fillRect(x + 12, y + 2, 2, 24); c.fillRect(x + 34, y + 2, 2, 24);
+  c.globalAlpha = a; c.fillStyle = p.glow;
+  c.fillRect(x + 16, y + 6, 16, 16);
+  c.globalAlpha = a * 0.7; c.fillStyle = p.textBright;
+  c.fillRect(x + 20, y + 10, 8, 8);
+  c.globalAlpha = 1;
+};
+
+// ------------------------------------------------------------
+// Raum zeichnen
+// ------------------------------------------------------------
+G.drawRoom = (c, room, p, t) => {
+  for (let ty = 0; ty < G.ROOM_H; ty++) {
+    const row = room[ty] || '';
+    for (let tx = 0; tx < G.ROOM_W; tx++) {
+      const ch = row[tx] || '.';
+      (G.TILES[ch] || G.TILES['.']).draw(c, tx * T, ty * T, p, t, tx, ty);
+    }
+  }
+};
+
+G.isSolid = (room, px, py) => {
+  const tx = Math.floor(px / T), ty = Math.floor(py / T);
+  if (tx < 0 || tx >= G.ROOM_W || ty < 0 || ty >= G.ROOM_H) return false;
+  const ch = (room[ty] || '')[tx] || '.';
+  const tile = G.TILES[ch];
+  return tile ? tile.solid : false;
+};
+
+// ===== 03_data.js =====
+'use strict';
+// ============================================================
+// ARKANA Data: Signatur, Karten (15x22 Hochformat), Dialoge
+// ============================================================
+
+G.FRAGMENTS = [{"id":"01_Numerologie/chaldaeisch","titel":"Chaldäische Numerologie","text":"Die älteste bekannte Form westlicher Numerologie, stammt aus dem antiken Mesopotamien (Babylonien, Sumer, Akkadien). Wird oft als esoterisch genauer und schwingungssensibler als die pythagoreische Form angesehen.","modul":"01_Numerologie"},{"id":"01_Numerologie/chinesisch","titel":"Chinesische Numerologie","text":"Das chinesische Zahlenwissen ist tief verwoben mit Sprache (Homophonie), Kosmologie (I Ching, Wu Xing) und Feng Shui. Zahlen tragen Glück oder Pech je nach Klangverwandtschaft mit anderen Wörtern.","modul":"01_Numerologie"},{"id":"01_Numerologie/gematria_codes","titel":"Gematria Codes, Universal-Zahlen & moderne Zahlencodes","text":"Sammlung der wichtigsten heiligen, mystischen und kulturell aufgeladenen Zahlen, die immer wieder in Religionen, Mythologie, Wissenschaft und sogar in der Tech- und Crypto-Welt auftauchen.","modul":"01_Numerologie"},{"id":"01_Numerologie/kabbalistisch","titel":"Kabbalistische Numerologie & Gematria","text":"Das hebräisch-mystische System, in dem jeder Buchstabe gleichzeitig ein Zahlenwert, ein Klang, ein Symbol und ein göttlicher Aspekt ist. Grundlage der jüdischen Mystik (Kabbala) und Wurzel vieler westlicher esoterischer Traditionen.","modul":"01_Numerologie"},{"id":"01_Numerologie/pythagoreisch","titel":"Pythagoreische Numerologie","text":"Die im Westen am weitesten verbreitete Form der Numerologie. Basiert auf der Lehre von Pythagoras (ca. 570 bis 495 v. Chr.), der lehrte, dass alles im Universum durch Zahlen beschrieben werden kann. \"Alles ist Zahl\" (πάντα ἀριθμός).","modul":"01_Numerologie"},{"id":"01_Numerologie/vedisch","titel":"Vedische Numerologie (Indische Numerologie, Anka Shastra)","text":"Auch Anka Jyotish oder Anka Shastra (अंक शास्त्र, \"Wissenschaft der Zahlen\") genannt. Untergeordnet zur Jyotish (vedische Astrologie). Verbindet Numerologie mit den 9 Planeten (Navagraha), Karma und Dharma.","modul":"01_Numerologie"},{"id":"02_Astrologie_Planeten/aspekte","titel":"Aspekte — Geometrische Beziehungen der Planeten","text":"Aspekte sind die Winkel zwischen Planeten am Himmel. Sie bestimmen, wie Planeten miteinander interagieren: harmonisch, dynamisch, herausfordernd oder neutral.","modul":"02_Astrologie_Planeten"},{"id":"02_Astrologie_Planeten/klassische_planeten","titel":"Die klassischen Planeten","text":"Die 7 klassischen Planeten (Septenarium) sind das Herz der traditionellen Astrologie: Sonne, Mond, Merkur, Venus, Mars, Jupiter, Saturn.","modul":"02_Astrologie_Planeten"},{"id":"02_Astrologie_Planeten/moderne_planeten","titel":"Die modernen Planeten (Uranus, Neptun, Pluto + Zwergplaneten)","text":"Mit der Entdeckung von Uranus (1781), Neptun (1846), Pluto (1930) erweiterte sich die Astrologie um drei \"transpersonale\" Planeten, die Generationenthemen und kollektive Wandlungen repräsentieren.","modul":"02_Astrologie_Planeten"},{"id":"02_Astrologie_Planeten/retrograde_perioden","titel":"Retrograde Perioden — Wenn Planeten rückwärts laufen","text":"Retrograd (lat. retrogradus, rückwärts gehend) bezeichnet die scheinbare Rückwärtsbewegung eines Planeten am Himmel. Tatsächlich bewegt sich kein Planet rückwärts, sondern es ist ein perspektivisches Phänomen durch unterschiedliche Umlaufgeschwindigkeiten.","modul":"02_Astrologie_Planeten"},{"id":"02_Astrologie_Planeten/transite_2026","titel":"Wichtige Transite 2026","text":"Astronomische Hauptereignisse 2026, mit Schwerpunkt auf den langsamen Planeten, die das kollektive Feld prägen. Daten basieren auf Ephemeriden (Geocentric, Standard).","modul":"02_Astrologie_Planeten"},{"id":"02_Astrologie_Planeten/vedisch_jyotish","titel":"Vedische Astrologie (Jyotish) — Übersicht","text":"Jyotish (ज्योतिष, \"Wissenschaft des Lichts\") ist die indische Schwester der westlichen Astrologie.","modul":"02_Astrologie_Planeten"},{"id":"03_Sternenkonstellationen/aegyptisch_dekane","titel":"Ägyptische Dekane — 36 Sterngruppen","text":"Die ägyptische Astrologie teilte den Himmel in 36 Dekane (je 10° des Zodiaks). Jeder Dekan wurde durch ein Sternbild oder Sterngruppe repräsentiert, hatte eine eigene Gottheit, einen eigenen Charakter und bestimmte Aspekte der Lebenserfahrung.","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/arabische_mondhaeuser","titel":"Arabische Mondhäuser (Manazil al-Qamar) — 28 Stationen","text":"Die 28 Mondhäuser sind die arabische und persische Entsprechung zu den indischen Nakshatras (27). Sie bilden ein Lunar-Zodiak-System, das den Lauf des Mondes durch den Himmel in einem Monat in 28 Etappen unterteilt.","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/chinesisch_zodiak","titel":"Chinesischer Zodiak (Shengxiao) — 12 Tiere und 60er-Zyklus","text":"Der chinesische Tierkreis ist Mondkalender-basiert. Jedes Jahr wird einem Tier zugeordnet, jedes Tier wird mit einem von 5 Elementen kombiniert → 60-Jahres-Zyklus (Sexagenarzyklus, Jiazi).","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/fixsterne","titel":"Wichtige Fixsterne in der Astrologie","text":"Fixsterne sind die \"Sterne\" am Hintergrundhimmel (im Unterschied zu den \"Wandelsternen\" = Planeten). In der traditionellen Astrologie spielen ausgewählte helle Sterne eine bedeutende Rolle. Sie wirken durch Konjunktion zu Planeten oder Häuserspitzen.","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/maya_tzolkin","titel":"Maya Tzolk'in — Der heilige 260-Tage-Kalender","text":"Der Tzolk'in (auch Tzolkin) ist der heilige Kalender der Maya, basiert auf 260 Tagen, kombiniert 20 Tagessignaturen (Nahuales) mit 13 Tonen. Eines der ältesten und genauesten Kalendersysteme der Welt.","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/zodiak_siderisch","titel":"Siderischer Zodiak & Ophiuchus","text":"Der siderische Tierkreis basiert auf den tatsächlichen Sternbildern am Himmel, nicht auf der Sonnen-Erde-Beziehung. Er ist Grundlage der vedischen Astrologie und einiger westlich-siderischer Schulen.","modul":"03_Sternenkonstellationen"},{"id":"03_Sternenkonstellationen/zodiak_westlich","titel":"Westlicher (tropischer) Zodiak — 12 Zeichen","text":"Der tropische Tierkreis ist am Frühlingsäquinoktium ausgerichtet (0° Widder = Sonne überquert Äquator nach Norden), nicht an den Sternbildern. Verwendet von der gesamten westlichen Astrologie seit Ptolemäus.","modul":"03_Sternenkonstellationen"},{"id":"04_Mond_Sonnenzyklen/eklipsen_saros","titel":"Eklipsen und der Saros-Zyklus","text":"Eklipsen sind Schlüsselmomente der Astrologie. Sie wirken 3-6 Monate vor und nach dem Ereignis und markieren oft Wendepunkte in Politik, Wirtschaft, persönlichem Leben.","modul":"04_Mond_Sonnenzyklen"},{"id":"04_Mond_Sonnenzyklen/lunation_zyklen","titel":"Lunation-Zyklen — Synodisch, Siderisch, Anomalistisch, Drakonitisch","text":"Der Mond hat mehrere unabhängige Zyklen, die alle leicht unterschiedlich lang sind. Jeder beleuchtet einen anderen Aspekt seiner Bewegung.","modul":"04_Mond_Sonnenzyklen"},{"id":"04_Mond_Sonnenzyklen/mondphasen_grundlagen","titel":"Mondphasen — Grundlagen","text":"Die Mondphasen sind der wichtigste sichtbare Zyklus am Himmel. Sie strukturieren die menschliche Zeit seit der Steinzeit und prägen Pflanzenwachstum, Gezeiten, biologische Rhythmen und magisches Wirken.","modul":"04_Mond_Sonnenzyklen"},{"id":"04_Mond_Sonnenzyklen/seasonal_gates","titel":"Saisonale Tore — Äquinoktien und Sonnenwenden","text":"Die vier saisonalen Tore (zwei Tagundnachtgleichen, zwei Sonnenwenden) sind die wichtigsten kosmischen Marker des Jahres. Sie strukturieren Kalender, Feste und mystische Praxis weltweit.","modul":"04_Mond_Sonnenzyklen"},{"id":"04_Mond_Sonnenzyklen/sonnenzyklen","titel":"Sonnenzyklen — Tagessonne, Schwabe, Hale, Gleisberg, Suess","text":"Die Sonne ist nicht statisch. Sie pulsiert in mehreren Zyklen, die Erd-Klima, Aurora, Telekommunikation und vermutlich auch menschliche Kollektivpsyche beeinflussen.","modul":"04_Mond_Sonnenzyklen"},{"id":"05_Historische_Zyklen/halving_zyklen_btc","titel":"Bitcoin Halving-Zyklen und Astro-Bezug","text":"Alle ca. 4 Jahre (210.000 Blöcke) halbiert sich die Bitcoin-Block-Belohnung. Diese Halvings haben sich als Markt-Zyklen-Treiber etabliert.","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/jupiter_saturn_konjunktionen","titel":"Jupiter-Saturn-Konjunktionen — 20-Jahres-Großzyklus","text":"Alle ~20 Jahre treffen sich Jupiter und Saturn am Himmel. Diese Konjunktionen markieren wirtschaftliche und politische Wendepunkte. Alle 200 Jahre wechselt das Element der Konjunktion (Großer Mutationszyklus).","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/kondratieff_wellen","titel":"Kondratieff-Wellen (K-Wellen) — 50-60-Jahre-Wirtschaftszyklus","text":"Der russische Ökonom Nikolai Kondratieff (1892-1938) identifizierte langfristige Wellen (~50-60 Jahre) im Kapitalismus. Jede Welle wird von einer Basistechnologie getragen. Joseph Schumpeter ergänzte den Begriff \"schöpferische Zerstörung\".","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/maya_long_count","titel":"Maya Long Count — 5125-Jahre-Zyklus","text":"Der Maya Long Count ist eine lineare Tageszählung ab dem 11. August 3114 v. Chr. (proleptisches gregorianisches Datum). Er endete mit dem 13. Baktun am 21. Dezember 2012 und begann einen neuen Zyklus.","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/neptun_zyklen","titel":"Neptun-Zyklen — 164-Jahre-Visionsperioden","text":"Neptun braucht ca. 164.8 Jahre für eine Tierkreis-Umrundung. Pro Zeichen ca. 14 Jahre. Er markiert kollektive Visionen, Mythen, Drogenwellen und Auflösung alter Realitäten.","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/platonisches_jahr","titel":"Platonisches Jahr — 25.920 Jahre Präzession","text":"Das Platonische Jahr (auch Großes Jahr oder Präzessionszyklus) dauert ca. 25.920 Jahre und beschreibt den Lauf des Frühlingspunkts rückwärts durch die Sternbilder. Jedes Sternbild bildet ein \"Zeitalter\" von ca. 2.160 Jahren.","modul":"05_Historische_Zyklen"},{"id":"05_Historische_Zyklen/pluto_zyklen","titel":"Pluto-Zyklen — 248-Jahre-Großtransformation","text":"Pluto braucht ca. 248 Jahre für eine Umrundung durch den Tierkreis. Pro Zeichen 12-32 Jahre (exzentrische Bahn). Jeder Pluto-Zeichenwechsel markiert tiefe gesellschaftliche Transformation.","modul":"05_Historische_Zyklen"},{"id":"06_Kulturelle_Systeme/aegyptisch","titel":"Ägyptische Mystik","text":"Über 3000 Jahre Hochkultur, Pyramiden, Hieroglyphen, Götterpantheon und kosmologische Lehren. Die ägyptische Tradition ist eine der ältesten und einflussreichsten esoterischen Quellen.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/afrikanisch_yoruba","titel":"Afrikanische Mystik — Yoruba, Vodun, Ifa","text":"Eine der ältesten lebenden mystischen Traditionen Afrikas, mit globaler Ausstrahlung durch die afrikanische Diaspora (Brasilien Candomblé, Kuba Santería, Haiti Vodou, USA Hoodoo).","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/azteken_inka","titel":"Azteken, Maya, Inka — Präkolumbische Mystik","text":"Drei Hochkulturen Amerikas mit komplexen Kosmologien, präzisen Kalendern und mächtigen Göttern. Maya schon in 03_Sternenkonstellationen/maya_tzolkin.md behandelt; hier Aztec & Inka Fokus.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/buddhistisch","titel":"Buddhistische Mystik","text":"Lehre des Erwachens. 2500 Jahre alt, mehrere Schulen, von Sri Lanka bis Tibet, von Vietnam bis Japan und heute weltweit.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/griechisch_roemisch","titel":"Griechisch-Römische Mystik","text":"Klassische Antike-Mystik mit den olympischen Göttern, eleusinischen Mysterien, pythagoreischer Lehre und neuplatonischer Philosophie.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/hinduistisch","titel":"Hinduistische Mystik","text":"Mit über 1 Milliarde Anhängern eine der ältesten lebenden Traditionen. Veden, Trimurti, Yugas, Chakren, Karma-Reinkarnation.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/islamisch_sufi","titel":"Islamisch-Sufische Mystik","text":"Sufismus ist die mystische Strömung des Islam, sucht direkte Erfahrung Gottes durch Liebe, Atem, Tanz, Meditation. Wirkte stark auf westliche Esoterik.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/juedisch_kabbala","titel":"Jüdische Mystik & Kabbala","text":"Jüdische Mystik durch die Jahrhunderte: von der Merkavah-Mystik über Zohar bis Hassidismus und moderne Kabbala. (Numerologische Aspekte ausführlich in `01_Numerologie/kabbalistisch.md`.)","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/keltisch","titel":"Keltische Mystik","text":"Druiden, Ogham-Schrift, Baumkalender, Andersweltliche Reise, Geisterland (Sídhe).","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/nordisch","titel":"Nordische Mystik (Germanisch-Skandinavisch)","text":"Mythologie der Germanen und Wikinger: Yggdrasil, die 9 Welten, Odin, Ragnarök, Runen.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/shinto","titel":"Shinto — Japanische Mystik","text":"\"Weg der Kami\" (Götter, Geister, Naturwesen). Älteste japanische Religion, animistisch, mit ca. 8 Millionen Kami.","modul":"06_Kulturelle_Systeme"},{"id":"06_Kulturelle_Systeme/taoistisch","titel":"Taoistische (Daoistische) Mystik","text":"Die \"Lehre vom Weg\" — chinesische Mystik, basierend auf Lao Tzu, I Ching, Wu Xing. Verbindet Philosophie, Religion, Magie, Medizin und Geomantie.","modul":"06_Kulturelle_Systeme"},{"id":"07_Weltereignisse_Korrelationen/crypto_meilensteine","titel":"Crypto-Meilensteine — Astrologisch betrachtet","text":"Die wichtigsten Daten der Krypto-Geschichte und ihre planetaren Konstellationen.","modul":"07_Weltereignisse_Korrelationen"},{"id":"07_Weltereignisse_Korrelationen/finanzkrisen_astro","titel":"Finanzkrisen und ihre astrologischen Korrelationen","text":"Historische Wirtschaftskrisen zeigen erstaunliche Übereinstimmungen mit bestimmten planetaren Konstellationen, vor allem Saturn-Pluto- und Saturn-Uranus-Aspekten.","modul":"07_Weltereignisse_Korrelationen"},{"id":"07_Weltereignisse_Korrelationen/kollektive_archetypen","titel":"Kollektive Archetypen und Zeitgeist","text":"Carl Gustav Jung führte den Begriff \"Archetypen\" als universelle Strukturen des kollektiven Unbewussten ein. Sie prägen den \"Zeitgeist\" einer Epoche und manifestieren sich in Kunst, Politik, Mythos, Religion.","modul":"07_Weltereignisse_Korrelationen"},{"id":"07_Weltereignisse_Korrelationen/kriege_zyklen","titel":"Kriegs-Zyklen und Generationen-Muster","text":"Kriege folgen oft generationsbedingten Mustern und planetaren Konstellationen. Studien zeigen ~80-Jahre-Zyklen großer Kriege.","modul":"07_Weltereignisse_Korrelationen"},{"id":"07_Weltereignisse_Korrelationen/pandemien_zyklen","titel":"Pandemien — Historische Zyklen","text":"Pandemien treten in groben 100-Jahres-Mustern auf. Mit COVID-19 (2020) und der nahezu exakten 100-Jahr-Distanz zur Spanischen Grippe (1918) wurde das Bewusstsein dafür wieder aktuell.","modul":"07_Weltereignisse_Korrelationen"},{"id":"07_Weltereignisse_Korrelationen/technologie_durchbrueche","titel":"Technologie-Durchbrüche und planetare Konstellationen","text":"Große Technologie-Durchbrüche korrelieren statistisch mit Uranus-Aspekten (Plötzlichkeit, Innovation), Uranus-Pluto-Konstellationen und Neptun (Vision).","modul":"07_Weltereignisse_Korrelationen"},{"id":"08_Symbolik/alchemie","titel":"Alchemie","text":"Die Alchemie war Vor-Wissenschaft, Mystik, Psychologie und spirituelle Praxis zugleich. Ihr Ziel: Stein der Weisen, Gold-Transmutation, Unsterblichkeit. Innerlich: Transformation des Selbst.","modul":"08_Symbolik"},{"id":"08_Symbolik/farb_symbolik","titel":"Farb-Symbolik","text":"Farben tragen archetypische Bedeutung. Sie wirken auf Psyche, Spiritualität und Magie. Die universellen Bedeutungen variieren leicht je Kultur.","modul":"08_Symbolik"},{"id":"08_Symbolik/heilige_geometrie","titel":"Heilige Geometrie","text":"Geometrische Formen, die in Natur, Architektur und Mystik immer wieder auftauchen. Vom Atom bis zur Galaxie zeigen bestimmte Muster eine universelle Sprache der Struktur.","modul":"08_Symbolik"},{"id":"08_Symbolik/i_ching","titel":"I Ching — Das Buch der Wandlungen","text":"64 Hexagramme als kosmologisches und Orakel-System. Eine der ältesten und tiefsten Bücher der Welt. Beeinflusste Konfuzius, Lao Tzu, Leibniz, Jung, John Cage.","modul":"08_Symbolik"},{"id":"08_Symbolik/runen","titel":"Runen — Elder Futhark","text":"Die ältesten germanischen Schriftzeichen, gleichzeitig Buchstaben, Symbole und Orakel. 24 Zeichen, ab ca. 150 n. Chr. in Skandinavien und Norddeutschland belegt.","modul":"08_Symbolik"},{"id":"08_Symbolik/tarot","titel":"Tarot","text":"78 Karten als Symbol-System: 22 Große Arkana (archetypische Reise) + 56 Kleine Arkana (4 Farben à 14 Karten). Wahrsage-Werkzeug, Meditationsobjekt und Lehrbuch der westlichen Esoterik.","modul":"08_Symbolik"},{"id":"08_Symbolik/tier_symbolik","titel":"Tier-Symbolik","text":"Tiere sind in fast allen Mythologien Boten, Lehrer, Krafttiere. Sie tragen archetypische Energien, die sich in Religion, Heraldik, Astrologie und Schamanismus zeigen.","modul":"08_Symbolik"},{"id":"08_Symbolik/zahlen_universell","titel":"Universelle Zahlen-Symbolik","text":"Diese Datei ergänzt `01_Numerologie/gematria_codes.md`. Hier kompakt die Bedeutungen der wichtigsten Zahlen über alle Kulturen hinweg.","modul":"08_Symbolik"},{"id":"09_Esoterik_Modern/gene_keys","titel":"Gene Keys","text":"Synthese aus Human Design, I Ching, Genetik und Mystik. Entwickelt von Richard Rudd (2007). 64 \"Gene Keys\" entsprechen den 64 I Ching Hexagrammen und 64 Codons der DNA.","modul":"09_Esoterik_Modern"},{"id":"09_Esoterik_Modern/gurdjieff_4ter_weg","titel":"Gurdjieff und der Vierte Weg","text":"Esoterisches System des Armeniers G.I. Gurdjieff (1866-1949), in Russland und Frankreich gelehrt. Synthese aus Sufismus, christlicher Mystik, Yoga, und originellen Beobachtungen.","modul":"09_Esoterik_Modern"},{"id":"09_Esoterik_Modern/hermetik","titel":"Hermetik und das Kybalion","text":"Hermetik geht auf Hermes Trismegistos (\"Dreimal Gewaltigen\") zurück, eine mythische Verschmelzung von Hermes (Griechisch) und Thoth (Ägypten). Ihre Texte (Corpus Hermeticum) prägten die westliche Esoterik tief.","modul":"09_Esoterik_Modern"},{"id":"09_Esoterik_Modern/human_design","titel":"Human Design","text":"System der \"Energie-Typen\" und der individuellen Strategie, 1987 von Ra Uru Hu (Alan Krakower, 1948-2011) empfangen. Synthese aus Astrologie, I Ching, Kabbala, Chakra-System und Quantenphysik.","modul":"09_Esoterik_Modern"},{"id":"09_Esoterik_Modern/schwingungs_skalen","titel":"Schwingungs-Skalen und Frequenzen","text":"In der modernen Esoterik werden bestimmte Frequenzen als \"heilende\" oder \"kosmisch resonante\" Schwingungen bezeichnet. Auch Bewusstseins-Skalen (Hawkins) und Solfeggio-Frequenzen.","modul":"09_Esoterik_Modern"},{"id":"09_Esoterik_Modern/theosophie","titel":"Theosophie","text":"\"Göttliche Weisheit\". Esoterische Bewegung, gegründet 1875 von Helena Blavatsky, mit Anspruch auf eine universale, alle Religionen umfassende Geheimlehre.","modul":"09_Esoterik_Modern"},{"id":"11_Verborgene_Geschichte/antikythera_mechanismus","titel":"Der Antikythera-Mechanismus","text":"Ein Bronzeklumpen aus einem Schiffswrack. Darin über 30 Zahnräder, eine Differentialmechanik und ein Rechenwerk für Sonne, Mond, Finsternisse und Kalender. Rund 2.100 Jahre alt.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/atlantis","titel":"Atlantis","text":"Der mythische Kontinent, der in einer Nacht im Ozean versank. Erwähnt von Platon, bestätigt durch Edgar Cayce, gespiegelt in zahlreichen Schöpfungsmythen weltweit. Wahrscheinlich keine Erfindung, sondern Erinnerung an eine reale vorsintflutliche Hochkultur.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/goebekli_tepe","titel":"Göbekli Tepe — Der Tempel, der Geschichte umschreibt","text":"1994 von Klaus Schmidt in Südosttürkei entdeckt. Datiert auf ~9.600 v. Chr. (11.600 Jahre alt) — also älter als Landwirtschaft, Schrift, Töpferei, Rad und Pyramiden. Größere und ältere megalithische Anlage als Stonehenge.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/kataklysmus_zyklus","titel":"Der 12.000-Jahre-Kataklysmus-Zyklus","text":"Mehrere unabhängige Indizien deuten auf einen regelmäßigen Wiederkehr-Zyklus globaler Katastrophen alle ~12.000 Jahre hin. Wir nähern uns nach 11.600 Jahren seit dem letzten Reset der nächsten Schwelle.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/piri_reis_karte","titel":"Die Piri-Reis-Karte von 1513","text":"Ein osmanischer Admiral zeichnet 1513 eine Weltkarte auf Gazellenhaut. 400 Jahre später behauptet ein amerikanischer Professor, darauf sei die Antarktis ohne Eis zu sehen. Der Fund ist echt, die These ist populär, die Belegkette ist schwach.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/pyramiden_global","titel":"Pyramiden global","text":"Pyramiden sind kein ägyptisches Phänomen. Auf allen Kontinenten finden sich pyramidale Bauwerke, oft mit erstaunlich ähnlichen Proportionen und astronomischen Ausrichtungen. Indiz einer globalen vorsintflutlichen Bau-Tradition.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/sumerische_koenigsliste","titel":"Sumerische Königsliste und die Könige vor der Flut","text":"Eine Keilschrift-Liste aus Mesopotamien zählt Könige auf, die vor einer großen Flut regiert haben. Ihre Regierungszeiten liegen bei 18.600 bis 43.200 Jahren pro Person. Nach der Flut fallen die Zahlen abrupt.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/tartaria_mudflood","titel":"Tartaria und Mudflood","text":"Eine alternative Geschichtstheorie, die ab 2016/2017 im Internet populär wurde. Behauptet: Es gab im 18./19. Jh. eine global vernetzte Hochkultur namens \"Tartaria\" mit fortgeschrittener Technologie, die bewusst aus der Geschichte gelöscht wurde.","modul":"11_Verborgene_Geschichte"},{"id":"11_Verborgene_Geschichte/younger_dryas","titel":"Younger Dryas — Der Kataklysmus 12.800 v. Chr.","text":"Vor 12.800 Jahren schlug ein Komet (oder mehrere Bruchstücke) auf die Erde, löste Klimasturz aus, brachte Megafauna zum Aussterben und versenkte vermutlich Atlantis. Vor 11.600 Jahren endete die Phase mit erneuter Katastrophe und Sintflut.","modul":"11_Verborgene_Geschichte"},{"id":"12_Geheimgesellschaften/bilderberg","titel":"Bilderberg-Gruppe","text":"Jährliches geheimes Treffen von ~130 Führungspersönlichkeiten aus Politik, Wirtschaft, Adel, Medien, Wissenschaft. Seit 1954. Keine Pressekonferenz, keine Beschlüsse veröffentlicht. Praktisch das wichtigste informelle Welt-Treffen.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/economist_covers","titel":"The Economist Cover — Jährliche \"Prophezeiungen\" der Eliten","text":"Seit 1987 veröffentlicht **The Economist** jedes Jahr eine Spezialausgabe **\"The World in...\"** (seit 2020: **\"The World Ahead...\"**) mit einem Cover voller kryptischer Symbole.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/freimaurer","titel":"Freimaurerei","text":"Die berühmteste Geheimgesellschaft der Welt. 6 Millionen+ Mitglieder weltweit, präsent in Politik, Wirtschaft, Justiz, Wissenschaft. Verschmelzung antiker Mysterienschulen mit mittelalterlichen Bauhütten.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/illuminati","titel":"Illuminati","text":"\"Die Erleuchteten\". Historisch ein bayerischer Geheimbund 1776-1785. Heute Schlüsselbegriff für die Verschwörungstheorie einer Welt-Elite, die im Hintergrund Weltgeschehen lenkt.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/jesuiten","titel":"Jesuiten — Gesellschaft Jesu","text":"Der mächtigste katholische Orden. 1540 von Ignatius von Loyola gegründet. Päpste, Politiker, Wissenschaftler in den Reihen. Häufig als \"Geheimsoldaten des Papstes\" bezeichnet. Heute Papst Franziskus (erster Jesuit als Papst, seit 2013).","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/rosenkreuzer","titel":"Rosenkreuzer","text":"Drei Schriften zwischen 1614 und 1616 lösen in Europa eine Bewegung aus, die es zu diesem Zeitpunkt gar nicht gibt. Der wahrscheinliche Autor nennt sein Werk später einen Scherz.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/skull_and_bones","titel":"Skull and Bones","text":"Yale, 1832. Fünfzehn Studenten pro Jahrgang. Drei US-Präsidenten, zwei CIA-Direktoren, ein Dutzend Wall-Street-Dynastien. Der beste dokumentierte Fall dafür, wie ein Elitenetzwerk wirklich funktioniert.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/templer","titel":"Tempelritter (Templerorden)","text":"Der berühmteste mittelalterliche Ritterorden. 1118-1307 offiziell aktiv. Reich, mächtig, mystisch. 1307 brutal zerschlagen durch König Philipp IV. von Frankreich. Bewahrer von Geheimnissen, vermutete Vorläufer der Freimaurer und Hüter des Grals.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/vatikan_geheimarchiv","titel":"Vatikan Geheimarchiv (Apostolisches Archiv)","text":"85 km Regalfläche. Dokumente seit dem 8. Jahrhundert. Bis 2019 offiziell \"Geheim\". Hütet Wissen, das die offizielle Geschichte umschreiben könnte.","modul":"12_Geheimgesellschaften"},{"id":"12_Geheimgesellschaften/wef","titel":"World Economic Forum (WEF) & Klaus Schwab","text":"Davos-Treffen. Gegründet 1971 von Klaus Schwab. Heute Hauptbühne für globale Eliten und Promotor des \"Great Reset\". Steht für: 4. Industrielle Revolution, Stakeholder-Kapitalismus, KI-Governance, \"Build Back Better\".","modul":"12_Geheimgesellschaften"},{"id":"13_Unterdruecktes_Wissen/big_pharma_rockefeller","titel":"Big Pharma und Rockefeller Medicine","text":"Die moderne Medizin ist nicht \"objektive Wissenschaft\", sondern ein Geschäftsmodell, das seit 1910 systematisch konstruiert wurde durch John D. Rockefeller. Konkurrierende Heilsysteme wurden mit Macht und Geld ausgelöscht.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/haarp","titel":"HAARP — Wetter- und Bewusstseins-Modifikation?","text":"High Frequency Active Auroral Research Program. US-Militär-Anlage in Gakona, Alaska. Offiziell: Ionosphären-Forschung. Verschwörungs-Sicht: Wettermanipulation, Erdbeben-Erzeugung, Massen-Mind-Control. Eines der umstrittensten Hochtech-Projekte der Welt.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/mind_control_mkultra","titel":"Mind Control und MKUltra","text":"CIA-Programm 1953-1973. Systematische Forschung an Gedankenkontrolle durch Drogen (LSD), Folter, Hypnose, Elektroschocks, sexuellem Missbrauch. Eines der dunkelsten Kapitel moderner Geheimdienst-Geschichte.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/operation_paperclip","titel":"Operation Paperclip","text":"Der wichtigste Fall in diesem Modul, weil er keine Legende ist. Über 1600 deutsche Wissenschaftler, viele davon NSDAP-Mitglieder und SS-Offiziere, wurden nach 1945 systematisch in die USA geholt. Ihre Akten wurden gesäubert, ihre Vergangenheit weggeschrieben.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/philadelphia_experiment_montauk","titel":"Philadelphia Experiment und Montauk","text":"Die bekannteste Zeitanomalie-Legende des 20. Jahrhunderts. Ein Zerstörer, der 1943 unsichtbar wurde. Matrosen, die mit dem Stahl verschmolzen. Später ein Radarturm auf Long Island, in dem angeblich Zeitreisen und Gedankenkontrolle stattfanden.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/royal_rife","titel":"Royal Rife und Frequenz-Heilung","text":"Erfinder eines Mikroskops, das lebende Mikroben in höchster Auflösung sichtbar machte, und eines Frequenz-Generators, der Krankheitserreger gezielt zerstört. Heilte 1934 dokumentiert 14 von 16 als \"unheilbar\" eingestuften Krebspatienten.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/schauberger","titel":"Viktor Schauberger — Lebende Wasser-Physik","text":"Österreichischer Förster und Naturphilosoph. Beobachtete Wasser im wilden Zustand, entdeckte Wirbel-Energie (Implosion), entwickelte revolutionäre Konzepte für Energiegewinnung, Wasserreinigung und sogar Anti-Gravitations-Antrieb.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/tesla_freie_energie","titel":"Nikola Tesla und Freie Energie","text":"Genialer Erfinder. Lieferte uns Wechselstrom, Funktechnik, Radar-Grundlagen. Aber sein revolutionärstes Werk — drahtlose Energieübertragung — wurde unterdrückt. Sein Vermächtnis ist Schlüssel für ein wahres post-fossiles Zeitalter.","modul":"13_Unterdruecktes_Wissen"},{"id":"13_Unterdruecktes_Wissen/wilhelm_reich","titel":"Wilhelm Reich und die Orgon-Energie","text":"Schüler Freuds. Entdeckte eine kosmische Lebenskraft (Orgon), die er für Heilung, Wetter-Beeinflussung und Bewusstseins-Transformation nutzbar machen wollte. Bücher von der FDA verbrannt 1956, starb im Gefängnis 1957.","modul":"13_Unterdruecktes_Wissen"},{"id":"14_UFOs_UAP_Disclosure/annunaki_sitchin","titel":"Annunaki und Zecharia Sitchin","text":"Babylonische und sumerische Mythen erzählen von \"Anunnaki\" — Göttern, die vom Himmel herabkamen. Zecharia Sitchin (1920-2010) interpretierte ab 1976 diese antiken Texte als Bericht über ein außerirdisches Wesen, das die Menschheit genetisch erschaffen habe.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/bob_lazar","titel":"Bob Lazar — Area 51, S4, Element 115","text":"1989 trat **Robert Scott Lazar** in einer Fernsehsendung in Las Vegas auf und behauptete: Er habe als Physiker an außerirdischen Raumschiffen in einer Geheimanlage namens S4 nahe Area 51 gearbeitet. Damit begann die moderne Area-51-Folklore.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/david_grusch_2023","titel":"David Grusch — Whistleblower 2023","text":"Am 26. Juli 2023 sagte ein ehemaliger US-Geheimdienst-Offizier mit Top Secret/SCI-Zugang vor dem US-Kongress unter Eid aus: Die USA besitzt **intakte und teilweise intakte nicht-menschliche Raumfahrzeuge** und **biologische Überreste nicht-menschlicher Wesen**…","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/et_rassen","titel":"Außerirdische Rassen — Übersicht","text":"Aus Channeling, Whistleblower-Berichten, Kontakt-Erfahrungen entsteht ein Bild verschiedener ET-\"Rassen\", die mit der Erde interagieren. Pro-mystische Synthese der wichtigsten zugeschriebenen Spezies.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/rendlesham_forest_1980","titel":"Rendlesham Forest 1980 — Britanniens Roswell","text":"Ende Dezember 1980, zwischen zwei US-Luftwaffenbasen in Suffolk, sehen Sicherheitspolizisten Lichter im Wald. Drei Nächte lang.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/roswell_1947","titel":"Roswell 1947","text":"Der berühmteste UFO-Vorfall aller Zeiten. Anfang Juli 1947 stürzte etwas in der Wüste bei Roswell, New Mexico.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/tic_tac_2004","titel":"Tic Tac UFO — USS Nimitz 2004","text":"Im November 2004 traf eine Trägergruppe der US Navy vor der Küste Kaliforniens auf ein extrem schnelles, \"Tic-Tac\"-förmiges Objekt. F/A-18-Piloten verfolgten es, dokumentierten es mit Bord-Sensoren.","modul":"14_UFOs_UAP_Disclosure"},{"id":"14_UFOs_UAP_Disclosure/vimanas","titel":"Vimanas — Antike Flugmaschinen der Veden","text":"Sanskrit-Texte (3.500+ Jahre alt) beschreiben detailliert fliegende Maschinen (\"Vimanas\") mit Anti-Schwerkraft, Quecksilber-Antrieben, Energie-Strahlen-Waffen.","modul":"14_UFOs_UAP_Disclosure"},{"id":"16_Magick_Okkulte_Systeme/chaos_magick_sigillen","titel":"Chaos Magick und Sigillenmagie","text":"Chaos Magick ist die postmoderne Strömung der westlichen Magie, entstanden Ende der 1970er in England. Ihr Kernsatz: Glaube ist ein Werkzeug, kein Dogma. Statt einem festen Symbolsystem zu folgen, wechselt der Chaos-Magier Paradigmen wie Werkzeuge.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/enochian_magic","titel":"Enochian — Das Engelsystem von John Dee und Edward Kelley","text":"Zwischen 1582 und 1589 empfingen der Gelehrte John Dee und das Medium Edward Kelley in hunderten Sitzungen ein komplettes magisches System samt eigener Sprache, angeblich diktiert von Engeln.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/goetia_grimoire_tradition","titel":"Goetia und die Grimoire-Tradition","text":"Grimoires sind die Handbücher der europäischen Magie, entstanden zwischen Spätantike und früher Neuzeit.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/golden_dawn_ritualmagie","titel":"Westliche Ritualmagie und der Golden Dawn","text":"Der Golden Dawn (gegründet 1888 in London) ist die einflussreichste magische Organisation der westlichen Moderne. Fast alles, was heute unter westlicher Ritualmagie läuft, geht direkt oder indirekt auf sein Curriculum zurück.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/kabbalistische_magie","titel":"Kabbalistische Magie und Pfad-Arbeit","text":"Der Lebensbaum ist das Betriebssystem der westlichen Magie. Zehn Sphären, zweiundzwanzig Pfade, ein Diagramm, an das seit dem 19. Jahrhundert alles angeschlossen wurde: Tarot, Planeten, Farben, Engel, Räucherwerk, Körperzonen.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/thelema_crowley","titel":"Thelema und Aleister Crowley","text":"Thelema (griechisch für Wille) ist die religiös-magische Philosophie, die Aleister Crowley 1904 nach dem Empfang des Liber AL vel Legis in Kairo begründete. Kernsatz: Do what thou wilt shall be the whole of the Law.","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/voodoo_vodou","titel":"Vodou — die haitianische Tradition","text":"Vodou ist die am gründlichsten verleumdete Religion der westlichen Hemisphäre. Was Hollywood als Puppen mit Nadeln und wandelnde Tote verkauft, ist in Wirklichkeit ein hochstrukturiertes westafrikanisches Religionssystem, das die Sklaverei überlebt hat und in …","modul":"16_Magick_Okkulte_Systeme"},{"id":"16_Magick_Okkulte_Systeme/wicca_neopagan","titel":"Wicca und Neopaganismus","text":"Wicca ist die einzige größere Religion, die nachweisbar im 20. Jahrhundert in England entstanden ist und sich trotzdem als uralt versteht. Gerald Gardner veröffentlichte 1954 \"Witchcraft Today\" und behauptete, einen überlebenden Hexenkult gefunden zu haben.","modul":"16_Magick_Okkulte_Systeme"},{"id":"17_Heilige_Texte_Verborgen/buch_henoch","titel":"Das Buch Henoch","text":"Ein Buch, das im Judasbrief des Neuen Testaments zitiert wird und trotzdem aus fast allen Bibeln verschwand. Es erzählt vom Fall der Wächter-Engel, von den Nephilim, von Himmelsreisen und von einem Sonnenkalender mit 364 Tagen.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/dead_sea_scrolls","titel":"Dead Sea Scrolls (Qumran-Rollen)","text":"1947 wirft ein Beduinenjunge einen Stein in eine Höhle bei Qumran und hört Tonkrüge zerbrechen. Was folgt, ist der größte Handschriftenfund des 20. Jahrhunderts: über 900 Manuskripte, bis zu 2000 Jahre alt, darunter die ältesten bekannten Bibeltexte der Welt.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/enuma_elish","titel":"Enuma Elisch — das babylonische Schöpfungsepos","text":"Sieben Tontafeln aus der Bibliothek von Ninive, ausgegraben ab 1849, erstmals veröffentlicht 1876. Sie erzählen, wie der Gott Marduk die Urmutter Tiamat erschlägt und aus ihrem Körper die Welt baut.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/evangelium_maria","titel":"Evangelium der Maria","text":"Ein koptischer Papyrus, 1896 in Kairo gekauft, erst 1955 veröffentlicht. Er enthält den einzigen bekannten frühchristlichen Text, der nach einer Frau benannt ist. Der Inhalt ist eine Auseinandersetzung darüber, wer die Botschaft Jesu weitergeben darf.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/evangelium_thomas","titel":"Das Evangelium nach Thomas","text":"Kein Geburtsbericht, keine Wunder, keine Kreuzigung, keine Auferstehung. Nur 114 Aussprüche Jesu, einer nach dem anderen.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/gnostische_kosmologie","titel":"Gnostische Kosmologie — Demiurg, Archonten, Pleroma","text":"Die Gnosis stellt eine Frage, die das Christentum lieber nicht gestellt hätte: Wenn Gott gut und allmächtig ist, warum ist diese Welt so, wie sie ist. Ihre Antwort ist radikal.","modul":"17_Heilige_Texte_Verborgen"},{"id":"17_Heilige_Texte_Verborgen/nag_hammadi","titel":"Nag Hammadi Bibliothek","text":"Im Dezember 1945 findet ein ägyptischer Bauer am Fuß des Jabal al-Tarif bei Nag Hammadi einen versiegelten Tonkrug mit dreizehn ledergebundenen Papyrus-Codices. Darin: 52 Schriften, größtenteils gnostisch, die fast 1600 Jahre im Wüstensand lagen.","modul":"17_Heilige_Texte_Verborgen"},{"id":"18_Heilige_Geographie/gizeh_orion","titel":"Gizeh und die Orion-Korrelation","text":"Das Gizeh-Plateau ist der meistuntersuchte heilige Ort der Welt und trotzdem voller offener Fragen.","modul":"18_Heilige_Geographie"},{"id":"18_Heilige_Geographie/goebekli_tepe","titel":"Göbekli Tepe und die Taş Tepeler","text":"Ein Hügel in Südostanatolien hat die Erzählung von der Menschheitsgeschichte umgedreht. Monumentale Steinkreise, rund 11.500 Jahre alt, gebaut von Menschen ohne Töpferei, ohne Metall, ohne Schrift und nach klassischer Lehrmeinung ohne Landwirtschaft.","modul":"18_Heilige_Geographie"},{"id":"18_Heilige_Geographie/ley_lines_earth_grid","titel":"Ley Lines und Earth Grid Theorien","text":"Die Idee: Heilige Stätten liegen nicht zufällig, sondern auf Linien oder in einem geometrischen Gitter, das die Erde überzieht. Von Alfred Watkins' nüchternen Sichtlinien 1921 bis zum planetaren Kristallgitter von Becker und Hagens.","modul":"18_Heilige_Geographie"},{"id":"18_Heilige_Geographie/nazca_lines","titel":"Die Nazca-Linien","text":"In der peruanischen Wüste liegen hunderte Figuren und tausende Linien, manche über einen Kilometer lang, die vom Boden aus kaum als Bild erkennbar sind. Genau diese Tatsache hat sie zum Lieblingsobjekt der Prä-Astronautik gemacht.","modul":"18_Heilige_Geographie"},{"id":"18_Heilige_Geographie/pyramiden_global","titel":"Pyramiden weltweit als globales Phänomen","text":"Pyramiden stehen auf fast jedem Kontinent. Ägypten, Sudan, Mexiko, Peru, China, Indonesien, möglicherweise Europa.","modul":"18_Heilige_Geographie"},{"id":"18_Heilige_Geographie/stonehenge","titel":"Stonehenge und die Sonnenwende-Achse","text":"Stonehenge ist der bekannteste Steinkreis der Welt und gleichzeitig der am gründlichsten missverstandene. Es ist keine Druiden-Anlage, kein Computer und kein Landeplatz.","modul":"18_Heilige_Geographie"},{"id":"19_Prophezeiungen/astro_prognose_2026_2030","titel":"Astro-Prognose 2026-2030","text":"Synthese der wichtigsten astrologischen Konstellationen und Prophezeiungen für die nächsten Jahre. Pro-mystische Lese mehrerer Quellen kombiniert.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/baba_vanga","titel":"Baba Vanga — Die Bulgarische Sehrin","text":"Vangelija Pandeva Gušterova (1911-1996). Blinde bulgarische Sehrin. Soll über Jahrzehnte hunderte zukünftige Ereignisse korrekt vorhergesagt haben — 9/11, Tsunami 2004, COVID-19 (umstritten), Trump-Wahl, KI-Aufstieg.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/daniel_prophezeiungen","titel":"Das Buch Daniel","text":"Das älteste vollständig erhaltene apokalyptische Buch der Bibel. Vier Weltreiche, ein Stein der sie alle zerschlägt, siebzig Wochen bis zum Ende. Kein anderer Text hat so viele Endzeitkalender hervorgebracht.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/edgar_cayce","titel":"Edgar Cayce — Der Schlafende Prophet","text":"Amerikanischer Hellseher (1877-1945). Gab in Trance über 14.000 dokumentierte Readings zu Medizin, Geschichte (Atlantis, Ägypten), zukünftigen Ereignissen, persönlichen Lebensführungen. Eine der best-dokumentierten parapsychologischen Quellen aller Zeiten.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/fatima_drei_geheimnisse","titel":"Fatima — Die drei Geheimnisse","text":"1917 erschien drei portugiesischen Hirtenkindern bei Fátima die Jungfrau Maria. Sie offenbarte drei Geheimnisse. Die ersten zwei wurden 1941 veröffentlicht. Das dritte wurde bis 2000 versiegelt — und seine \"veröffentlichte Version\" ist bis heute umstritten.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/hopi_prophezeiung","titel":"Hopi-Prophezeiung","text":"Die Hopi sind ein indigenes Volk im Südwesten der USA (Arizona). Ihre Prophezeiung der \"Großen Reinigung\" wurde 1948 öffentlich gemacht. Sie spricht vom Ende der 4. Welt und dem Eintritt in die 5.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/johannes_offenbarung","titel":"Die Offenbarung des Johannes","text":"Das letzte Buch des Neuen Testaments. Geschrieben vermutlich um 95 n. Chr. auf der Insel Patmos. Kein Buch der westlichen Welt hat die Vorstellung vom Weltende stärker geprägt. Vier Reiter, sieben Siegel, die Zahl 666, das neue Jerusalem.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/nostradamus","titel":"Nostradamus","text":"Michel de Nostredame (1503-1566). Französischer Apotheker, Arzt und Seher. Veröffentlichte 1555 \"Les Propheties\" mit 942 vierzeiligen Versen (Quatrains), die in absichtlich verschlüsselter Sprache zukünftige Ereignisse vorhersagen.","modul":"19_Prophezeiungen"},{"id":"19_Prophezeiungen/saint_malachy","titel":"Saint Malachy — Liste der 112 Päpste","text":"Heiliger Malachias (1094-1148), irischer Erzbischof von Armagh. Soll 1139 in Rom eine Vision empfangen haben mit den Namen aller zukünftigen Päpste bis zum letzten Papst \"Petrus Romanus\" und der Zerstörung Roms.","modul":"19_Prophezeiungen"},{"id":"20_Bewusstseinsforschung/dmt_spirit_molecule","titel":"DMT und die Spirit-Molecule-Hypothese","text":"Anfang der 1990er Jahre bekam ein Psychiater in New Mexico als Erster seit über zwanzig Jahren wieder eine US-Genehmigung, ein starkes Psychedelikum am Menschen zu untersuchen.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/mandela_effekt","titel":"Der Mandela Effekt und die Forschung zu falschen Erinnerungen","text":"Tausende Menschen erinnern sich an dasselbe Detail. Und das Detail existiert nachweislich nicht. Das ist der Mandela Effekt. Die spannende Frage ist nicht, ob die Erinnerungen falsch sind, das sind sie.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/meditation_neuroscience","titel":"Meditation und Neurowissenschaft","text":"Seit den 2000er Jahren liegen tibetische Mönche mit zehntausenden Stunden Praxis in fMRT-Scannern in Wisconsin. Was dabei herauskam, ist real und messbar, wird aber in der populären Darstellung regelmäßig überzeichnet.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/nahtoderfahrungen","titel":"Nahtoderfahrungen und die Forschung dazu","text":"Nahtoderfahrungen sind das am besten dokumentierte Phänomen der Bewusstseinsforschung. Millionen Menschen berichten weltweit von strukturell ähnlichen Erlebnissen an der Schwelle des klinischen Todes. Die Frage ist nicht, ob diese Erfahrungen stattfinden.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/out_of_body","titel":"Außerkörperliche Erfahrungen und das Monroe Institute","text":"Ein Radiomanager aus Virginia beginnt 1958 ungewollt, seinen Körper zu verlassen, dokumentiert es wie ein Ingenieur und baut daraus ein Forschungsinstitut.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/reinkarnationsforschung","titel":"Reinkarnationsforschung, Stevenson und Tucker","text":"Ein Psychiater der University of Virginia hat vierzig Jahre damit verbracht, Kinder zu interviewen, die von einem früheren Leben erzählen. Er hat dabei über zweitausendfünfhundert Fälle dokumentiert, viele mit Namen, Orten und überprüfbaren Details.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/remote_viewing","titel":"Remote Viewing und Project Stargate","text":"Über zwanzig Jahre lang bezahlten CIA und US Army Menschen dafür, mit geschlossenen Augen sowjetische Anlagen zu beschreiben. Das Programm hieß zuletzt Stargate, kostete rund 20 Millionen Dollar und wurde 1995 beendet und deklassifiziert.","modul":"20_Bewusstseinsforschung"},{"id":"20_Bewusstseinsforschung/simulationshypothese","titel":"Simulationshypothese, Bostroms Trilemma und das holografische Prinzip","text":"Die populäre Version lautet: \"Ein Oxford Philosoph hat bewiesen, dass wir in einer Simulation leben.\" Das ist falsch. Nick Bostrom hat 2003 etwas viel Vorsichtigeres formuliert, nämlich ein Trilemma. Er sagt nicht, welcher der drei Äste wahr ist.","modul":"20_Bewusstseinsforschung"},{"id":"21_Spirituelle_Anatomie/aurafelder","titel":"Aurafelder. Sieben Schichten, Farben und die Grenze der Prüfbarkeit","text":"Die Aura ist die Vorstellung eines feinstofflichen Feldes, das den Körper umgibt und Zustände des Menschen als Farbe, Struktur und Dichte zeigt.","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/chakren_klassisch_vertieft","titel":"Das klassische 7-Chakra-System und seine tantrischen Wurzeln","text":"Chakra (Sanskrit: cakra) bedeutet Rad oder Kreis. Das heute weltbekannte System aus sieben Energiezentren entlang der Wirbelsäule ist keine uralte vedische Universallehre, sondern das Ergebnis einer langen Entwicklung: tantrische Visualisierungspraxis aus dem …","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/kundalini","titel":"Kundalini in Tradition und moderner Rezeption","text":"Kundalini bezeichnet in der tantrischen Tradition eine im Körper ruhende göttliche Kraft, dargestellt als zusammengerollte Schlange am unteren Ende der Wirbelsäule. Ihr Aufstieg durch die Chakren gilt als Weg zur Befreiung. Im 20.","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/merkaba","titel":"Merkaba. Vom Thronwagen Hesekiels zum Stern-Tetraeder","text":"Merkaba ist heute das Bild zweier gegenläufig rotierender Tetraeder um den menschlichen Körper. Ursprünglich war Merkava etwas völlig anderes: der Thronwagen Gottes in der jüdischen Mystik, ein Text- und Aufstiegsmysterium ohne jede Geometrie.","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/nadis_meridiane","titel":"Nadis, Meridiane und Feinstoffkörper","text":"Zwei große Kulturen haben unabhängig voneinander Landkarten des Energieflusses im Körper entwickelt: Indien mit den Nadis, China mit den Meridianen. Dazu kommt die indische Lehre von den Hüllen und Körpern jenseits des physischen Leibes.","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/pineal_zirbeldruese","titel":"Zirbeldrüse zwischen Anatomie und Mystik","text":"Die Zirbeldrüse (Epiphyse, englisch pineal gland) ist ein erbsengroßes Organ im Zentrum des Gehirns, das Melatonin produziert.","modul":"21_Spirituelle_Anatomie"},{"id":"21_Spirituelle_Anatomie/subtile_koerper","titel":"Subtile Körper. Ätherleib, Astralleib, Mentalleib, Kausalleib","text":"Fast jede kontemplative Tradition beschreibt den Menschen als Schichtung mehrerer Körper, nicht als einen. Die westliche Fassung mit Ätherleib, Astralleib, Mentalleib und Kausalleib ist allerdings jünger, als sie tut. Sie ist eine Synthese des 19.","modul":"21_Spirituelle_Anatomie"},{"id":"22_Banned_Books/bibel_apokryphen","titel":"Bibel-Apokryphen. Welche Bücher wann herausfielen","text":"Die verbreitetste Erzählung lautet, das Konzil von Nicäa habe 325 die Bibel zusammengestellt und den Rest verboten. Das ist historisch falsch, und zwar nachweisbar.","modul":"22_Banned_Books"},{"id":"22_Banned_Books/bibliothek_alexandria","titel":"Die Bibliothek von Alexandria und andere zerstörte Bibliotheken","text":"Die größte Wissenssammlung der Antike verschwand nicht in einer einzigen Nacht. Sie starb über Jahrhunderte, durch Krieg, Budgetkürzungen, religiösen Eifer und Gleichgültigkeit.","modul":"22_Banned_Books"},{"id":"22_Banned_Books/index_librorum_prohibitorum","titel":"Index Librorum Prohibitorum. Die Verbotsliste des Vatikans","text":"Über 400 Jahre führte die katholische Kirche eine offizielle Liste verbotener Bücher, von 1559 bis 1966. Wer darauf stand, liest sich heute wie ein Kanon der westlichen Geistesgeschichte: Kopernikus, Galilei, Kant, Sartre.","modul":"22_Banned_Books"},{"id":"22_Banned_Books/maya_codices","titel":"Die Maya-Codices. Mani 1562 und der Verlust einer Schriftkultur","text":"Die Maya besaßen eine voll entwickelte Schrift und eine Bibliothekskultur aus bemalten Faltbüchern. Heute existieren davon vier.","modul":"22_Banned_Books"},{"id":"22_Banned_Books/tesla_papiere","titel":"Die Tesla-Papiere. Beschlagnahme 1943, Trump-Gutachten, Aktenlage","text":"Nikola Tesla stirbt am 7. Januar 1943 allein in einem New Yorker Hotelzimmer. Innerhalb von Tagen beschlagnahmt eine US-Behörde seinen gesamten Nachlass. Ein MIT-Physiker begutachtet die Papiere und erklärt sie für harmlos.","modul":"22_Banned_Books"},{"id":"22_Banned_Books/vatikan_geheimarchiv","titel":"Das Vatikanische Geheimarchiv. Fakten, Zugang, Mythen","text":"85 Kilometer Regale, rund 12 Jahrhunderte Dokumente, ein Name, der jahrhundertelang \"geheim\" hieß.","modul":"22_Banned_Books"},{"id":"23_Chinesische_Metaphysik/bazi_vier_saeulen","titel":"BaZi — Die Vier Säulen des Schicksals","text":"BaZi (八字, \"acht Zeichen\") ist das Kernsystem der chinesischen Schicksalsanalyse. Aus Jahr, Monat, Tag und Stunde der Geburt entstehen vier Säulen mit je zwei Zeichen, also acht Zeichen insgesamt.","modul":"23_Chinesische_Metaphysik"},{"id":"23_Chinesische_Metaphysik/fuenf_elemente_wandlungsphasen","titel":"Wu Xing — Die fünf Wandlungsphasen","text":"Wu Xing (五行) heißt wörtlich \"fünf Gänge\" oder \"fünf Bewegungen\", nicht \"fünf Elemente\". Das ist der entscheidende Unterschied zur westlichen Elementenlehre: es geht nicht um Baustoffe, sondern um Phasen einer Wandlung.","modul":"23_Chinesische_Metaphysik"},{"id":"23_Chinesische_Metaphysik/stamm_zweig_kalender","titel":"Stamm-Zweig-Kalender — Der Sexagesimalzyklus und die Säulen 2026/2027","text":"Der Ganzhi-Kalender (干支) kombiniert zehn Himmelsstämme mit zwölf Erdzweigen zu 60 einzigartigen Paaren. Er läuft für Jahre, Monate, Tage und Stunden parallel und ist die operative Grundlage für jede Zeitqualitäts-Analyse.","modul":"23_Chinesische_Metaphysik"}];
+
+// --- Sternzeichen ---
+G.ZODIAC = [
+  { name: 'Widder', sym: '♈', element: 'Feuer', planet: 'Mars', licht: 'Mut und Aufbruch', schatten: 'Ungeduld' },
+  { name: 'Stier', sym: '♉', element: 'Erde', planet: 'Venus', licht: 'Beständigkeit', schatten: 'Starrheit' },
+  { name: 'Zwillinge', sym: '♊', element: 'Luft', planet: 'Merkur', licht: 'Neugier', schatten: 'Zerstreuung' },
+  { name: 'Krebs', sym: '♋', element: 'Wasser', planet: 'Mond', licht: 'Fürsorge', schatten: 'Rückzug' },
+  { name: 'Löwe', sym: '♌', element: 'Feuer', planet: 'Sonne', licht: 'Herz und Würde', schatten: 'Stolz' },
+  { name: 'Jungfrau', sym: '♍', element: 'Erde', planet: 'Merkur', licht: 'Klarheit', schatten: 'Zweifel' },
+  { name: 'Waage', sym: '♎', element: 'Luft', planet: 'Venus', licht: 'Ausgleich', schatten: 'Unentschlossenheit' },
+  { name: 'Skorpion', sym: '♏', element: 'Wasser', planet: 'Mars', licht: 'Tiefe', schatten: 'Kontrolle' },
+  { name: 'Schütze', sym: '♐', element: 'Feuer', planet: 'Jupiter', licht: 'Weite und Sinn', schatten: 'Maßlosigkeit' },
+  { name: 'Steinbock', sym: '♑', element: 'Erde', planet: 'Saturn', licht: 'Ausdauer', schatten: 'Härte' },
+  { name: 'Wassermann', sym: '♒', element: 'Luft', planet: 'Saturn', licht: 'Freiheit', schatten: 'Distanz' },
+  { name: 'Fische', sym: '♓', element: 'Wasser', planet: 'Jupiter', licht: 'Mitgefühl', schatten: 'Verlorenheit' },
+];
+
+G.SPIRITS = {
+  Mars: { name: 'Funke', farbe: '#e8703f', wesen: 'ein rastloser Funke, der vorausdrängt' },
+  Venus: { name: 'Lumen', farbe: '#7ec97e', wesen: 'ein warmes Licht, das Schönheit sucht' },
+  Merkur: { name: 'Botin', farbe: '#ffd580', wesen: 'eine flinke Botin zwischen den Welten' },
+  Mond: { name: 'Silber', farbe: '#c0d5e8', wesen: 'ein stilles Silberlicht, das mit den Gezeiten atmet' },
+  Sonne: { name: 'Aur', farbe: '#ffa500', wesen: 'ein goldener Kern, der nicht erlischt' },
+  Jupiter: { name: 'Weit', farbe: '#b89ee8', wesen: 'ein weiter Klang, der Türen größer macht' },
+  Saturn: { name: 'Ring', farbe: '#9aa0ac', wesen: 'ein ruhiger Ring, der prüft, was bleibt' },
+};
+
+G.GIFTS = {
+  1: { name: 'Pionier', text: 'Du öffnest, was verschlossen scheint.' },
+  2: { name: 'Vermittler', text: 'Du hörst, was zwischen den Worten liegt.' },
+  3: { name: 'Stimme', text: 'Deine Worte tragen weiter als du denkst.' },
+  4: { name: 'Baumeister', text: 'Du erkennst das Fundament unter allem.' },
+  5: { name: 'Wanderer', text: 'Wege zeigen sich dir, wo andere Mauern sehen.' },
+  6: { name: 'Hüter', text: 'Was du beschützt, wächst.' },
+  7: { name: 'Sucher', text: 'Verborgenes ruft nach dir.' },
+  8: { name: 'Former', text: 'Du verstehst die Sprache der Kraft.' },
+  9: { name: 'Vollender', text: 'Du siehst Kreise, wo andere Linien sehen.' },
+  11: { name: 'Seher', text: 'Meisterzahl. Du empfängst, was noch nicht Form hat.' },
+  22: { name: 'Weltenbauer', text: 'Meisterzahl. Du kannst Träume in Stein setzen.' },
+  33: { name: 'Lehrer', text: 'Meisterzahl. Durch dich lernt das Muster sich selbst.' },
+};
+
+G.nameNumber = (name) => {
+  const vals = { a:1,b:2,c:3,d:4,e:5,f:6,g:7,h:8,i:9,j:1,k:2,l:3,m:4,n:5,o:6,p:7,q:8,r:9,s:1,t:2,u:3,v:4,w:5,x:6,y:7,z:8 };
+  const clean = name.toLowerCase().replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss');
+  let sum = 0;
+  for (const ch of clean) if (vals[ch]) sum += vals[ch];
+  if (sum === 0) sum = 9;
+  while (sum > 9 && sum !== 11 && sum !== 22 && sum !== 33) {
+    sum = String(sum).split('').reduce((a, d) => a + Number(d), 0);
+  }
+  return sum;
+};
+
+G.saturnPhase = (age) => {
+  if (age < 29.5) return { name: 'Der erste Ring', text: 'Deine Reise handelt vom Finden.' };
+  if (age < 59) return { name: 'Die Rückkehr', text: 'Deine Reise handelt vom Wandeln.' };
+  return { name: 'Der Weise', text: 'Deine Reise handelt vom Weitergeben.' };
+};
+
+G.makeSignature = (name, zodiacIdx, age) => {
+  const z = G.ZODIAC[zodiacIdx];
+  const num = G.nameNumber(name);
+  return {
+    name, age, zodiacIdx,
+    zeichen: z.name, sym: z.sym, element: z.element, planet: z.planet,
+    licht: z.licht, schatten: z.schatten,
+    zahl: num, gabe: G.GIFTS[num],
+    saturn: G.saturnPhase(age),
+    spirit: G.SPIRITS[z.planet],
+    farben: G.ELEMENT_COLORS[z.element],
+    seed: G.hashStr(name.toLowerCase() + '|' + z.name + '|' + age),
+  };
+};
+
+G.newState = () => ({
+  sig: null,
+  phase: 'prolog',
+  area: 'stadt', room: '1,1', px: 168, py: 260,
+  flags: {},
+  fragmente: [],
+  stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0 },
+});
+
+// ============================================================
+// KARTEN-BAUKASTEN
+// Räume sind 15 Zeichen breit, 22 hoch. Der Baukasten sorgt
+// dafür, dass Ränder, Durchgänge und Maße immer stimmen.
+// ============================================================
+const RW = 15, RH = 22;
+
+// exits: {n:true, s:true, w:true, o:true} = Durchgang in die Richtung
+function room(exits, fill = '.', wall = '#') {
+  const g = [];
+  for (let y = 0; y < RH; y++) {
+    const row = [];
+    for (let x = 0; x < RW; x++) {
+      const border = (x === 0 || x === RW - 1 || y === 0 || y === RH - 1);
+      row.push(border ? wall : fill);
+    }
+    g.push(row);
+  }
+  // Durchgänge in die Mitte der jeweiligen Kante, 3 Felder breit
+  const mx = Math.floor(RW / 2), my = Math.floor(RH / 2);
+  if (exits.n) for (let x = mx - 1; x <= mx + 1; x++) g[0][x] = fill;
+  if (exits.s) for (let x = mx - 1; x <= mx + 1; x++) g[RH - 1][x] = fill;
+  if (exits.w) for (let y = my - 1; y <= my + 1; y++) g[y][0] = fill;
+  if (exits.o) for (let y = my - 1; y <= my + 1; y++) g[y][RW - 1] = fill;
+  return g;
+}
+
+// Rechteck oder Linie in einen Raum stempeln
+function put(g, x, y, ch) { if (g[y] && g[y][x] !== undefined) g[y][x] = ch; }
+function rect(g, x1, y1, x2, y2, ch) {
+  for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) put(g, x, y, ch);
+}
+function hline(g, y, x1, x2, ch) { for (let x = x1; x <= x2; x++) put(g, x, y, ch); }
+function vline(g, x, y1, y2, ch) { for (let y = y1; y <= y2; y++) put(g, x, y, ch); }
+function toStrings(g) { return g.map((r) => r.join('')); }
+
+// ------------------------------------------------------------
+// PROLOG: die graue Stadt
+// ------------------------------------------------------------
+function buildStadt() {
+  const rooms = {};
+
+  // Zentrum: Straßenkreuzung
+  let g = room({ n: true, s: true, w: true, o: true });
+  hline(g, 7, 1, 13, '='); hline(g, 8, 1, 13, '=');
+  hline(g, 14, 1, 13, '='); hline(g, 15, 1, 13, '=');
+  vline(g, 6, 1, 20, '='); vline(g, 7, 1, 20, '=');
+  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 18, 'T'); put(g, 12, 18, 'T');
+  rect(g, 9, 2, 12, 3, 'W');
+  rooms['1,1'] = toStrings(g);
+
+  // Westen: Platz mit Bänken
+  g = room({ o: true });
+  rect(g, 3, 5, 11, 6, '=');
+  rect(g, 3, 15, 11, 16, '=');
+  put(g, 4, 9, 'T'); put(g, 10, 9, 'T'); put(g, 7, 12, 'T');
+  rooms['0,1'] = toStrings(g);
+
+  // Osten: Gasse mit Häuserfront
+  g = room({ w: true, s: true });
+  rect(g, 2, 2, 6, 6, '#'); rect(g, 3, 3, 5, 5, 'W');
+  rect(g, 9, 2, 13, 6, '#'); rect(g, 10, 3, 12, 5, 'W');
+  vline(g, 7, 1, 20, '=');
+  put(g, 3, 16, 'T'); put(g, 11, 16, 'T');
+  rooms['2,1'] = toStrings(g);
+
+  // Norden: Park am Wasser
+  g = room({ s: true });
+  rect(g, 1, 1, 13, 5, '~');
+  put(g, 3, 9, 'T'); put(g, 11, 9, 'T'); put(g, 5, 14, 'T'); put(g, 9, 14, 'T');
+  hline(g, 11, 1, 13, '=');
+  rooms['1,0'] = toStrings(g);
+
+  // Süden: die alte Ladenzeile
+  g = room({ n: true, o: true });
+  // Ladenblock mit Tür in der Mitte
+  rect(g, 4, 8, 10, 13, '#');
+  rect(g, 5, 9, 9, 11, 'W');
+  put(g, 7, 13, 'D');
+  put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rooms['1,2'] = toStrings(g);
+
+  // Südost: Sackgasse
+  g = room({ w: true });
+  rect(g, 3, 3, 11, 4, '#');
+  put(g, 4, 12, 'T'); put(g, 10, 12, 'T');
+  rooms['2,2'] = toStrings(g);
+
+  return {
+    pal: 'gray',
+    rooms,
+    npcs: {
+      '1,1': [ { x: 4, y: 10, v: 0, dlg: 'stadt_pendler' }, { x: 10, y: 17, v: 1, dlg: 'stadt_meckerer' } ],
+      '0,1': [ { x: 7, y: 8, v: 0, dlg: 'stadt_scroller' } ],
+      '2,1': [ { x: 9, y: 12, v: 2, dlg: 'stadt_alte_frau' } ],
+      '1,0': [ { x: 7, y: 16, v: 1, dlg: 'stadt_parkmann' } ],
+      '1,2': [ { x: 4, y: 17, v: 3, dlg: 'stadt_kind' } ],
+      '2,2': [ { x: 7, y: 15, v: 1, dlg: 'stadt_obdachloser' } ],
+    },
+    triggers: { '1,2': [ { x1: 6, y1: 13, x2: 8, y2: 13, event: 'laden' } ] },
+    ambient: 'regen',
+  };
+}
+
+// ------------------------------------------------------------
+// ARKANA: die Aschenstadt
+// ------------------------------------------------------------
+function buildAsche() {
+  const rooms = {};
+
+  // Zentrum: Ruine des Archivs
+  let g = room({ n: true, s: true, w: true, o: true });
+  rect(g, 5, 7, 9, 12, '#');
+  rect(g, 6, 8, 8, 11, ',');
+  put(g, 7, 12, 'D');
+  vline(g, 7, 13, 20, '*');
+  put(g, 2, 4, 'T'); put(g, 12, 4, 'T'); put(g, 2, 17, 'T'); put(g, 12, 17, 'T');
+  rooms['1,1'] = toStrings(g);
+
+  // Westen: Nebelufer
+  g = room({ o: true });
+  rect(g, 1, 1, 5, 8, '~');
+  put(g, 8, 6, 'T'); put(g, 4, 14, 'T'); put(g, 10, 16, 'T');
+  hline(g, 10, 6, 13, '=');
+  rooms['0,1'] = toStrings(g);
+
+  // Osten: Markt der Mustersucher
+  g = room({ w: true, n: true });
+  rect(g, 4, 6, 10, 7, '=');
+  rect(g, 4, 13, 10, 14, '=');
+  put(g, 3, 3, 'T'); put(g, 11, 3, 'T');
+  put(g, 3, 18, 'T'); put(g, 11, 18, 'T');
+  rooms['2,1'] = toStrings(g);
+
+  // Norden: Spiegelhof mit dem Schrein
+  g = room({ s: true });
+  rect(g, 3, 5, 11, 15, '#');
+  rect(g, 4, 6, 10, 14, ',');
+  hline(g, 15, 6, 8, ',');   // Zugang von unten
+  vline(g, 7, 16, 20, '*');
+  rooms['1,0'] = toStrings(g);
+
+  // Nordost: Leylinien-Feld
+  g = room({ s: true, w: true });
+  vline(g, 4, 1, 20, '*'); vline(g, 10, 1, 20, '*');
+  put(g, 7, 5, 'T'); put(g, 7, 16, 'T');
+  rooms['2,0'] = toStrings(g);
+
+  // Süden: Ascheweg
+  g = room({ n: true, o: true });
+  vline(g, 7, 1, 12, '*');
+  rect(g, 3, 14, 11, 15, '=');
+  put(g, 2, 5, 'T'); put(g, 12, 5, 'T'); put(g, 4, 18, 'T'); put(g, 10, 18, 'T');
+  rooms['1,2'] = toStrings(g);
+
+  // Südost: stille Kammer
+  g = room({ w: true });
+  rect(g, 4, 6, 10, 13, '#');
+  rect(g, 5, 7, 9, 12, ',');
+  put(g, 7, 13, 'D');
+  rooms['2,2'] = toStrings(g);
+
+  return {
+    pal: 'amber',
+    rooms,
+    npcs: {
+      '1,1': [ { x: 3, y: 15, v: 2, dlg: 'asche_wache' } ],
+      '0,1': [ { x: 10, y: 12, v: 3, dlg: 'asche_sucherin' } ],
+      '2,1': [ { x: 7, y: 9, v: 1, dlg: 'asche_haendler' } ],
+      '1,2': [ { x: 11, y: 9, v: 2, dlg: 'asche_kind' } ],
+      '2,2': [ { x: 7, y: 16, v: 3, dlg: 'asche_alter' } ],
+    },
+    shrines: { '1,0': { x: 5 * 24, y: 8 * 24 } },
+    fragSpots: {
+      '1,1': [ [3, 6], [11, 14] ],
+      '0,1': [ [9, 3], [3, 17] ],
+      '2,1': [ [7, 4], [5, 17] ],
+      '1,2': [ [3, 8], [11, 16] ],
+      '2,0': [ [7, 9], [2, 14], [12, 6] ],
+      '2,2': [ [3, 4], [11, 18] ],
+      '1,0': [ [9, 18] ],
+    },
+    ambient: 'asche',
+  };
+}
+
+G.MAPS = { stadt: buildStadt(), asche: buildAsche() };
+
+// ============================================================
+// DIALOGE
+// ============================================================
+G.DIALOGE = {
+  stadt_pendler: ['Entschuldige, keine Zeit. Ich bin schon zu spät für etwas, das mir egal ist.'],
+  stadt_meckerer: ['Seit damals ist alles anders, sag ich dir. Die Leute reden nur noch übereinander, nicht mehr miteinander.', 'Aber was soll man machen. Ist halt so.'],
+  stadt_scroller: ['Warte kurz, ich muss das zu Ende scrollen.', '... okay, was wolltest du? Egal, ich habs vergessen.'],
+  stadt_alte_frau: ['Du siehst es auch, oder? Diesen Schleier über allem.', 'Die meisten haben aufgehört zu schauen. Du nicht.', 'Geh zur alten Ladenzeile im Süden. Wenn du nachts das Flackern siehst, dann ist es soweit.'],
+  stadt_parkmann: ['Früher war der Park voller Stimmen. Jetzt sitzen alle woanders. Ich weiß auch nicht wo.'],
+  stadt_kind: ['Psst. Der Laden da hinten hat kein Schild.', 'Aber um 3 Uhr 33 leuchtet er. Ich habs gesehen. Mir glaubt ja keiner.'],
+  stadt_obdachloser: ['Ich hab aufgehört, die Tage zu zählen. Aber die Zahlen zählen weiter, das merk ich schon.'],
+  asche_wache: ['Halt. Du trägst kein Siegel des Index.', '... und doch stehst du hier. Das Muster hat dich durchgelassen.', 'Willkommen in der Aschenstadt, Suchender. Sammle, was der Index verstreut hat. Die Fragmente leuchten nur für die, die schauen.'],
+  asche_sucherin: ['Wir nennen uns Mustersucher. Wir sammeln, was nicht verbrannt ist.', 'Der Index sagt, Wissen schützt uns nicht. Wir sagen, ohne Wissen gibt es nichts zu schützen.'],
+  asche_haendler: ['Fragmente, Splitter, halbe Wahrheiten. Alles im Angebot.', 'Kleiner Rat unter uns: Nicht alles, was leuchtet, ist echt.', 'Prüfen kostet Zeit. Glauben kostet mehr.'],
+  asche_kind: ['Ich hab von der großen Bibliothek geträumt. Da waren Bücher, die es gar nicht mehr gibt.', 'Mama sagt, träumen ist nicht verboten. Noch nicht.'],
+  asche_alter: ['Der Spiegelhof im Norden zeigt dir nicht die Zukunft.', 'Er zeigt dir, wer du gerade bist. Das ist unbequemer.'],
+};
+
+// ===== 04_scenes.js =====
+'use strict';
+// ============================================================
+// ARKANA Scenes (Hochformat 360x640)
+// ============================================================
+const TT = 24;
+
+// ------------------------------------------------------------
+// Titel
+// ------------------------------------------------------------
+G.TitleScene = () => {
+  let t = 0; let sel = 0;
+  const hasSave = !!G.load();
+  const opts = hasSave ? ['WEITERSPIELEN', 'NEUES SPIEL'] : ['NEUES SPIEL'];
+  const stars = [];
+  const rng = G.mulberry32(7);
+  for (let i = 0; i < 90; i++) stars.push({ x: rng() * G.W, y: rng() * G.H, s: rng(), sz: rng() > 0.9 ? 2 : 1 });
+  return {
+    update(dt) {
+      t += dt;
+      if (G.input.pressed('up') || G.input.pressed('down')) sel = (sel + 1) % opts.length;
+      if (G.input.pressed('action')) {
+        if (opts[sel] === 'WEITERSPIELEN') {
+          G.state = G.load();
+          G.pal = G.state.phase === 'arkana' ? G.PAL.amber : G.PAL.gray;
+          G.replaceScene(G.OverworldScene());
+        } else {
+          G.clearSave(); G.state = G.newState(); G.pal = G.PAL.gray;
+          G.replaceScene(G.IntroScene());
+        }
+      }
+    },
+    draw(c) {
+      const p = G.PAL.amber;
+      c.fillStyle = p.bgVoid; c.fillRect(0, 0, G.W, G.H);
+      for (const s of stars) {
+        c.globalAlpha = 0.2 + 0.6 * Math.abs(Math.sin(t * (0.4 + s.s) + s.x));
+        c.fillStyle = p.text; c.fillRect(s.x, s.y, s.sz, s.sz);
+      }
+      c.globalAlpha = 1;
+      // Ring aus Zeichen, dreht sich langsam
+      c.save(); c.translate(G.W / 2, G.SAFE_Y + 210); c.rotate(t * 0.08);
+      for (let i = 0; i < 22; i++) {
+        const a = (i / 22) * 6.283;
+        c.globalAlpha = 0.16 + 0.14 * Math.sin(t * 1.5 + i);
+        c.fillStyle = p.main;
+        c.fillRect(Math.cos(a) * 108 - 2, Math.sin(a) * 108 - 2, 4, 4);
+      }
+      c.restore(); c.globalAlpha = 1;
+
+      const SY = G.SAFE_Y;
+      G.textGlow(c, '⚡', G.W / 2, SY + 168, p.main, 34);
+      G.textGlow(c, 'ARKANA', G.W / 2, SY + 226, p.bright, 46);
+      G.text(c, 'D A S   V E R B O R G E N E   M U S T E R', G.W / 2, SY + 282, p.text, 12, 'center');
+
+      opts.forEach((o, i) => {
+        const y = SY + 400 + i * 40;
+        const on = i === sel;
+        if (on) {
+          c.globalAlpha = 0.14 + 0.06 * Math.sin(t * 4);
+          c.fillStyle = p.main; c.fillRect(50, y - 8, G.W - 100, 32); c.globalAlpha = 1;
+          G.text(c, '▶', 62, y, p.main, 16);
+        }
+        G.text(c, o, G.W / 2, y, on ? p.textBright : p.textDim, 16, 'center');
+      });
+      G.text(c, 'Wischen oder Pfeiltasten zum Bewegen', G.W / 2, G.H - 62, p.textDim, 11, 'center');
+      G.text(c, 'OK bestätigt · MENÜ öffnet den Codex', G.W / 2, G.H - 44, p.textDim, 11, 'center');
+      G.vignette(c, 0.5);
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Intro
+// ------------------------------------------------------------
+G.IntroScene = () => {
+  const pages = [
+    'Irgendwann in diesen Jahren.\n\nDie Welt hat sich verändert,\nseit damals.\n\nAlle spüren es.\nNiemand spricht es aus.',
+    'Die Straßen sind voller Menschen\nund trotzdem leerer als früher.\n\nAlle schauen auf Bildschirme.\nKeiner schaut auf.',
+    'Nur du siehst manchmal\ndieses Flackern.\n\nZahlen, die sich wiederholen.\nEin Muster unter allem.\n\nHeute Nacht ist es stärker\nals je zuvor.',
+  ];
+  let page = 0; let t = 0; let fade = 0;
+  return {
+    update(dt) {
+      t += dt; fade = Math.min(1, fade + dt * 1.6);
+      if (G.input.pressed('action')) {
+        page++; fade = 0;
+        if (page >= pages.length) G.replaceScene(G.OverworldScene());
+      }
+    },
+    draw(c) {
+      const p = G.PAL.gray;
+      c.fillStyle = p.bgVoid; c.fillRect(0, 0, G.W, G.H);
+      c.globalAlpha = fade;
+      const lines = pages[Math.min(page, pages.length - 1)].split('\n');
+      const startY = G.H / 2 - lines.length * 13;
+      lines.forEach((l, i) => G.text(c, l, G.W / 2, startY + i * 26, p.textBright, 15, 'center'));
+      c.globalAlpha = 1;
+      if (fade >= 1 && Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 90, p.textDim, 13, 'center');
+      G.vignette(c, 0.6);
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Dialog
+// ------------------------------------------------------------
+G.DialogScene = (lines, onDone) => {
+  let li = 0; let chars = 0; let t = 0;
+  const BOX_Y = G.H - 210, BOX_H = 150;
+  return {
+    translucent: true,
+    update(dt) {
+      t += dt; chars += dt * 46;
+      if (G.input.pressed('action')) {
+        if (chars < lines[li].length) chars = lines[li].length;
+        else { li++; chars = 0; if (li >= lines.length) { G.popScene(); if (onDone) onDone(); } }
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.fillStyle = p.bgVoid; c.globalAlpha = 0.93;
+      c.fillRect(14, BOX_Y, G.W - 28, BOX_H); c.globalAlpha = 1;
+      c.strokeStyle = p.dim; c.lineWidth = 2;
+      c.strokeRect(15, BOX_Y + 1, G.W - 30, BOX_H - 2);
+      c.fillStyle = p.main;
+      c.fillRect(14, BOX_Y, 4, BOX_H);
+      if (li < lines.length) {
+        const shown = lines[li].slice(0, Math.floor(chars));
+        const wrapped = G.wrapText(c, shown, G.W - 60, 14);
+        wrapped.slice(0, 6).forEach((l, i) => G.text(c, l, 30, BOX_Y + 18 + i * 21, p.textBright, 14));
+        if (chars >= lines[li].length && Math.floor(t * 2) % 2 === 0) {
+          G.text(c, '▼', G.W - 36, BOX_Y + BOX_H - 26, p.main, 14);
+        }
+      }
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Fragment
+// ------------------------------------------------------------
+G.FragmentScene = (frag) => {
+  let sel = 0; let stage = 0; let t = 0; let appear = 0;
+  return {
+    translucent: true,
+    enter() { G.doShake(2, 0.2); },
+    update(dt) {
+      t += dt; appear = Math.min(1, appear + dt * 3.5);
+      if (stage === 0) { if (G.input.pressed('action')) stage = 1; }
+      else {
+        if (G.input.pressed('left') || G.input.pressed('right')) sel = 1 - sel;
+        if (G.input.pressed('action')) {
+          if (sel === 0) G.state.stats.geglaubt++; else G.state.stats.geprueft++;
+          G.state.fragmente.push(frag.id);
+          for (let i = 0; i < 16; i++) {
+            G.spawnParticle({ x: G.W / 2, y: 200, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90,
+              life: 0.8, fade: 0.8, color: G.pal.bright, size: 2 });
+          }
+          G.save(); G.popScene();
+        }
+      }
+    },
+    draw(c) {
+      const p = G.pal;
+      c.globalAlpha = 0.72 * appear; c.fillStyle = '#000'; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      const h = 400, y0 = (G.H - h) / 2;
+      c.globalAlpha = appear;
+      c.fillStyle = p.bgVoid; c.fillRect(24, y0, G.W - 48, h);
+      c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(25, y0 + 1, G.W - 50, h - 2);
+      // Ecken
+      c.fillStyle = p.bright;
+      [[26, y0 + 2], [G.W - 40, y0 + 2], [26, y0 + h - 16], [G.W - 40, y0 + h - 16]].forEach(([bx, by]) => {
+        c.fillRect(bx, by, 14, 3); c.fillRect(bx, by, 3, 14);
+      });
+      G.textGlow(c, '✦', G.W / 2, y0 + 24, p.main, 26);
+      G.text(c, 'WISSENSFRAGMENT', G.W / 2, y0 + 60, p.main, 12, 'center');
+      const tl = G.wrapText(c, frag.titel, G.W - 80, 16);
+      tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, y0 + 84 + i * 20, p.textBright, 16, 'center'));
+      const wrapped = G.wrapText(c, frag.text, G.W - 76, 13);
+      wrapped.slice(0, 11).forEach((l, i) => G.text(c, l, 38, y0 + 132 + i * 19, p.text, 13));
+      if (stage === 0) {
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, y0 + h - 40, p.textDim, 13, 'center');
+      } else {
+        G.text(c, 'Wie gehst du damit um?', G.W / 2, y0 + h - 78, p.textBright, 13, 'center');
+        const bw = 118;
+        [['GLAUBEN', G.W / 2 - 66], ['PRÜFEN', G.W / 2 + 66]].forEach(([label, bx], i) => {
+          const on = sel === i;
+          if (on) { c.fillStyle = p.main; c.globalAlpha = 0.2; c.fillRect(bx - bw / 2, y0 + h - 52, bw, 30); c.globalAlpha = appear; }
+          c.strokeStyle = on ? p.main : p.textDim; c.lineWidth = on ? 2 : 1;
+          c.strokeRect(bx - bw / 2, y0 + h - 52, bw, 30);
+          G.text(c, label, bx, y0 + h - 44, on ? p.textBright : p.textDim, 14, 'center');
+        });
+      }
+      c.globalAlpha = 1;
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Codex
+// ------------------------------------------------------------
+G.CodexScene = () => {
+  let sel = 0; let reading = null; let tab = 0;
+  const list = () => G.state.fragmente.map((id) => G.FRAGMENTS.find((f) => f.id === id)).filter(Boolean);
+  return {
+    translucent: true,
+    update() {
+      const items = list();
+      if (reading) { if (G.input.pressed('action') || G.input.pressed('cancel')) reading = null; return; }
+      if (G.input.pressed('cancel')) { G.popScene(); return; }
+      if (G.input.pressed('up')) sel = Math.max(0, sel - 1);
+      if (G.input.pressed('down')) sel = Math.min(Math.max(items.length - 1, 0), sel + 1);
+      if (G.input.pressed('left') || G.input.pressed('right')) { tab = 1 - tab; }
+      if (G.input.pressed('action') && items.length && tab === 0) reading = items[sel];
+    },
+    draw(c) {
+      const p = G.pal; const s = G.state.sig;
+      c.globalAlpha = 0.9; c.fillStyle = p.bgVoid; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(13, 13, G.W - 26, G.H - 26);
+
+      if (reading) {
+        G.text(c, '✦', 30, G.SAFE_Y + 30, p.main, 18);
+        const tl = G.wrapText(c, reading.titel, G.W - 80, 16);
+        tl.slice(0, 2).forEach((l, i) => G.text(c, l, G.W / 2, G.SAFE_Y + 34 + i * 20, p.main, 16, 'center'));
+        const wrapped = G.wrapText(c, reading.text, G.W - 70, 14);
+        wrapped.slice(0, Math.floor((G.H - 200) / 22)).forEach((l, i) => G.text(c, l, 35, G.SAFE_Y + 100 + i * 22, p.text, 14));
+        G.text(c, reading.modul.replace(/_/g, ' '), G.W / 2, G.H - 70, p.textDim, 11, 'center');
+        G.text(c, '[ OK ] zurück', G.W / 2, G.H - 46, p.textDim, 12, 'center');
+        return;
+      }
+
+      G.textGlow(c, '⚡ CODEX', G.W / 2, G.SAFE_Y + 30, p.main, 20);
+      // Reiter
+      ['FRAGMENTE', 'SIGNATUR'].forEach((label, i) => {
+        const bx = 30 + i * 152, ty = G.SAFE_Y + 62;
+        const on = tab === i;
+        if (on) { c.fillStyle = p.main; c.globalAlpha = 0.2; c.fillRect(bx, ty, 144, 26); c.globalAlpha = 1; }
+        c.strokeStyle = on ? p.main : p.textDim; c.lineWidth = 1; c.strokeRect(bx, ty, 144, 26);
+        G.text(c, label, bx + 72, ty + 6, on ? p.textBright : p.textDim, 12, 'center');
+      });
+
+      if (tab === 1 && s) {
+        const rows = [
+          ['Name', s.name], ['Zeichen', `${s.sym} ${s.zeichen}`], ['Element', s.element],
+          ['Herrscher', s.planet], ['Namenszahl', `${s.zahl} · ${s.gabe.name}`],
+          ['Lebensphase', s.saturn.name], ['Begleiter', s.spirit.name],
+          ['Licht', s.licht], ['Schatten', s.schatten],
+        ];
+        rows.forEach(([k, v], i) => {
+          const y = G.SAFE_Y + 112 + i * 34;
+          G.text(c, k.toUpperCase(), 34, y, p.textDim, 11);
+          G.text(c, String(v), G.W - 34, y + 12, p.textBright, 15, 'right');
+          c.fillStyle = p.card; c.fillRect(34, y + 30, G.W - 68, 1);
+        });
+        G.text(c, `Geglaubt ${G.state.stats.geglaubt} · Geprüft ${G.state.stats.geprueft}`, G.W / 2, G.H - 74, p.text, 12, 'center');
+      } else {
+        const items = list();
+        G.text(c, `${items.length} von ${G.FRAGMENTS.length} Fragmenten`, G.W / 2, G.SAFE_Y + 100, p.text, 13, 'center');
+        if (!items.length) {
+          G.text(c, 'Noch nichts gesammelt.', G.W / 2, G.H / 2 - 20, p.textDim, 14, 'center');
+        } else {
+          const per = Math.max(8, Math.floor((G.H - 260) / 36)); const start = Math.max(0, Math.min(sel - 5, items.length - per));
+          items.slice(start, start + per).forEach((f, i) => {
+            const idx = start + i, y = G.SAFE_Y + 132 + i * 36;
+            const on = idx === sel;
+            if (on) { c.fillStyle = p.main; c.globalAlpha = 0.14; c.fillRect(26, y - 6, G.W - 52, 32); c.globalAlpha = 1; G.text(c, '▶', 32, y + 2, p.main, 13); }
+            const short = f.titel.length > 26 ? f.titel.slice(0, 25) + '…' : f.titel;
+            G.text(c, short, 50, y, on ? p.textBright : p.text, 14);
+            G.text(c, f.modul.slice(0, 2), G.W - 34, y + 3, p.textDim, 10, 'right');
+          });
+        }
+      }
+      G.text(c, `[◀▶] Reiter   [MENÜ] schließen`, G.W / 2, G.H - 46, p.textDim, 11, 'center');
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Spiegellesung
+// ------------------------------------------------------------
+G.buildReading = () => {
+  const s = G.state.sig; const st = G.state.stats;
+  const lines = [];
+  lines.push(`Ich sehe dich, ${s.name}. Geboren im Zeichen ${s.zeichen}, unter der Führung von ${s.planet}.`);
+  lines.push(`Deine Namenszahl ist die ${s.zahl}. ${s.gabe.text}`);
+  lines.push(`${s.saturn.name}. ${s.saturn.text}`);
+  if (st.geglaubt + st.geprueft > 0) {
+    if (st.geprueft > st.geglaubt) lines.push('Du prüfst mehr, als du glaubst. Das schützt dich vor Täuschung. Pass auf, dass es dich nicht vor Wundern schützt.');
+    else if (st.geglaubt > st.geprueft) lines.push('Du glaubst mehr, als du prüfst. Das öffnet dir Türen. Pass auf, wer sie gebaut hat.');
+    else lines.push('Du hältst Glauben und Zweifel im Gleichgewicht. Das ist selten. Das ist der dritte Weg.');
+  }
+  lines.push(`Dein Licht ist ${s.licht}. Dein Schatten heißt ${s.schatten}. Beide gehören dir.`);
+  lines.push('Geh weiter, Suchender. Das Muster ist noch nicht fertig mit dir.');
+  lines.push('(Ende von Kapitel 1. Die Reise geht weiter.)');
+  return lines;
+};
+
+// ------------------------------------------------------------
+// Oberwelt
+// ------------------------------------------------------------
+G.OverworldScene = () => {
+  let t = 0;
+  let transition = null;
+  const anim = G.newAnim();
+  let vx = 0, vy = 0;               // echte Geschwindigkeit, wird weich geführt
+  const spiritPos = { x: 0, y: 0 };
+  const spiritTrail = [];
+  let ambientTimer = 0;
+
+  const area = () => G.MAPS[G.state.area];
+  const room = () => area().rooms[G.state.room];
+
+  function ensureFragments() {
+    if (G.state.area !== 'asche' || G.state.fragMap) return;
+    const rng = G.mulberry32(G.state.sig.seed);
+    const pool = [...G.FRAGMENTS];
+    const map = {};
+    for (const [rm, spots] of Object.entries(area().fragSpots || {})) {
+      map[rm] = spots.map(([tx, ty]) => {
+        const i = Math.floor(rng() * pool.length);
+        const f = pool.splice(i, 1)[0];
+        return f ? { x: tx * TT, y: ty * TT, id: f.id } : null;
+      }).filter(Boolean);
+    }
+    G.state.fragMap = map;
+  }
+
+  function canStand(nx, ny) {
+    const r = room();
+    const pts = [[nx + 4, ny + 18], [nx + 16, ny + 18], [nx + 4, ny + 27], [nx + 16, ny + 27]];
+    for (const [px, py] of pts) if (G.isSolid(r, px, py)) return false;
+    return true;
+  }
+
+  function roomShift(dx, dy) {
+    const [rx, ry] = G.state.room.split(',').map(Number);
+    const key = `${rx + dx},${ry + dy}`;
+    if (!area().rooms[key]) return false;
+    transition = { dx, dy, prog: 0, from: G.state.room, to: key };
+    return true;
+  }
+
+  function nearest() {
+    const px = G.state.px + 10, py = G.state.py + 20;
+    for (const n of (area().npcs || {})[G.state.room] || []) {
+      if (Math.hypot(px - (n.x * TT + 10), py - (n.y * TT + 20)) < 40) return { type: 'npc', npc: n };
+    }
+    for (const f of (G.state.fragMap || {})[G.state.room] || []) {
+      if (G.state.fragmente.includes(f.id)) continue;
+      if (Math.hypot(px - (f.x + 12), py - (f.y + 12)) < 32) return { type: 'frag', frag: f };
+    }
+    const sh = (area().shrines || {})[G.state.room];
+    if (sh && Math.hypot(px - (sh.x + 24), py - (sh.y + 24)) < 56) return { type: 'shrine' };
+    const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
+    for (const tr of (area().triggers || {})[G.state.room] || []) {
+      if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
+    }
+    return null;
+  }
+
+  return {
+    enter() {
+      ensureFragments();
+      spiritPos.x = G.state.px - 18; spiritPos.y = G.state.py - 6;
+    },
+    update(dt) {
+      t += dt;
+
+      // Ambient-Partikel
+      ambientTimer -= dt;
+      if (ambientTimer <= 0) {
+        ambientTimer = 0.09;
+        const amb = area().ambient;
+        if (amb === 'asche') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random() - 0.5) * 8, vy: 12 + Math.random() * 16,
+            life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.5, drift: 2 });
+        } else if (amb === 'regen') {
+          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: -8, vy: 220 + Math.random() * 90,
+            life: 2.6, fade: 1, color: '#48505c', size: 1, alpha: 0.45 });
+        }
+      }
+
+      if (transition) {
+        transition.prog += dt * 2.6;
+        if (transition.prog >= 1) {
+          G.state.room = transition.to;
+          if (transition.dx === 1) G.state.px = 4;
+          if (transition.dx === -1) G.state.px = G.W - 24;
+          if (transition.dy === 1) G.state.py = 4;
+          if (transition.dy === -1) G.state.py = G.FIELD_H - 34;
+          transition = null; G.save();
+        }
+        G.updateAnim(anim, dt, 0, 0, false);
+        return;
+      }
+
+      // --- Bewegung mit Beschleunigung, das macht sie organisch ---
+      const d = G.input.dir();
+      const MAX = 108, ACC = 900, FRIC = 780;
+      const tvx = d.x * MAX, tvy = d.y * MAX;
+      const moving = Math.abs(d.x) > 0.01 || Math.abs(d.y) > 0.01;
+      if (moving) {
+        vx += Math.sign(tvx - vx) * Math.min(Math.abs(tvx - vx), ACC * dt);
+        vy += Math.sign(tvy - vy) * Math.min(Math.abs(tvy - vy), ACC * dt);
+      } else {
+        const s = Math.hypot(vx, vy);
+        if (s > 0) { const dec = Math.min(s, FRIC * dt); vx -= (vx / s) * dec; vy -= (vy / s) * dec; }
+      }
+
+      const nx = G.state.px + vx * dt, ny = G.state.py + vy * dt;
+      if (canStand(nx, G.state.py)) G.state.px = nx; else vx *= 0.2;
+      if (canStand(G.state.px, ny)) G.state.py = ny; else vy *= 0.2;
+
+      const stepped = G.updateAnim(anim, dt, vx, vy, moving);
+      if (stepped) {
+        G.state.stats.schritte++;
+        // Staub beim Aufsetzen
+        for (let i = 0; i < 2; i++) {
+          G.spawnParticle({ x: G.state.px + 8 + Math.random() * 6, y: G.state.py + 27,
+            vx: (Math.random() - 0.5) * 26, vy: -8 - Math.random() * 12,
+            life: 0.45, fade: 0.45, grav: 60, color: G.pal.dim, size: 1, alpha: 0.6 });
+        }
+      }
+
+      // Begleiter folgt weich
+      if (G.state.phase === 'arkana') {
+        const tx = G.state.px - 20 - anim.facing * 6, ty = G.state.py - 8;
+        spiritPos.x += (tx - spiritPos.x) * Math.min(1, dt * 3.4);
+        spiritPos.y += (ty - spiritPos.y) * Math.min(1, dt * 3.0);
+        if (Math.floor(t * 20) % 2 === 0) {
+          spiritTrail.push({ x: spiritPos.x + 3, y: spiritPos.y + 3 });
+          if (spiritTrail.length > 10) spiritTrail.shift();
+        }
+      }
+
+      // Raumwechsel
+      if (G.state.px < -6) { if (!roomShift(-1, 0)) { G.state.px = -6; vx = 0; } }
+      if (G.state.px > G.W - 14) { if (!roomShift(1, 0)) { G.state.px = G.W - 14; vx = 0; } }
+      if (G.state.py < -6) { if (!roomShift(0, -1)) { G.state.py = -6; vy = 0; } }
+      if (G.state.py > G.FIELD_H - 26) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 26; vy = 0; } }
+
+      if (G.input.pressed('action')) {
+        const it = nearest();
+        if (it) {
+          if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
+          else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
+          else if (it.type === 'shrine') { G.pushScene(G.DialogScene(G.buildReading(), () => G.save())); }
+          else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
+        }
+      }
+      if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
+    },
+
+    draw(c) {
+      const p = G.pal;
+      c.fillStyle = p.bgDeep; c.fillRect(0, 0, G.W, G.FIELD_H);
+
+      if (transition) {
+        const pr = transition.prog < 0.5
+          ? 2 * transition.prog * transition.prog
+          : 1 - Math.pow(-2 * transition.prog + 2, 2) / 2; // ease in out
+        const ox = -transition.dx * G.W * pr, oy = -transition.dy * G.FIELD_H * pr;
+        c.save();
+        c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
+        c.translate(Math.round(ox), Math.round(oy));
+        G.drawRoom(c, area().rooms[transition.from], p, t);
+        c.translate(Math.round(transition.dx * G.W), Math.round(transition.dy * G.FIELD_H));
+        G.drawRoom(c, area().rooms[transition.to], p, t);
+        c.restore();
+      } else {
+        c.save();
+        c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
+        G.drawRoom(c, room(), p, t);
+
+        // Fragmente
+        (G.state.fragMap || {})[G.state.room]?.forEach((f, i) => {
+          if (!G.state.fragmente.includes(f.id)) G.drawFragment(c, f.x, f.y, p, t, i * 1.7);
+        });
+        // Schrein
+        const sh = (area().shrines || {})[G.state.room];
+        if (sh) G.drawShrine(c, sh.x, sh.y, p, t);
+        // NPCs
+        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => G.drawNpc(c, n.x * TT, n.y * TT, p, n.v, t, i));
+
+        // Ladenflackern
+        if (G.state.area === 'stadt' && G.state.room === '1,2' && Math.sin(t * 6.5) > 0.55) {
+          c.globalAlpha = 0.3; c.fillStyle = G.PAL.amber.main;
+          c.fillRect(5 * TT, 9 * TT, 5 * TT, 3 * TT); c.globalAlpha = 1;
+        }
+
+        G.drawParticles(c);
+
+        // Begleiter hinter dem Spieler
+        if (G.state.phase === 'arkana' && G.state.sig) {
+          G.drawSpirit(c, spiritPos.x, spiritPos.y, p, t, G.state.sig.spirit.farbe, spiritTrail);
+        }
+
+        // Spieler
+        const cols = G.state.sig ? G.state.sig.farben : { robe: '#4a4e58', robeHi: '#5f646f', trim: '#8b8f99', core: '#ff8c00' };
+        const glow = G.state.phase === 'prolog' ? G.PAL.amber.main : null;
+        G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, glow);
+
+        c.restore();
+      }
+
+      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.48);
+
+      // ---- HUD ----
+      c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
+      c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
+      const areaName = G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ASCHENSTADT';
+      G.text(c, areaName, 18, G.HUD_Y + 14, p.textDim, 12);
+      if (G.state.phase === 'arkana') {
+        G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 18, G.HUD_Y + 14, p.main, 14, 'right');
+        if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 18, G.HUD_Y + 36, p.textDim, 11, 'right');
+      } else {
+        const clock = Math.floor(t) % 14 < 3 ? '3:33' : '3:2' + (Math.floor(t) % 9);
+        G.text(c, clock, G.W - 18, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 14, 'right');
+      }
+      const it = !transition && nearest();
+      if (it) {
+        const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN' }[it.type];
+        c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
+        c.fillStyle = p.main; c.fillRect(14, G.HUD_Y + 40, G.W - 28, 32); c.globalAlpha = 1;
+        c.strokeStyle = p.main; c.lineWidth = 1; c.strokeRect(14, G.HUD_Y + 40, G.W - 28, 32);
+        G.text(c, `OK  ${label}`, G.W / 2, G.HUD_Y + 49, p.textBright, 14, 'center');
+      } else {
+        G.text(c, 'MENÜ öffnet den Codex', G.W / 2, G.HUD_Y + 52, p.textDim, 11, 'center');
+      }
+    },
+  };
+};
+
+// ------------------------------------------------------------
+// Terminal: der Sog
+// ------------------------------------------------------------
+G.TerminalScene = () => {
+  let stage = 'boot'; let t = 0; let bootLine = 0;
+  let name = ''; let zsel = 0; let age = 25; let sig = null; let opage = 0;
+  const bootLines = ['> SIGNAL GEFUNDEN', '> PROTOKOLL: ARKANA v22', '> DIE WELT HINTER DER WELT WARTET', '> IDENTIFIKATION ERFORDERLICH...'];
+  const form = document.getElementById('nameform');
+  const input = document.getElementById('nameform-input');
+  const okBtn = document.getElementById('nameform-ok');
+
+  function askName() {
+    form.classList.add('show');
+    input.value = '';
+    setTimeout(() => input.focus(), 60);
+    const done = () => {
+      const v = input.value.trim();
+      if (!v) return;
+      name = v.slice(0, 16);
+      form.classList.remove('show'); input.blur();
+      G.input.clearAll();
+      stage = 'zodiac';
+    };
+    okBtn.onclick = done;
+    input.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(); };
+  }
+
+  const opages = () => [
+    `${sig.name.toUpperCase()}\n\nGeboren im Zeichen\n${sig.sym} ${sig.zeichen}\n\nElement ${sig.element}\nHerrscher ${sig.planet}`,
+    `DEINE NAMENSZAHL\n\n${sig.zahl}\n\n${sig.gabe.name.toUpperCase()}\n\n${sig.gabe.text}`,
+    `${sig.saturn.name.toUpperCase()}\n\n${sig.saturn.text}\n\n${sig.spirit.name} wird dich begleiten,\n${sig.spirit.wesen}.`,
+    'DAS MUSTER HAT DICH GELESEN.\n\nJETZT LIES DU ES.',
+  ];
+
+  return {
+    update(dt) {
+      t += dt;
+      if (stage === 'boot') {
+        if (t > (bootLine + 1) * 0.6) bootLine++;
+        if (bootLine >= bootLines.length) { stage = 'name'; askName(); }
+      } else if (stage === 'zodiac') {
+        if (G.input.pressed('left')) zsel = (zsel + 11) % 12;
+        if (G.input.pressed('right')) zsel = (zsel + 1) % 12;
+        if (G.input.pressed('up')) zsel = (zsel + 9) % 12;
+        if (G.input.pressed('down')) zsel = (zsel + 3) % 12;
+        if (G.input.pressed('action')) stage = 'age';
+      } else if (stage === 'age') {
+        if (G.input.pressed('left')) age = Math.max(10, age - 1);
+        if (G.input.pressed('right')) age = Math.min(99, age + 1);
+        if (G.input.pressed('up')) age = Math.min(99, age + 5);
+        if (G.input.pressed('down')) age = Math.max(10, age - 5);
+        if (G.input.pressed('action')) { sig = G.makeSignature(name, zsel, age); stage = 'oracle'; opage = 0; }
+      } else if (stage === 'oracle') {
+        if (G.input.pressed('action')) { opage++; if (opage >= opages().length) { stage = 'sog'; t = 0; G.doShake(5, 1.2); } }
+      } else if (stage === 'sog') {
+        if (t < 2.6 && Math.random() < 0.5) {
+          const a = Math.random() * 6.283, r = 190 * (1 - t / 2.6) + 30;
+          G.spawnParticle({ x: G.W / 2 + Math.cos(a) * r, y: G.H / 2 + Math.sin(a) * r,
+            vx: -Math.cos(a) * 130, vy: -Math.sin(a) * 130, life: 1.1, fade: 1.1,
+            color: Math.random() > 0.5 ? G.PAL.amber.bright : G.PAL.amber.main, size: 2 });
+        }
+        if (t > 2.8) {
+          G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
+          G.state.room = '1,1'; G.state.px = 168; G.state.py = 200;
+          G.pal = G.PAL.amber; G.particles.length = 0; G.save();
+          G.replaceScene(G.OverworldScene());
+          G.pushScene(G.DialogScene([
+            'Du öffnest die Augen. Die Luft schmeckt nach Asche und Bernstein.',
+            'Über dir kein Himmel, sondern ein Gewölbe aus langsam ziehenden Zeichen.',
+            `Neben dir schwebt ein Licht. ${sig.spirit.name}, ${sig.spirit.wesen}.`,
+            'Willkommen in Arkana.',
+          ]));
+        }
+      }
+    },
+    draw(c) {
+      const p = G.PAL.amber;
+      c.fillStyle = '#050301'; c.fillRect(0, 0, G.W, G.H);
+      c.strokeStyle = p.dim; c.lineWidth = 2; c.strokeRect(14, 14, G.W - 28, G.H - 28);
+
+      if (stage === 'boot' || stage === 'name') {
+        bootLines.slice(0, Math.min(bootLine + 1, bootLines.length)).forEach((l, i) => {
+          G.text(c, l, 34, G.SAFE_Y + 90 + i * 30, p.main, 14);
+        });
+        if (stage === 'name') G.text(c, '> WARTE AUF NAME...', 34, G.SAFE_Y + 90 + bootLines.length * 30 + 14, p.text, 14);
+        if (Math.floor(t * 2) % 2 === 0) { c.fillStyle = p.main; c.fillRect(34, G.H - 120, 12, 20); }
+      } else if (stage === 'zodiac') {
+        const SY = G.SAFE_Y;
+        G.text(c, '> UNTER WELCHEM ZEICHEN', G.W / 2, SY + 60, p.main, 14, 'center');
+        G.text(c, 'WURDEST DU GEBOREN?', G.W / 2, SY + 82, p.main, 14, 'center');
+        G.ZODIAC.forEach((z, i) => {
+          const col = i % 3, row = Math.floor(i / 3);
+          const x = 70 + col * 110, y = SY + 140 + row * 96;
+          const on = i === zsel;
+          if (on) {
+            c.fillStyle = p.card; c.fillRect(x - 46, y - 16, 92, 78);
+            c.strokeStyle = p.main; c.lineWidth = 2; c.strokeRect(x - 46, y - 16, 92, 78);
+          }
+          G.text(c, z.sym, x, y - 6, on ? p.bright : p.textDim, 34, 'center');
+          G.text(c, z.name, x, y + 40, on ? p.textBright : p.textDim, 11, 'center');
+        });
+        const z = G.ZODIAC[zsel];
+        G.textGlow(c, `${z.element}  ·  ${z.planet}`, G.W / 2, SY + 542, p.text, 16);
+        G.text(c, '[ OK ] bestätigen', G.W / 2, SY + 580, p.textDim, 12, 'center');
+      } else if (stage === 'age') {
+        const SY2 = G.SAFE_Y;
+        G.text(c, '> WIE VIELE JAHRE TRÄGST DU?', G.W / 2, SY2 + 150, p.main, 14, 'center');
+        G.text(c, '◀', G.W / 2 - 96, SY2 + 260, p.text, 28, 'center');
+        G.textGlow(c, String(age), G.W / 2, SY2 + 230, p.bright, 76);
+        G.text(c, '▶', G.W / 2 + 96, SY2 + 260, p.text, 28, 'center');
+        G.text(c, G.saturnPhase(age).name, G.W / 2, SY2 + 356, p.text, 18, 'center');
+        G.text(c, G.saturnPhase(age).text, G.W / 2, SY2 + 384, p.textDim, 13, 'center');
+        G.text(c, '[◀▶] ändern   [ OK ] bestätigen', G.W / 2, SY2 + 500, p.textDim, 12, 'center');
+      } else if (stage === 'oracle') {
+        const pages = opages();
+        const lines = pages[Math.min(opage, pages.length - 1)].split('\n');
+        const startY = G.H / 2 - lines.length * 17;
+        lines.forEach((l, i) => {
+          const big = i === 0 || (l.length < 4 && l.trim());
+          G.text(c, l, G.W / 2, startY + i * 34, i === 0 ? p.bright : p.text, big ? 22 : 15, 'center');
+        });
+        if (Math.floor(t * 2) % 2 === 0) G.text(c, '[ OK ]', G.W / 2, G.H - 100, p.textDim, 13, 'center');
+      } else if (stage === 'sog') {
+        const pr = Math.min(t / 2.8, 1);
+        c.save(); c.translate(G.W / 2, G.H / 2);
+        for (let i = 0; i < 56; i++) {
+          const ang = i * 0.62 + t * 3.4;
+          const rad = (1 - pr) * 210 + 16 + (i % 9) * 7 * (1 - pr);
+          c.globalAlpha = 0.25 + pr * 0.75;
+          c.fillStyle = i % 3 === 0 ? p.bright : p.main;
+          c.fillRect(Math.cos(ang) * rad, Math.sin(ang) * rad * 1.5, 4, 4);
+        }
+        c.restore();
+        G.drawParticles(c);
+        c.globalAlpha = pr * pr; c.fillStyle = p.main; c.fillRect(0, 0, G.W, G.H); c.globalAlpha = 1;
+      }
+      G.vignette(c, 0.5);
+    },
+  };
+};
+
+// ------------------------------------------------------------
+fitCanvas();
+G.pushScene(G.TitleScene());
+
+</script>
+</body>
+</html>
