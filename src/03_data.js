@@ -82,7 +82,7 @@ G.makeSignature = (name, zodiacIdx, age) => {
 G.newState = () => ({
   sig: null,
   phase: 'prolog',
-  area: 'stadt', room: '1,1', px: 167, py: 250,
+  area: 'stadt', room: '1,1', px: 300, py: 850,
   flags: {},
   fragmente: [],
   bigFrags: null,

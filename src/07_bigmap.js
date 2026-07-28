@@ -276,7 +276,7 @@ G.BIGMAP = (function () {
 
 // Kollision auf der grossen Karte
 G.bigSolid = (px, py) => {
-  const M = G.BIGMAP;
+  const M = G.activeMap();
   const tx = Math.floor(px / G.TILE), ty = Math.floor(py / G.TILE);
   if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
   const ch = (M.tiles[ty] || '')[tx] || '.';
@@ -286,7 +286,7 @@ G.bigSolid = (px, py) => {
 
 // Sichtbaren Ausschnitt zeichnen, alles andere wird uebersprungen
 G.drawBigMap = (c, camX, camY, t) => {
-  const M = G.BIGMAP, T = G.TILE;
+  const M = G.activeMap(), T = G.TILE;
   const x0 = Math.max(0, Math.floor(camX / T));
   const y0 = Math.max(0, Math.floor(camY / T));
   const x1 = Math.min(M.W - 1, Math.ceil((camX + G.W) / T));
@@ -303,7 +303,7 @@ G.drawBigMap = (c, camX, camY, t) => {
 
 // Licht der sichtbaren Lichtquellen
 G.drawBigLight = (c, camX, camY, t) => {
-  const M = G.BIGMAP, T = G.TILE;
+  const M = G.activeMap(), T = G.TILE;
   const L = { f: [58, 1.0], c: [50, 0.8], '*': [38, 0.6], M: [34, 0.55], p: [24, 0.35] };
   const x0 = Math.max(0, Math.floor(camX / T) - 2);
   const y0 = Math.max(0, Math.floor(camY / T) - 2);
@@ -330,4 +330,96 @@ G.drawBigLight = (c, camX, camY, t) => {
   }
   c.restore();
   c.globalAlpha = 1;
+};
+
+
+// ============================================================
+// Die graue Stadt, ebenfalls eine offene Karte
+// ============================================================
+G.CITYMAP = (function () {
+  const CITY_W = 40, CITY_H = 60;
+  const tiles = [
+    '########################################',
+    '########################################',
+    '##W###==W#W#W##W#W==WW####W##W==W#W#W###',
+    '##W###==W#########==#########W==W#######',
+    '#####W==##########==#########W==########',
+    '#####W==##########==#########W==#####W##',
+    '######==W#########==##########==W#######',
+    '##W##W==###WW##WWW==W####WWWWW==WW#W####',
+    '##====================================##',
+    '##====================================##',
+    '##W##W==##..T.T###==#####W#W#W==W####W##',
+    '#####W==##g....##W==##########==########',
+    '#####W==##.....##W==W#########==W####W##',
+    '##WWWW==W#W##WW##W==#W#WW#WWWW==########',
+    '######==========================W####W##',
+    '######==========================W####W##',
+    '####WW==#WWWWWW#W#==##..T..#WW==W####W##',
+    '######==##########==##...T.###==########',
+    '#####W==##########==W#.....###==########',
+    '#####W==W#W##W##WW==WW#W##WW#W==WW##WW##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==..........==W#WW#WWW##==#WWWWW##',
+    '######==.~~~~~~~~.==#########W==W#######',
+    '##W###==.~~~~~~~~.==#########W==#####W##',
+    '##W###==.~~~~~~~~.==W########W==.....###',
+    '######==.~~~~~~~~.==W#########==.gT..###',
+    '######==...T......==##########==....TW##',
+    '##W##W==============##########==########',
+    '##W###==..T.....T.==W#########==########',
+    '##W###==.....gTT..==W#########==########',
+    '##WWW#==...g....g.==#WW#WW#WW#==#W##WW##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==WWW##WWW#W==WW##W#W##W==W###W###',
+    '######==##########==##.....###==########',
+    '######==W#########==W#...g.###==W#######',
+    '#####W==W########W==W#.....###==########',
+    '#####W==WW#WW##W#W==#WWW##WWWW==########',
+    '######==========================W#######',
+    '######==========================W####W##',
+    '###WW#==W####WWWW#==#WW###W#WW==W####W##',
+    '##W###==##.g...###==W#########==########',
+    '#####W==##.....###==#########W==########',
+    '######==##....T##W==##########==W#######',
+    '###W#W==#W#WWW####==WW#WWW#W#W==#####W##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==##########==##########==W##WWW##',
+    '##W##W==##########==#WWWWWWWW#==#####W##',
+    '##W##W==##########==#WWWWWWWW#==########',
+    '##WW#W==##########==####DD####==W####W##',
+    '######================......====########',
+    '######================......====########',
+    '######==#W.....##W==WWWWWWWWWW==W#######',
+    '######==W#.....##W==##########==W#######',
+    '######==##.g..g###==##########==########',
+    '######==W#WWWW##WW==WWWWWW##W#==W##W#W##',
+    '########################################',
+    '########################################',
+  ];
+  const npcSpots = [[31,28], [30,40], [11,20], [20,21], [21,32], [13,31], [11,8]];
+  const LADEN = [24, 51];
+  const START = [286, 842];
+  return { W: CITY_W, H: CITY_H, tiles, npcSpots, LADEN, START,
+    biomeAt: () => 'grau',
+    regionAt: () => ({ name: 'Die graue Stadt', x: 0, y: 0, r: 999 }),
+    REGIONS: [{ name: 'Die graue Stadt', x: 20, y: 30, r: 999 }],
+    fragSpots: [], inschriftSpots: [], shrineSpots: [],
+    npcRegions: [], inschRegions: [] };
+})();
+
+// Die aktive Karte, je nach Spielphase
+G.activeMap = () => (G.state && G.state.phase === 'arkana') ? G.BIGMAP : G.CITYMAP;
+
+// Kollision auf der aktiven Karte
+G.mapSolid = (px, py) => {
+  const M = G.activeMap();
+  const tx = Math.floor(px / G.TILE), ty = Math.floor(py / G.TILE);
+  if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
+  const ch = (M.tiles[ty] || '')[tx] || '.';
+  const tile = G.TILES[ch];
+  return tile ? tile.solid : false;
 };

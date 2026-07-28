@@ -367,7 +367,7 @@ G.load = () => {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s || typeof s !== 'object') return null;
-    if (!s.area || !G.MAPS[s.area] || !G.MAPS[s.area].rooms[s.room]) return null;
+    if (!s.area) return null;
     const base = G.newState();
     const merged = {
       ...base, ...s,

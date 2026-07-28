@@ -467,7 +467,7 @@ G.load = () => {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s || typeof s !== 'object') return null;
-    if (!s.area || !G.MAPS[s.area] || !G.MAPS[s.area].rooms[s.room]) return null;
+    if (!s.area) return null;
     const base = G.newState();
     const merged = {
       ...base, ...s,
@@ -1500,7 +1500,7 @@ G.makeSignature = (name, zodiacIdx, age) => {
 G.newState = () => ({
   sig: null,
   phase: 'prolog',
-  area: 'stadt', room: '1,1', px: 167, py: 250,
+  area: 'stadt', room: '1,1', px: 300, py: 850,
   flags: {},
   fragmente: [],
   bigFrags: null,
@@ -2102,6 +2102,7 @@ G.TitleScene = () => {
           G.replaceScene(G.OverworldScene());
         } else {
           G.clearSave(); G.state = G.newState(); G.pal = G.PAL.gray;
+          G.state.px = G.CITYMAP.START[0]; G.state.py = G.CITYMAP.START[1];
           G.replaceScene(G.IntroScene());
         }
       }
@@ -2595,6 +2596,13 @@ Object.defineProperty(G, 'STORY_BY_NAME', {
   },
 });
 
+G.cityNpcDialog = (idx) => {
+  const keys = ['stadt_pendler', 'stadt_meckerer', 'stadt_scroller', 'stadt_alte_frau',
+                'stadt_parkmann', 'stadt_kind', 'stadt_obdachloser'];
+  const k = keys[idx % keys.length];
+  return G.DIALOGE[k] || ['...'];
+};
+
 G.bigInschrift = (idx) => {
   const M = G.BIGMAP;
   const regName = M.inschRegions[idx] || 'Aschenstadt';
@@ -2651,26 +2659,19 @@ G.OverworldScene = () => {
   const cam = { x: 0, y: 0 };
   let lastRegion = null;
 
-  const big = () => G.state.phase === 'arkana';
-  const area = () => G.MAPS[G.state.area];
-  const room = () => area().rooms[G.state.room];
-  const M = () => G.BIGMAP;
+  const arkana = () => G.state.phase === 'arkana';
+  const M = () => G.activeMap();
 
   // ---------- Kollision ----------
   function canStand(nx, ny) {
     const pts = [[nx + 7, ny + 30], [nx + 19, ny + 30], [nx + 7, ny + 39], [nx + 19, ny + 39]];
-    if (big()) {
-      for (const [px, py] of pts) if (G.bigSolid(px, py)) return false;
-      return true;
-    }
-    const r = room();
-    for (const [px, py] of pts) if (G.isSolid(r, px, py)) return false;
+    for (const [px, py] of pts) if (G.bigSolid(px, py)) return false;
     return true;
   }
 
   // ---------- Fragmente auf der grossen Karte ----------
   function ensureFragments() {
-    if (!big() || G.state.bigFrags) return;
+    if (!arkana() || G.state.bigFrags) return;
     if (!G.state.sig) return;
     const rngf = G.mulberry32(G.state.sig.seed);
     const pool = [...G.FRAGMENTS];
@@ -2683,16 +2684,9 @@ G.OverworldScene = () => {
 
   // ---------- Fauna nach Biom am Spieler ----------
   function ensureFauna() {
-    let key, biome;
-    if (big()) {
-      const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
-      biome = M().biomeAt(tx, ty);
-      key = 'big:' + biome;
-    } else {
-      const r = room();
-      biome = (r && r.biome) || 'grau';
-      key = G.state.room + ':' + biome;
-    }
+    const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
+    const biome = M().biomeAt(tx, ty);
+    const key = (arkana() ? 'a:' : 'c:') + biome;
     if (faunaKey === key) return;
     fauna = G.newFauna(biome, G.hashStr(key));
     faunaKey = key;
@@ -2701,7 +2695,18 @@ G.OverworldScene = () => {
   // ---------- Interaktion ----------
   function nearest() {
     const px = G.state.px + 13, py = G.state.py + 32;
-    if (big()) {
+    if (!arkana()) {
+      // Graue Stadt: NPCs und der flackernde Laden
+      const m = M();
+      for (let i = 0; i < m.npcSpots.length; i++) {
+        const [tx, ty] = m.npcSpots[i];
+        if (Math.hypot(px - (tx * TT + 13), py - (ty * TT + 32)) < 52) return { type: 'npc', idx: i };
+      }
+      const [lx, ly] = m.LADEN;
+      if (Math.hypot(px - (lx * TT + 20), py - (ly * TT + 24)) < 58) return { type: 'trigger', trigger: { event: 'laden' } };
+      return null;
+    }
+    {
       const m = M();
       for (let i = 0; i < m.npcSpots.length; i++) {
         const [tx, ty] = m.npcSpots[i];
@@ -2721,39 +2726,6 @@ G.OverworldScene = () => {
       }
       return null;
     }
-    // Prolog
-    for (const n of (area().npcs || {})[G.state.room] || []) {
-      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
-    }
-    const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
-    for (const tr of (area().triggers || {})[G.state.room] || []) {
-      if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
-    }
-    return null;
-  }
-
-  // ---------- Prolog: Raumwechsel ----------
-  function clampVal(v, axis) {
-    const mid = axis === 'y' ? Math.floor(G.ROOM_H / 2) : Math.floor(G.ROOM_W / 2);
-    const lo = (mid - 1) * TT + 2;
-    const hi = (mid + 1) * TT + TT - (axis === 'y' ? 30 : 28);
-    return Math.max(lo, Math.min(hi, v));
-  }
-  function roomShift(dx, dy) {
-    const [rx, ry] = G.state.room.split(',').map(Number);
-    const key = `${rx + dx},${ry + dy}`;
-    const dest = area().rooms[key];
-    if (!dest) return false;
-    const probe = { px: G.state.px, py: G.state.py };
-    if (dx === 1) { probe.px = TT + 6; probe.py = clampVal(probe.py, 'y'); }
-    else if (dx === -1) { probe.px = G.W - TT - 26; probe.py = clampVal(probe.py, 'y'); }
-    else if (dy === 1) { probe.py = TT + 2; probe.px = clampVal(probe.px, 'x'); }
-    else { probe.py = G.FIELD_H - TT - 44; probe.px = clampVal(probe.px, 'x'); }
-    const pts = [[probe.px + 7, probe.py + 30], [probe.px + 19, probe.py + 30],
-                 [probe.px + 7, probe.py + 39], [probe.px + 19, probe.py + 39]];
-    if (pts.some(([x, y]) => G.isSolid(dest, x, y))) return false;
-    transition = { dx, dy, prog: 0, from: G.state.room, to: key };
-    return true;
   }
 
   return {
@@ -2761,10 +2733,8 @@ G.OverworldScene = () => {
       ensureFragments();
       ensureFauna();
       spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
-      if (big()) {
-        cam.x = G.state.px + 13 - G.W / 2;
-        cam.y = G.state.py + 20 - G.FIELD_H / 2;
-      }
+      cam.x = G.state.px + 13 - G.W / 2;
+      cam.y = G.state.py + 20 - G.FIELD_H / 2;
     },
 
     update(dt) {
@@ -2774,12 +2744,7 @@ G.OverworldScene = () => {
       ambientTimer -= dt;
       if (ambientTimer <= 0) {
         ambientTimer = 0.09;
-        let bio;
-        if (big()) {
-          bio = M().biomeAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
-        } else {
-          const r0 = room(); bio = (r0 && r0.biome) || area().ambient;
-        }
+        const bio = M().biomeAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
         const spawn = (o) => G.spawnParticle(o);
         if (bio === 'sumpf') spawn({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*6, vy: -10 - Math.random()*14, life: 9, fade: 2.5, color: '#4fbf7f', size: 2, alpha: 0.28, drift: 1.4 });
         else if (bio === 'kristall') spawn({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H, vx: 0, vy: -6 - Math.random()*8, life: 4, fade: 1.6, color: '#c4baff', size: 2, alpha: 0.5 });
@@ -2790,21 +2755,6 @@ G.OverworldScene = () => {
         else if (bio === 'hain') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*18, vy: 14 + Math.random()*12, life: 7, fade: 2, color: '#bce870', size: 2, alpha: 0.35, drift: 2.6 });
         else if (bio === 'bibliothek') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 11 + Math.random()*9, life: 8, fade: 2.2, color: '#d99a4a', size: 1, alpha: 0.32, drift: 1.5 });
         else if (bio === 'asche' || bio === 'grau') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 12 + Math.random()*16, life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.45, drift: 2 });
-      }
-
-      if (transition) {
-        transition.prog += dt * 2.6;
-        if (transition.prog >= 1) {
-          const dx = transition.dx, dy = transition.dy;
-          G.state.room = transition.to;
-          if (dx === 1) { G.state.px = TT + 6; G.state.py = clampVal(G.state.py, 'y'); }
-          if (dx === -1) { G.state.px = G.W - TT - 26; G.state.py = clampVal(G.state.py, 'y'); }
-          if (dy === 1) { G.state.py = TT + 2; G.state.px = clampVal(G.state.px, 'x'); }
-          if (dy === -1) { G.state.py = G.FIELD_H - TT - 44; G.state.px = clampVal(G.state.px, 'x'); }
-          vx = 0; vy = 0; transition = null; G.save();
-        }
-        G.updateAnim(anim, dt, 0, 0, false);
-        return;
       }
 
       // ---------- Bewegung ----------
@@ -2828,19 +2778,19 @@ G.OverworldScene = () => {
       }
 
       ensureFauna();
-      G.updateFauna(fauna, dt, t, G.state.px + 13 - (big() ? cam.x : 0), G.state.py + 26 - (big() ? cam.y : 0));
+      G.updateFauna(fauna, dt, t, G.state.px + 13 - cam.x, G.state.py + 26 - cam.y);
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
         for (let i = 0; i < 2; i++) {
-          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8 - (big() ? cam.x : 0), y: G.state.py + 38 - (big() ? cam.y : 0),
+          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8 - cam.x, y: G.state.py + 38 - cam.y,
             vx: (Math.random() - 0.5) * 26, vy: -8 - Math.random() * 12,
             life: 0.45, fade: 0.45, grav: 60, color: G.pal.dim, size: 1, alpha: 0.6 });
         }
       }
 
       // Begleiter
-      if (big() && G.state.sig) {
+      if (arkana() && G.state.sig) {
         const tx = G.state.px - 26 - anim.facing * 8, ty = G.state.py - 4;
         spiritPos.x += (tx - spiritPos.x) * Math.min(1, dt * 3.4);
         spiritPos.y += (ty - spiritPos.y) * Math.min(1, dt * 3.0);
@@ -2850,7 +2800,7 @@ G.OverworldScene = () => {
         }
       }
 
-      if (big()) {
+      {
         // ---------- Kamera folgt weich, bleibt in der Karte ----------
         const tgx = G.state.px + 13 - G.W / 2;
         const tgy = G.state.py + 20 - G.FIELD_H / 2;
@@ -2863,6 +2813,7 @@ G.OverworldScene = () => {
         G.state.py = Math.max(0, Math.min(M().H * TT - 42, G.state.py));
 
         // Region gewechselt? Dann Ortstafel und Story
+        if (arkana()) {
         const reg = M().regionAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
         if (reg && reg.name !== lastRegion) {
           lastRegion = reg.name;
@@ -2873,13 +2824,8 @@ G.OverworldScene = () => {
             G.pushScene(G.OrtScene(reg.name, st ? st.ankunft : 'Ein neuer Ort öffnet sich.'));
           }
         }
+        }
         if (Math.floor(t) % 30 === 0 && Math.random() < 0.004) G.save();
-      } else {
-        // Prolog: Raumwechsel am Rand
-        if (G.state.px < -8) { if (!roomShift(-1, 0)) { G.state.px = -8; vx = 0; } }
-        if (G.state.px > G.W - 18) { if (!roomShift(1, 0)) { G.state.px = G.W - 18; vx = 0; } }
-        if (G.state.py < -14) { if (!roomShift(0, -1)) { G.state.py = -14; vy = 0; } }
-        if (G.state.py > G.FIELD_H - 34) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 34; vy = 0; } }
       }
 
       // ---------- Interaktion ----------
@@ -2888,7 +2834,7 @@ G.OverworldScene = () => {
         if (it) {
           if (it.type === 'npc') {
             G.state.stats.dialoge++;
-            const dlg = big() ? G.bigNpcDialog(it.idx) : (G.DIALOGE[it.npc.dlg] || ['...']);
+            const dlg = arkana() ? G.bigNpcDialog(it.idx) : G.cityNpcDialog(it.idx);
             G.pushScene(G.DialogScene(dlg));
           } else if (it.type === 'inschrift') {
             const key = 'ins:' + it.idx;
@@ -2907,99 +2853,78 @@ G.OverworldScene = () => {
     },
 
     draw(c) {
-      let p = G.pal;
-      if (big()) {
-        const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
-        p = G.BIOMES[M().biomeAt(tx, ty)] || G.pal;
-      } else {
-        p = G.roomPal(room()) || G.pal;
-      }
+      const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
+      const p = G.BIOMES[M().biomeAt(tx, ty)] || G.PAL.gray;
       c.fillStyle = p.bgDeep; c.fillRect(0, 0, G.W, G.FIELD_H);
 
+      const cx = Math.round(cam.x), cy = Math.round(cam.y);
       c.save();
       c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
 
-      if (big()) {
-        const cx = Math.round(cam.x), cy = Math.round(cam.y);
-        G.drawBigMap(c, cx, cy, t);
+      G.drawBigMap(c, cx, cy, t);
 
-        // Fragmente
+      if (arkana()) {
         for (const f of G.state.bigFrags || []) {
           if (G.state.fragmente.includes(f.id)) continue;
           const sx = f.x - cx, sy = f.y - cy;
           if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) continue;
           G.drawFragment(c, sx, sy, p, t, f.x * 0.01);
         }
-        // Inschriften
         M().inschriftSpots.forEach(([itx, ity], i) => {
           const sx = itx * TT - cx, sy = ity * TT - cy;
           if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) return;
           G.drawInschrift(c, sx, sy, p, t, !!G.state.gelesen['ins:' + i]);
         });
-        // Schreine
         M().shrineSpots.forEach(([stx, sty]) => {
           const sx = stx * TT - cx - 20, sy = sty * TT - cy - 20;
           if (sx < -100 || sy < -100 || sx > G.W + 100 || sy > G.FIELD_H + 100) return;
           G.drawShrine(c, sx, sy, p, t);
         });
-        // NPCs
-        M().npcSpots.forEach(([ntx, nty], i) => {
-          const sx = ntx * TT - cx, sy = nty * TT - cy;
-          if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) return;
-          G.drawNpc(c, sx, sy, p, i % 4, t, i);
-        });
-
-        G.drawParticles(c);
-        G.drawFauna(c, fauna, p, t);
-        if (G.state.sig) G.drawSpirit(c, spiritPos.x - cx, spiritPos.y - cy, p, t, G.state.sig.spirit.farbe, spiritTrail.map((q) => ({ x: q.x - cx, y: q.y - cy })));
-
-        const cols = G.state.sig ? G.state.sig.farben : G.ELEMENT_COLORS.Feuer;
-        G.drawPlayer(c, G.state.px - cx, G.state.py - cy, anim, p, cols, null);
-        G.drawBigLight(c, cx, cy, t);
-      } else if (transition) {
-        const pr = transition.prog < 0.5 ? 2 * transition.prog * transition.prog
-          : 1 - Math.pow(-2 * transition.prog + 2, 2) / 2;
-        const ox = -transition.dx * G.W * pr, oy = -transition.dy * G.FIELD_H * pr;
-        c.translate(Math.round(ox), Math.round(oy));
-        G.drawRoom(c, area().rooms[transition.from], p, t);
-        c.translate(Math.round(transition.dx * G.W), Math.round(transition.dy * G.FIELD_H));
-        G.drawRoom(c, area().rooms[transition.to], p, t);
       } else {
-        G.drawRoom(c, room(), p, t);
-        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => G.drawNpc(c, n.x * TT, n.y * TT, p, n.v, t, i));
-        if (G.state.area === 'stadt' && G.state.room === '1,2' && Math.sin(t * 6.5) > 0.55) {
-          c.globalAlpha = 0.3; c.fillStyle = G.PAL.amber.main;
-          c.fillRect(2 * TT, 5 * TT, 5 * TT, 4 * TT); c.globalAlpha = 1;
+        // Der flackernde Laden in der grauen Stadt
+        const [lx, ly] = M().LADEN;
+        const sx = lx * TT - cx, sy = ly * TT - cy;
+        if (sx > -120 && sy > -120 && sx < G.W + 120 && sy < G.FIELD_H + 120 && Math.sin(t * 6.5) > 0.5) {
+          c.globalAlpha = 0.26; c.fillStyle = G.PAL.amber.main;
+          c.fillRect(sx - 3 * TT, sy - 3 * TT, 7 * TT, 4 * TT);
+          c.globalAlpha = 1;
         }
-        G.drawParticles(c);
-        G.drawFauna(c, fauna, p, t);
-        const cols = G.state.sig ? G.state.sig.farben : { robe: '#4a4e58', robeHi: '#5f646f', robeDark: '#2a2d33', trim: '#8b8f99', core: '#ff8c00' };
-        G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, G.PAL.amber.main);
-        G.drawLight(c, room(), p, t);
       }
+
+      M().npcSpots.forEach(([ntx, nty], i) => {
+        const sx = ntx * TT - cx, sy = nty * TT - cy;
+        if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) return;
+        G.drawNpc(c, sx, sy, p, i % 4, t, i);
+      });
+
+      G.drawParticles(c);
+      G.drawFauna(c, fauna, p, t);
+      if (arkana() && G.state.sig) {
+        G.drawSpirit(c, spiritPos.x - cx, spiritPos.y - cy, p, t, G.state.sig.spirit.farbe,
+          spiritTrail.map((q) => ({ x: q.x - cx, y: q.y - cy })));
+      }
+
+      const cols = G.state.sig ? G.state.sig.farben
+        : { robe: '#4a4e58', robeHi: '#5f646f', robeDark: '#2a2d33', trim: '#8b8f99', core: '#ff8c00' };
+      G.drawPlayer(c, G.state.px - cx, G.state.py - cy, anim, p, cols, arkana() ? null : G.PAL.amber.main);
+      G.drawBigLight(c, cx, cy, t);
       c.restore();
 
-      G.vignette(c, big() ? 0.42 : 0.62);
+      G.vignette(c, arkana() ? 0.42 : 0.62);
 
       // ---------- HUD ----------
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
-      let ortName;
-      if (big()) {
-        const reg = M().regionAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
-        ortName = reg ? reg.name.toUpperCase() : 'ARKANA';
-      } else {
-        ortName = 'DIE GRAUE STADT';
-      }
-      G.text(c, ortName, 20, G.HUD_Y + 16, p.textDim, 15);
-      if (big()) {
+      const reg = M().regionAt(tx, ty);
+      G.text(c, (reg ? reg.name : 'ARKANA').toUpperCase(), 20, G.HUD_Y + 16, p.textDim, 15);
+      if (arkana()) {
         G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
         if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 20, G.HUD_Y + 40, p.textDim, 14, 'right');
       } else {
         const clock = Math.floor(t) % 14 < 3 ? '3:33' : '3:2' + (Math.floor(t) % 9);
         G.text(c, clock, G.W - 20, G.HUD_Y + 14, clock === '3:33' ? G.PAL.amber.main : p.textDim, 18, 'right');
       }
-      const it = !transition && nearest();
+      const it = nearest();
       if (it) {
         const label = { npc: 'SPRECHEN', frag: 'AUFHEBEN', shrine: 'IN DEN SPIEGEL SCHAUEN', trigger: 'EINTRETEN', inschrift: 'LESEN' }[it.type];
         c.globalAlpha = 0.16 + 0.06 * Math.sin(t * 5);
@@ -4381,7 +4306,7 @@ G.BIGMAP = (function () {
 
 // Kollision auf der grossen Karte
 G.bigSolid = (px, py) => {
-  const M = G.BIGMAP;
+  const M = G.activeMap();
   const tx = Math.floor(px / G.TILE), ty = Math.floor(py / G.TILE);
   if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
   const ch = (M.tiles[ty] || '')[tx] || '.';
@@ -4391,7 +4316,7 @@ G.bigSolid = (px, py) => {
 
 // Sichtbaren Ausschnitt zeichnen, alles andere wird uebersprungen
 G.drawBigMap = (c, camX, camY, t) => {
-  const M = G.BIGMAP, T = G.TILE;
+  const M = G.activeMap(), T = G.TILE;
   const x0 = Math.max(0, Math.floor(camX / T));
   const y0 = Math.max(0, Math.floor(camY / T));
   const x1 = Math.min(M.W - 1, Math.ceil((camX + G.W) / T));
@@ -4408,7 +4333,7 @@ G.drawBigMap = (c, camX, camY, t) => {
 
 // Licht der sichtbaren Lichtquellen
 G.drawBigLight = (c, camX, camY, t) => {
-  const M = G.BIGMAP, T = G.TILE;
+  const M = G.activeMap(), T = G.TILE;
   const L = { f: [58, 1.0], c: [50, 0.8], '*': [38, 0.6], M: [34, 0.55], p: [24, 0.35] };
   const x0 = Math.max(0, Math.floor(camX / T) - 2);
   const y0 = Math.max(0, Math.floor(camY / T) - 2);
@@ -4435,6 +4360,98 @@ G.drawBigLight = (c, camX, camY, t) => {
   }
   c.restore();
   c.globalAlpha = 1;
+};
+
+
+// ============================================================
+// Die graue Stadt, ebenfalls eine offene Karte
+// ============================================================
+G.CITYMAP = (function () {
+  const CITY_W = 40, CITY_H = 60;
+  const tiles = [
+    '########################################',
+    '########################################',
+    '##W###==W#W#W##W#W==WW####W##W==W#W#W###',
+    '##W###==W#########==#########W==W#######',
+    '#####W==##########==#########W==########',
+    '#####W==##########==#########W==#####W##',
+    '######==W#########==##########==W#######',
+    '##W##W==###WW##WWW==W####WWWWW==WW#W####',
+    '##====================================##',
+    '##====================================##',
+    '##W##W==##..T.T###==#####W#W#W==W####W##',
+    '#####W==##g....##W==##########==########',
+    '#####W==##.....##W==W#########==W####W##',
+    '##WWWW==W#W##WW##W==#W#WW#WWWW==########',
+    '######==========================W####W##',
+    '######==========================W####W##',
+    '####WW==#WWWWWW#W#==##..T..#WW==W####W##',
+    '######==##########==##...T.###==########',
+    '#####W==##########==W#.....###==########',
+    '#####W==W#W##W##WW==WW#W##WW#W==WW##WW##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==..........==W#WW#WWW##==#WWWWW##',
+    '######==.~~~~~~~~.==#########W==W#######',
+    '##W###==.~~~~~~~~.==#########W==#####W##',
+    '##W###==.~~~~~~~~.==W########W==.....###',
+    '######==.~~~~~~~~.==W#########==.gT..###',
+    '######==...T......==##########==....TW##',
+    '##W##W==============##########==########',
+    '##W###==..T.....T.==W#########==########',
+    '##W###==.....gTT..==W#########==########',
+    '##WWW#==...g....g.==#WW#WW#WW#==#W##WW##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==WWW##WWW#W==WW##W#W##W==W###W###',
+    '######==##########==##.....###==########',
+    '######==W#########==W#...g.###==W#######',
+    '#####W==W########W==W#.....###==########',
+    '#####W==WW#WW##W#W==#WWW##WWWW==########',
+    '######==========================W#######',
+    '######==========================W####W##',
+    '###WW#==W####WWWW#==#WW###W#WW==W####W##',
+    '##W###==##.g...###==W#########==########',
+    '#####W==##.....###==#########W==########',
+    '######==##....T##W==##########==W#######',
+    '###W#W==#W#WWW####==WW#WWW#W#W==#####W##',
+    '##====================================##',
+    '##====================================##',
+    '##WWWW==##########==##########==W##WWW##',
+    '##W##W==##########==#WWWWWWWW#==#####W##',
+    '##W##W==##########==#WWWWWWWW#==########',
+    '##WW#W==##########==####DD####==W####W##',
+    '######================......====########',
+    '######================......====########',
+    '######==#W.....##W==WWWWWWWWWW==W#######',
+    '######==W#.....##W==##########==W#######',
+    '######==##.g..g###==##########==########',
+    '######==W#WWWW##WW==WWWWWW##W#==W##W#W##',
+    '########################################',
+    '########################################',
+  ];
+  const npcSpots = [[31,28], [30,40], [11,20], [20,21], [21,32], [13,31], [11,8]];
+  const LADEN = [24, 51];
+  const START = [286, 842];
+  return { W: CITY_W, H: CITY_H, tiles, npcSpots, LADEN, START,
+    biomeAt: () => 'grau',
+    regionAt: () => ({ name: 'Die graue Stadt', x: 0, y: 0, r: 999 }),
+    REGIONS: [{ name: 'Die graue Stadt', x: 20, y: 30, r: 999 }],
+    fragSpots: [], inschriftSpots: [], shrineSpots: [],
+    npcRegions: [], inschRegions: [] };
+})();
+
+// Die aktive Karte, je nach Spielphase
+G.activeMap = () => (G.state && G.state.phase === 'arkana') ? G.BIGMAP : G.CITYMAP;
+
+// Kollision auf der aktiven Karte
+G.mapSolid = (px, py) => {
+  const M = G.activeMap();
+  const tx = Math.floor(px / G.TILE), ty = Math.floor(py / G.TILE);
+  if (tx < 0 || ty < 0 || tx >= M.W || ty >= M.H) return true;
+  const ch = (M.tiles[ty] || '')[tx] || '.';
+  const tile = G.TILES[ch];
+  return tile ? tile.solid : false;
 };
 
 </script>
