@@ -85,6 +85,7 @@ G.newState = () => ({
   area: 'stadt', room: '1,1', px: 167, py: 250,
   flags: {},
   fragmente: [],
+  bigFrags: null,
   gelesen: {},
   stats: { schritte: 0, dialoge: 0, geglaubt: 0, geprueft: 0, inschriften: 0 },
 });

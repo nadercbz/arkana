@@ -492,63 +492,176 @@ G.OrtScene = (ort, text) => {
 };
 
 // ------------------------------------------------------------
-// Oberwelt
+// Story auf der grossen Karte: Inschriften und NPCs bekommen
+// ihren Text aus der Region, in der sie stehen.
+// ------------------------------------------------------------
+// Lazy aufgebaut: 06_story.js wird erst nach dieser Datei geladen.
+let _storyByName = null;
+Object.defineProperty(G, 'STORY_BY_NAME', {
+  get() {
+    if (_storyByName) return _storyByName;
+    const out = {};
+    for (const k in (G.STORY || {})) {
+      const st = G.STORY[k];
+      if (st && st.ort) out[st.ort] = st;
+    }
+    // Regionen ohne exakten Treffer auf den naechstbesten Ort abbilden
+    for (const r of (G.BIGMAP ? G.BIGMAP.REGIONS : [])) {
+      if (out[r.name]) continue;
+      for (const k in (G.STORY || {})) {
+        const st = G.STORY[k];
+        if (st && st.ort && (r.name.indexOf(st.ort) >= 0 || st.ort.indexOf(r.name) >= 0)) { out[r.name] = st; break; }
+      }
+    }
+    _storyByName = out;
+    return out;
+  },
+});
+
+G.bigInschrift = (idx) => {
+  const M = G.BIGMAP;
+  const regName = M.inschRegions[idx] || 'Aschenstadt';
+  const st = G.STORY_BY_NAME[regName];
+  if (st && st.inschriften && st.inschriften.length) {
+    return st.inschriften[idx % st.inschriften.length];
+  }
+  return { titel: 'Verwitterter Stein', text: 'Die Zeichen sind nicht mehr zu lesen. Nur eine Kerbe bleibt, tief und absichtlich.' };
+};
+
+G.bigNpcDialog = (idx) => {
+  const M = G.BIGMAP;
+  const regName = M.npcRegions[idx] || 'Aschenstadt';
+  // Feste Sprecher je Region, sonst eine Stimme passend zum Fortschritt
+  const map = {
+    'Aschenstadt': 'asche_wache', 'Markt der Mustersucher': 'asche_haendler',
+    'Spiegelhof': 'hof_hueterin', 'Sternenwarte': 'sternwarte_deuterin',
+    'Kristallkaverne': 'kristall_hoerer', 'Verbrannte Bibliothek': 'biblio_archivar',
+    'Mondgarten': 'mond_gaertnerin', 'Sandtor': 'wueste_wanderer',
+    'Die stumme Pyramide': 'pyramide_waechter', 'Wandernde Dünen': 'duenen_nomade',
+    'Glutschlund': 'glut_schmied', 'Wurzelhain': 'hain_alte',
+    'Nebelsumpf': 'sumpf_faehrmann', 'Stille Bucht': 'bucht_schweigende',
+    'Die Tiefe': 'tiefe_stimme',
+  };
+  const key = map[regName];
+  const base = key && G.DIALOGE[key] ? G.DIALOGE[key].slice() : ['...'];
+  // Je nach Sammelstand hängt eine Stimme des Index oder der Sucher an
+  const n = G.state.fragmente.length, tot = G.FRAGMENTS.length;
+  const q = n / Math.max(1, tot);
+  if (G.INDEX_STIMMEN && Math.random() < 0.45) {
+    const stufe = q < 0.25 ? 'frueh' : q < 0.6 ? 'mitte' : 'spaet';
+    const arr = G.INDEX_STIMMEN[stufe] || [];
+    if (arr.length) base.push('Eine fremde Stimme, wie aus der Wand: ' + arr[Math.floor(Math.random() * arr.length)]);
+  } else if (G.SUCHER_STIMMEN && q > 0.3 && Math.random() < 0.4) {
+    base.push(G.SUCHER_STIMMEN[Math.floor(Math.random() * G.SUCHER_STIMMEN.length)]);
+  }
+  return base;
+};
+
+// ------------------------------------------------------------
+// Oberwelt. Im Prolog raumweise wie bisher, in Arkana eine
+// zusammenhaengende Karte mit folgender Kamera.
 // ------------------------------------------------------------
 G.OverworldScene = () => {
   let t = 0;
-  let transition = null;
+  let transition = null;          // nur im Prolog
   const anim = G.newAnim();
-  let vx = 0, vy = 0;               // echte Geschwindigkeit, wird weich geführt
+  let vx = 0, vy = 0;
   const spiritPos = { x: 0, y: 0 };
   const spiritTrail = [];
   let ambientTimer = 0;
   let fauna = [];
-  let faunaRoom = null;
+  let faunaKey = null;
+  const cam = { x: 0, y: 0 };
+  let lastRegion = null;
 
-  function ensureFauna() {
-    if (faunaRoom === G.state.room) return;
-    const r = room();
-    fauna = G.newFauna((r && r.biome) || 'asche', G.hashStr(G.state.room + (r ? r.biome : '')));
-    faunaRoom = G.state.room;
-  }
-
+  const big = () => G.state.phase === 'arkana';
   const area = () => G.MAPS[G.state.area];
   const room = () => area().rooms[G.state.room];
+  const M = () => G.BIGMAP;
 
-  function ensureFragments() {
-    // Fragmente aus einem alten Spielstand koennen auf IDs zeigen, die es
-    // nach einem Neubau der Knowledge Base nicht mehr gibt. Die fliegen raus.
-    if (G.state.fragMap) {
-      for (const rm in G.state.fragMap) {
-        G.state.fragMap[rm] = G.state.fragMap[rm].filter(
-          (e) => e && G.FRAGMENTS.some((f) => f.id === e.id));
-      }
-    }
-    if (G.state.area !== 'asche' || G.state.fragMap || !G.state.sig) return;
-    const rng = G.mulberry32(G.state.sig.seed);
-    const pool = [...G.FRAGMENTS];
-    const map = {};
-    for (const [rm, spots] of Object.entries(area().fragSpots || {})) {
-      map[rm] = spots.map(([tx, ty]) => {
-        const i = Math.floor(rng() * pool.length);
-        const f = pool.splice(i, 1)[0];
-        return f ? { x: tx * TT, y: ty * TT, id: f.id } : null;
-      }).filter(Boolean);
-    }
-    G.state.fragMap = map;
-  }
-
-  // Kollision nur ueber die Fussflaeche, damit Kopf und Schultern
-  // vor Waenden liegen duerfen. Figur ist 26 breit, 42 hoch.
+  // ---------- Kollision ----------
   function canStand(nx, ny) {
-    const r = room();
     const pts = [[nx + 7, ny + 30], [nx + 19, ny + 30], [nx + 7, ny + 39], [nx + 19, ny + 39]];
+    if (big()) {
+      for (const [px, py] of pts) if (G.bigSolid(px, py)) return false;
+      return true;
+    }
+    const r = room();
     for (const [px, py] of pts) if (G.isSolid(r, px, py)) return false;
     return true;
   }
 
-  // Wechselt nur, wenn der Zielraum an dieser Seite auch wirklich einen
-  // Durchgang hat. Sonst laeuft man in eine Wand und steckt fest.
+  // ---------- Fragmente auf der grossen Karte ----------
+  function ensureFragments() {
+    if (!big() || G.state.bigFrags) return;
+    if (!G.state.sig) return;
+    const rngf = G.mulberry32(G.state.sig.seed);
+    const pool = [...G.FRAGMENTS];
+    G.state.bigFrags = M().fragSpots.map(([tx, ty]) => {
+      const i = Math.floor(rngf() * pool.length);
+      const f = pool.splice(i, 1)[0];
+      return f ? { x: tx * TT, y: ty * TT, id: f.id } : null;
+    }).filter(Boolean);
+  }
+
+  // ---------- Fauna nach Biom am Spieler ----------
+  function ensureFauna() {
+    let key, biome;
+    if (big()) {
+      const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
+      biome = M().biomeAt(tx, ty);
+      key = 'big:' + biome;
+    } else {
+      const r = room();
+      biome = (r && r.biome) || 'grau';
+      key = G.state.room + ':' + biome;
+    }
+    if (faunaKey === key) return;
+    fauna = G.newFauna(biome, G.hashStr(key));
+    faunaKey = key;
+  }
+
+  // ---------- Interaktion ----------
+  function nearest() {
+    const px = G.state.px + 13, py = G.state.py + 32;
+    if (big()) {
+      const m = M();
+      for (let i = 0; i < m.npcSpots.length; i++) {
+        const [tx, ty] = m.npcSpots[i];
+        if (Math.hypot(px - (tx * TT + 13), py - (ty * TT + 32)) < 52) return { type: 'npc', idx: i };
+      }
+      for (let i = 0; i < m.inschriftSpots.length; i++) {
+        const [tx, ty] = m.inschriftSpots[i];
+        if (Math.hypot(px - (tx * TT + 20), py - (ty * TT + 24)) < 46) return { type: 'inschrift', idx: i };
+      }
+      for (let i = 0; i < m.shrineSpots.length; i++) {
+        const [tx, ty] = m.shrineSpots[i];
+        if (Math.hypot(px - (tx * TT + 20), py - (ty * TT + 24)) < 78) return { type: 'shrine', idx: i };
+      }
+      for (const f of G.state.bigFrags || []) {
+        if (G.state.fragmente.includes(f.id)) continue;
+        if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
+      }
+      return null;
+    }
+    // Prolog
+    for (const n of (area().npcs || {})[G.state.room] || []) {
+      if (Math.hypot(px - (n.x * TT + 13), py - (n.y * TT + 32)) < 52) return { type: 'npc', npc: n };
+    }
+    const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
+    for (const tr of (area().triggers || {})[G.state.room] || []) {
+      if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
+    }
+    return null;
+  }
+
+  // ---------- Prolog: Raumwechsel ----------
+  function clampVal(v, axis) {
+    const mid = axis === 'y' ? Math.floor(G.ROOM_H / 2) : Math.floor(G.ROOM_W / 2);
+    const lo = (mid - 1) * TT + 2;
+    const hi = (mid + 1) * TT + TT - (axis === 'y' ? 30 : 28);
+    return Math.max(lo, Math.min(hi, v));
+  }
   function roomShift(dx, dy) {
     const [rx, ry] = G.state.room.split(',').map(Number);
     const key = `${rx + dx},${ry + dy}`;
@@ -566,117 +679,40 @@ G.OverworldScene = () => {
     return true;
   }
 
-  // Klemmt einen Wert in den Durchgang der jeweiligen Kantenmitte.
-  function clampVal(v, axis) {
-    const mid = axis === 'y' ? Math.floor(G.ROOM_H / 2) : Math.floor(G.ROOM_W / 2);
-    const lo = (mid - 1) * TT + 2;
-    const hi = (mid + 1) * TT + TT - (axis === 'y' ? 30 : 28);
-    return Math.max(lo, Math.min(hi, v));
-  }
-  function clampCross(axis) {
-    if (axis === 'y') G.state.py = clampVal(G.state.py, 'y');
-    else G.state.px = clampVal(G.state.px, 'x');
-  }
-
-  // Sicherheitsnetz: steht die Figur trotzdem in einer Wand, suche
-  // spiralfoermig den naechsten begehbaren Punkt. Damit kann man
-  // grundsaetzlich nicht mehr feststecken.
-  function rescueIfStuck() {
-    if (canStand(G.state.px, G.state.py)) return;
-    for (let r = 4; r <= 140; r += 4) {
-      for (let a = 0; a < 16; a++) {
-        const ang = (a / 16) * 6.283;
-        const nx = G.state.px + Math.cos(ang) * r;
-        const ny = G.state.py + Math.sin(ang) * r;
-        if (nx < 0 || ny < 0 || nx > G.W - 26 || ny > G.FIELD_H - 42) continue;
-        if (canStand(nx, ny)) { G.state.px = nx; G.state.py = ny; return; }
-      }
-    }
-  }
-
-  // Position eines NPC oder Schreins aus den generierten Plätzen holen
-  function spotOf(list, idx) {
-    const arr = (list || {})[G.state.room];
-    if (!arr || !arr[idx || 0]) return null;
-    return arr[idx || 0];
-  }
-
-  function nearest() {
-    const px = G.state.px + 13, py = G.state.py + 32;
-    for (const n of (area().npcs || {})[G.state.room] || []) {
-      const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
-      if (!sp) continue;
-      if (Math.hypot(px - (sp[0] * TT + 13), py - (sp[1] * TT + 32)) < 52) return { type: 'npc', npc: n };
-    }
-    // Inschriften tragen die Story
-    const insch = (area().inschriftSpots || {})[G.state.room] || [];
-    for (let i = 0; i < insch.length; i++) {
-      const [tx, ty] = insch[i];
-      if (Math.hypot(px - (tx * TT + 20), py - (ty * TT + 24)) < 46) return { type: 'inschrift', idx: i };
-    }
-    for (const f of (G.state.fragMap || {})[G.state.room] || []) {
-      if (G.state.fragmente.includes(f.id)) continue;
-      if (Math.hypot(px - (f.x + 20), py - (f.y + 20)) < 46) return { type: 'frag', frag: f };
-    }
-    const shDef = (area().shrines || {})[G.state.room];
-    if (shDef) {
-      const sp = spotOf(area().npcSpots, 0);
-      const sx = sp ? sp[0] * TT : 3 * TT, sy = sp ? sp[1] * TT : 3 * TT;
-      if (Math.hypot(px - (sx + 20), py - (sy + 24)) < 78) return { type: 'shrine' };
-    }
-    const tx = Math.floor(px / TT), ty = Math.floor(py / TT);
-    for (const tr of (area().triggers || {})[G.state.room] || []) {
-      if (tx >= tr.x1 - 1 && tx <= tr.x2 + 1 && ty >= tr.y1 - 1 && ty <= tr.y2 + 1) return { type: 'trigger', trigger: tr };
-    }
-    return null;
-  }
-
   return {
     enter() {
       ensureFragments();
       ensureFauna();
       spiritPos.x = G.state.px - 24; spiritPos.y = G.state.py - 2;
+      if (big()) {
+        cam.x = G.state.px + 13 - G.W / 2;
+        cam.y = G.state.py + 20 - G.FIELD_H / 2;
+      }
     },
+
     update(dt) {
       t += dt;
 
-      // Ambient-Partikel
+      // Ambient je Biom
       ambientTimer -= dt;
       if (ambientTimer <= 0) {
         ambientTimer = 0.09;
-        const r0 = room();
-        const bio = (r0 && r0.biome) || area().ambient;
-        if (bio === 'sumpf') {
-          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*6, vy: -10 - Math.random()*14,
-            life: 9, fade: 2.5, color: '#4fbf7f', size: 2, alpha: 0.28, drift: 1.4 });
-        } else if (bio === 'kristall') {
-          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H, vx: 0, vy: -6 - Math.random()*8,
-            life: 4, fade: 1.6, color: '#c4baff', size: 2, alpha: 0.5 });
-        } else if (bio === 'wueste') {
-          G.spawnParticle({ x: -4, y: Math.random() * G.FIELD_H, vx: 70 + Math.random()*60, vy: 6,
-            life: 5, fade: 1.2, color: '#e8b040', size: 1, alpha: 0.35 });
-        } else if (bio === 'unterwelt') {
-          G.spawnParticle({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*14, vy: -26 - Math.random()*20,
-            life: 3.5, fade: 1.4, color: '#f5705a', size: 2, alpha: 0.6, drift: 2.2 });
-        } else if (bio === 'sternen') {
-          G.spawnParticle({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H * 0.5, vx: 0, vy: 3,
-            life: 6, fade: 2, color: '#b4dcff', size: 1, alpha: 0.7 });
-        } else if (bio === 'mond') {
-          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*10, vy: 9 + Math.random()*10,
-            life: 8, fade: 2.4, color: '#dce6f5', size: 1, alpha: 0.4, drift: 1.8 });
-        } else if (bio === 'hain') {
-          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*18, vy: 14 + Math.random()*12,
-            life: 7, fade: 2, color: '#bce870', size: 2, alpha: 0.35, drift: 2.6 });
-        } else if (bio === 'bibliothek') {
-          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 11 + Math.random()*9,
-            life: 8, fade: 2.2, color: '#d99a4a', size: 1, alpha: 0.32, drift: 1.5 });
-        } else if (bio === 'asche') {
-          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: (Math.random() - 0.5) * 8, vy: 12 + Math.random() * 16,
-            life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.5, drift: 2 });
-        } else if (amb === 'regen') {
-          G.spawnParticle({ x: Math.random() * G.W, y: -4, vx: -8, vy: 220 + Math.random() * 90,
-            life: 2.6, fade: 1, color: '#48505c', size: 1, alpha: 0.45 });
+        let bio;
+        if (big()) {
+          bio = M().biomeAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
+        } else {
+          const r0 = room(); bio = (r0 && r0.biome) || area().ambient;
         }
+        const spawn = (o) => G.spawnParticle(o);
+        if (bio === 'sumpf') spawn({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*6, vy: -10 - Math.random()*14, life: 9, fade: 2.5, color: '#4fbf7f', size: 2, alpha: 0.28, drift: 1.4 });
+        else if (bio === 'kristall') spawn({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H, vx: 0, vy: -6 - Math.random()*8, life: 4, fade: 1.6, color: '#c4baff', size: 2, alpha: 0.5 });
+        else if (bio === 'wueste') spawn({ x: -4, y: Math.random() * G.FIELD_H, vx: 70 + Math.random()*60, vy: 6, life: 5, fade: 1.2, color: '#e8b040', size: 1, alpha: 0.35 });
+        else if (bio === 'unterwelt') spawn({ x: Math.random() * G.W, y: G.FIELD_H + 4, vx: (Math.random()-0.5)*14, vy: -26 - Math.random()*20, life: 3.5, fade: 1.4, color: '#f5705a', size: 2, alpha: 0.6, drift: 2.2 });
+        else if (bio === 'sternen') spawn({ x: Math.random() * G.W, y: Math.random() * G.FIELD_H * 0.5, vx: 0, vy: 3, life: 6, fade: 2, color: '#b4dcff', size: 1, alpha: 0.7 });
+        else if (bio === 'mond') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*10, vy: 9 + Math.random()*10, life: 8, fade: 2.4, color: '#dce6f5', size: 1, alpha: 0.4, drift: 1.8 });
+        else if (bio === 'hain') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*18, vy: 14 + Math.random()*12, life: 7, fade: 2, color: '#bce870', size: 2, alpha: 0.35, drift: 2.6 });
+        else if (bio === 'bibliothek') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 11 + Math.random()*9, life: 8, fade: 2.2, color: '#d99a4a', size: 1, alpha: 0.32, drift: 1.5 });
+        else if (bio === 'asche' || bio === 'grau') spawn({ x: Math.random() * G.W, y: -4, vx: (Math.random()-0.5)*8, vy: 12 + Math.random()*16, life: 8, fade: 2, color: G.PAL.amber.dim, size: 1, alpha: 0.45, drift: 2 });
       }
 
       if (transition) {
@@ -684,44 +720,29 @@ G.OverworldScene = () => {
         if (transition.prog >= 1) {
           const dx = transition.dx, dy = transition.dy;
           G.state.room = transition.to;
-          // Sicher INNERHALB des Raums absetzen, nicht in der Randkachel.
-          // Die Querachse wird in den Durchgang geklemmt, sonst bleibt
-          // die Figur an der Ecke des Durchgangs haengen.
-          if (dx === 1) { G.state.px = TT + 6; clampCross('y'); }
-          if (dx === -1) { G.state.px = G.W - TT - 26; clampCross('y'); }
-          if (dy === 1) { G.state.py = TT + 2; clampCross('x'); }
-          if (dy === -1) { G.state.py = G.FIELD_H - TT - 44; clampCross('x'); }
-          rescueIfStuck();
-          vx = 0; vy = 0;          // Restgeschwindigkeit verwerfen
-          transition = null; G.save();
-          // Beim ersten Betreten den Ankunftstext zeigen
-          const st = G.STORY && G.STORY[G.state.room];
-          const key = 'ank:' + G.state.room;
-          if (st && st.ankunft && !G.state.gelesen[key]) {
-            G.state.gelesen[key] = 1; G.save();
-            G.pushScene(G.OrtScene(st.ort || (room() && room().name) || '', st.ankunft));
-          }
+          if (dx === 1) { G.state.px = TT + 6; G.state.py = clampVal(G.state.py, 'y'); }
+          if (dx === -1) { G.state.px = G.W - TT - 26; G.state.py = clampVal(G.state.py, 'y'); }
+          if (dy === 1) { G.state.py = TT + 2; G.state.px = clampVal(G.state.px, 'x'); }
+          if (dy === -1) { G.state.py = G.FIELD_H - TT - 44; G.state.px = clampVal(G.state.px, 'x'); }
+          vx = 0; vy = 0; transition = null; G.save();
         }
         G.updateAnim(anim, dt, 0, 0, false);
         return;
       }
 
-      // --- Bewegung mit Beschleunigung, das macht sie organisch ---
+      // ---------- Bewegung ----------
       const d = G.input.dir();
-      const MAX = 108, ACC = 900, FRIC = 780;
+      const MAX = 118, ACC = 950, FRIC = 820;
       const tvx = d.x * MAX, tvy = d.y * MAX;
       const moving = Math.abs(d.x) > 0.01 || Math.abs(d.y) > 0.01;
       if (moving) {
         vx += Math.sign(tvx - vx) * Math.min(Math.abs(tvx - vx), ACC * dt);
         vy += Math.sign(tvy - vy) * Math.min(Math.abs(tvy - vy), ACC * dt);
       } else {
-        const s = Math.hypot(vx, vy);
-        if (s > 0) { const dec = Math.min(s, FRIC * dt); vx -= (vx / s) * dec; vy -= (vy / s) * dec; }
+        const sp = Math.hypot(vx, vy);
+        if (sp > 0) { const dec = Math.min(sp, FRIC * dt); vx -= (vx / sp) * dec; vy -= (vy / sp) * dec; }
       }
-
       const nx = G.state.px + vx * dt, ny = G.state.py + vy * dt;
-      // Steht die Figur bereits in einer Wand, Bewegung ungeprueft zulassen,
-      // damit sie sich immer herausschieben kann.
       const trapped = !canStand(G.state.px, G.state.py);
       if (trapped) { G.state.px = nx; G.state.py = ny; }
       else {
@@ -730,20 +751,19 @@ G.OverworldScene = () => {
       }
 
       ensureFauna();
-      G.updateFauna(fauna, dt, t, G.state.px + 13, G.state.py + 26);
+      G.updateFauna(fauna, dt, t, G.state.px + 13 - (big() ? cam.x : 0), G.state.py + 26 - (big() ? cam.y : 0));
       const stepped = G.updateAnim(anim, dt, vx, vy, moving);
       if (stepped) {
         G.state.stats.schritte++;
-        // Staub beim Aufsetzen
         for (let i = 0; i < 2; i++) {
-          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8, y: G.state.py + 38,
+          G.spawnParticle({ x: G.state.px + 9 + Math.random() * 8 - (big() ? cam.x : 0), y: G.state.py + 38 - (big() ? cam.y : 0),
             vx: (Math.random() - 0.5) * 26, vy: -8 - Math.random() * 12,
             life: 0.45, fade: 0.45, grav: 60, color: G.pal.dim, size: 1, alpha: 0.6 });
         }
       }
 
-      // Begleiter folgt weich
-      if (G.state.phase === 'arkana') {
+      // Begleiter
+      if (big() && G.state.sig) {
         const tx = G.state.px - 26 - anim.facing * 8, ty = G.state.py - 4;
         spiritPos.x += (tx - spiritPos.x) * Math.min(1, dt * 3.4);
         spiritPos.y += (ty - spiritPos.y) * Math.min(1, dt * 3.0);
@@ -753,108 +773,149 @@ G.OverworldScene = () => {
         }
       }
 
-      // Raumwechsel
-      if (G.state.px < -8) { if (!roomShift(-1, 0)) { G.state.px = -8; vx = 0; } }
-      if (G.state.px > G.W - 18) { if (!roomShift(1, 0)) { G.state.px = G.W - 18; vx = 0; } }
-      if (G.state.py < -14) { if (!roomShift(0, -1)) { G.state.py = -14; vy = 0; } }
-      if (G.state.py > G.FIELD_H - 34) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 34; vy = 0; } }
+      if (big()) {
+        // ---------- Kamera folgt weich, bleibt in der Karte ----------
+        const tgx = G.state.px + 13 - G.W / 2;
+        const tgy = G.state.py + 20 - G.FIELD_H / 2;
+        cam.x += (tgx - cam.x) * Math.min(1, dt * 6);
+        cam.y += (tgy - cam.y) * Math.min(1, dt * 6);
+        cam.x = Math.max(0, Math.min(M().W * TT - G.W, cam.x));
+        cam.y = Math.max(0, Math.min(M().H * TT - G.FIELD_H, cam.y));
+        // Kartengrenzen für den Spieler
+        G.state.px = Math.max(0, Math.min(M().W * TT - 26, G.state.px));
+        G.state.py = Math.max(0, Math.min(M().H * TT - 42, G.state.py));
 
+        // Region gewechselt? Dann Ortstafel und Story
+        const reg = M().regionAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
+        if (reg && reg.name !== lastRegion) {
+          lastRegion = reg.name;
+          const key = 'reg:' + reg.name;
+          if (!G.state.gelesen[key]) {
+            G.state.gelesen[key] = 1; G.save();
+            const st = G.STORY_BY_NAME && G.STORY_BY_NAME[reg.name];
+            G.pushScene(G.OrtScene(reg.name, st ? st.ankunft : 'Ein neuer Ort öffnet sich.'));
+          }
+        }
+        if (Math.floor(t) % 30 === 0 && Math.random() < 0.004) G.save();
+      } else {
+        // Prolog: Raumwechsel am Rand
+        if (G.state.px < -8) { if (!roomShift(-1, 0)) { G.state.px = -8; vx = 0; } }
+        if (G.state.px > G.W - 18) { if (!roomShift(1, 0)) { G.state.px = G.W - 18; vx = 0; } }
+        if (G.state.py < -14) { if (!roomShift(0, -1)) { G.state.py = -14; vy = 0; } }
+        if (G.state.py > G.FIELD_H - 34) { if (!roomShift(0, 1)) { G.state.py = G.FIELD_H - 34; vy = 0; } }
+      }
+
+      // ---------- Interaktion ----------
       if (G.input.pressed('action')) {
         const it = nearest();
         if (it) {
-          if (it.type === 'npc') { G.state.stats.dialoge++; G.pushScene(G.DialogScene(G.DIALOGE[it.npc.dlg] || ['...'])); }
-          else if (it.type === 'inschrift') {
-            const st = G.STORY && G.STORY[G.state.room];
-            const ins = st && st.inschriften && st.inschriften[it.idx % st.inschriften.length];
-            const key = G.state.room + ':' + it.idx;
+          if (it.type === 'npc') {
+            G.state.stats.dialoge++;
+            const dlg = big() ? G.bigNpcDialog(it.idx) : (G.DIALOGE[it.npc.dlg] || ['...']);
+            G.pushScene(G.DialogScene(dlg));
+          } else if (it.type === 'inschrift') {
+            const key = 'ins:' + it.idx;
             if (!G.state.gelesen[key]) { G.state.gelesen[key] = 1; G.state.stats.inschriften = (G.state.stats.inschriften || 0) + 1; G.save(); }
-            G.pushScene(G.InschriftScene(ins || { titel: 'Verwitterter Stein', text: 'Die Zeichen sind nicht mehr zu lesen.' }));
+            G.pushScene(G.InschriftScene(G.bigInschrift(it.idx)));
+          } else if (it.type === 'frag') {
+            const f = G.FRAGMENTS.find((x) => x.id === it.frag.id);
+            if (f) G.pushScene(G.FragmentScene(f));
+          } else if (it.type === 'shrine') {
+            G.pushScene(G.SpiegelScene());
+          } else if (it.type === 'trigger' && it.trigger.event === 'laden') {
+            G.replaceScene(G.TerminalScene());
           }
-          else if (it.type === 'frag') { const f = G.FRAGMENTS.find((x) => x.id === it.frag.id); if (f) G.pushScene(G.FragmentScene(f)); }
-          else if (it.type === 'shrine') { G.pushScene(G.SpiegelScene()); }
-          else if (it.type === 'trigger' && it.trigger.event === 'laden') { G.replaceScene(G.TerminalScene()); }
         }
-      }
-      else if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
+      } else if (G.input.pressed('cancel')) G.pushScene(G.CodexScene());
     },
 
     draw(c) {
-      // Die Palette kommt aus dem Biom des aktuellen Raums
-      const rp = G.roomPal(room());
-      const p = rp || G.pal;
+      let p = G.pal;
+      if (big()) {
+        const tx = Math.floor((G.state.px + 13) / TT), ty = Math.floor((G.state.py + 32) / TT);
+        p = G.BIOMES[M().biomeAt(tx, ty)] || G.pal;
+      } else {
+        p = G.roomPal(room()) || G.pal;
+      }
       c.fillStyle = p.bgDeep; c.fillRect(0, 0, G.W, G.FIELD_H);
 
-      if (transition) {
-        const pr = transition.prog < 0.5
-          ? 2 * transition.prog * transition.prog
-          : 1 - Math.pow(-2 * transition.prog + 2, 2) / 2; // ease in out
+      c.save();
+      c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
+
+      if (big()) {
+        const cx = Math.round(cam.x), cy = Math.round(cam.y);
+        G.drawBigMap(c, cx, cy, t);
+
+        // Fragmente
+        for (const f of G.state.bigFrags || []) {
+          if (G.state.fragmente.includes(f.id)) continue;
+          const sx = f.x - cx, sy = f.y - cy;
+          if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) continue;
+          G.drawFragment(c, sx, sy, p, t, f.x * 0.01);
+        }
+        // Inschriften
+        M().inschriftSpots.forEach(([itx, ity], i) => {
+          const sx = itx * TT - cx, sy = ity * TT - cy;
+          if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) return;
+          G.drawInschrift(c, sx, sy, p, t, !!G.state.gelesen['ins:' + i]);
+        });
+        // Schreine
+        M().shrineSpots.forEach(([stx, sty]) => {
+          const sx = stx * TT - cx - 20, sy = sty * TT - cy - 20;
+          if (sx < -100 || sy < -100 || sx > G.W + 100 || sy > G.FIELD_H + 100) return;
+          G.drawShrine(c, sx, sy, p, t);
+        });
+        // NPCs
+        M().npcSpots.forEach(([ntx, nty], i) => {
+          const sx = ntx * TT - cx, sy = nty * TT - cy;
+          if (sx < -60 || sy < -60 || sx > G.W + 60 || sy > G.FIELD_H + 60) return;
+          G.drawNpc(c, sx, sy, p, i % 4, t, i);
+        });
+
+        G.drawParticles(c);
+        G.drawFauna(c, fauna, p, t);
+        if (G.state.sig) G.drawSpirit(c, spiritPos.x - cx, spiritPos.y - cy, p, t, G.state.sig.spirit.farbe, spiritTrail.map((q) => ({ x: q.x - cx, y: q.y - cy })));
+
+        const cols = G.state.sig ? G.state.sig.farben : G.ELEMENT_COLORS.Feuer;
+        G.drawPlayer(c, G.state.px - cx, G.state.py - cy, anim, p, cols, null);
+        G.drawBigLight(c, cx, cy, t);
+      } else if (transition) {
+        const pr = transition.prog < 0.5 ? 2 * transition.prog * transition.prog
+          : 1 - Math.pow(-2 * transition.prog + 2, 2) / 2;
         const ox = -transition.dx * G.W * pr, oy = -transition.dy * G.FIELD_H * pr;
-        c.save();
-        c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
         c.translate(Math.round(ox), Math.round(oy));
         G.drawRoom(c, area().rooms[transition.from], p, t);
         c.translate(Math.round(transition.dx * G.W), Math.round(transition.dy * G.FIELD_H));
         G.drawRoom(c, area().rooms[transition.to], p, t);
-        c.restore();
       } else {
-        c.save();
-        c.beginPath(); c.rect(0, 0, G.W, G.FIELD_H); c.clip();
         G.drawRoom(c, room(), p, t);
-
-        // Fragmente
-        (G.state.fragMap || {})[G.state.room]?.forEach((f, i) => {
-          if (!G.state.fragmente.includes(f.id)) G.drawFragment(c, f.x, f.y, p, t, i * 1.7);
-        });
-        // Schrein
-        if ((area().shrines || {})[G.state.room]) {
-          const sp = spotOf(area().npcSpots, 0);
-          if (sp) G.drawShrine(c, sp[0] * TT - 20, sp[1] * TT - 20, p, t);
-        }
-        // NPCs
-        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => {
-          const sp = n.spot !== undefined ? spotOf(area().npcSpots, n.spot) : [n.x, n.y];
-          if (sp) G.drawNpc(c, sp[0] * TT, sp[1] * TT, p, n.v, t, i);
-        });
-        // Inschriften
-        ((area().inschriftSpots || {})[G.state.room] || []).forEach(([tx, ty], i) => {
-          const key = G.state.room + ':' + i;
-          G.drawInschrift(c, tx * TT, ty * TT, p, t, !!G.state.gelesen[key]);
-        });
-
-        // Ladenflackern
+        ((area().npcs || {})[G.state.room] || []).forEach((n, i) => G.drawNpc(c, n.x * TT, n.y * TT, p, n.v, t, i));
         if (G.state.area === 'stadt' && G.state.room === '1,2' && Math.sin(t * 6.5) > 0.55) {
           c.globalAlpha = 0.3; c.fillStyle = G.PAL.amber.main;
-          c.fillRect(5 * TT, 9 * TT, 5 * TT, 3 * TT); c.globalAlpha = 1;
+          c.fillRect(2 * TT, 5 * TT, 5 * TT, 4 * TT); c.globalAlpha = 1;
         }
-
         G.drawParticles(c);
         G.drawFauna(c, fauna, p, t);
-
-        // Begleiter hinter dem Spieler
-        if (G.state.phase === 'arkana' && G.state.sig) {
-          G.drawSpirit(c, spiritPos.x, spiritPos.y, p, t, G.state.sig.spirit.farbe, spiritTrail);
-        }
-
-        // Spieler
-        const cols = G.state.sig ? G.state.sig.farben : { robe: '#4a4e58', robeHi: '#5f646f', trim: '#8b8f99', core: '#ff8c00' };
-        const glow = G.state.phase === 'prolog' ? G.PAL.amber.main : null;
-        G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, glow);
-
-        // Licht der Fackeln, Kristalle und Leylinien über allem
+        const cols = G.state.sig ? G.state.sig.farben : { robe: '#4a4e58', robeHi: '#5f646f', robeDark: '#2a2d33', trim: '#8b8f99', core: '#ff8c00' };
+        G.drawPlayer(c, G.state.px, G.state.py, anim, p, cols, G.PAL.amber.main);
         G.drawLight(c, room(), p, t);
-        c.restore();
       }
+      c.restore();
 
-      G.vignette(c, G.state.phase === 'prolog' ? 0.62 : 0.44);
+      G.vignette(c, big() ? 0.42 : 0.62);
 
-      // ---- HUD ----
+      // ---------- HUD ----------
       c.fillStyle = p.bgVoid; c.fillRect(0, G.HUD_Y, G.W, G.HUD_H);
       c.fillStyle = p.dim; c.fillRect(0, G.HUD_Y, G.W, 2);
-      const r = room();
-      const areaName = (r && r.name) ? r.name.toUpperCase()
-        : (G.state.area === 'stadt' ? 'DIE GRAUE STADT' : 'ARKANA');
-      G.text(c, areaName, 20, G.HUD_Y + 16, p.textDim, 15);
-      if (G.state.phase === 'arkana') {
+      let ortName;
+      if (big()) {
+        const reg = M().regionAt(Math.floor((G.state.px + 13) / TT), Math.floor((G.state.py + 32) / TT));
+        ortName = reg ? reg.name.toUpperCase() : 'ARKANA';
+      } else {
+        ortName = 'DIE GRAUE STADT';
+      }
+      G.text(c, ortName, 20, G.HUD_Y + 16, p.textDim, 15);
+      if (big()) {
         G.text(c, `✦ ${G.state.fragmente.length}`, G.W - 20, G.HUD_Y + 14, p.main, 18, 'right');
         if (G.state.sig) G.text(c, `${G.state.sig.sym} ${G.state.sig.name}`, G.W - 20, G.HUD_Y + 40, p.textDim, 14, 'right');
       } else {
@@ -942,7 +1003,8 @@ G.TerminalScene = () => {
         }
         if (t > 2.8) {
           G.state.sig = sig; G.state.phase = 'arkana'; G.state.area = 'asche';
-          G.state.room = '2,2'; G.state.px = 167; G.state.py = 270;
+          G.state.room = '2,2';
+          G.state.px = G.BIGMAP.START[0]; G.state.py = G.BIGMAP.START[1];
           G.pal = G.PAL.amber; G.particles.length = 0; G.save();
           G.replaceScene(G.OverworldScene());
           G.pushScene(G.DialogScene([

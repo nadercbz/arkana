@@ -1,550 +1,438 @@
 #!/usr/bin/env python3
-"""ARKANA Weltgenerator.
+"""ARKANA: eine einzige große Karte statt Einzelbildschirme.
 
-Räume sind 9 breit, 14 hoch. Jeder Raum entsteht aus einem
-Archetyp mit eigenem Seed. Das erzeugt asymmetrische, sehr
-unterschiedliche Layouts statt gespiegelter Muster.
+72 x 108 Kacheln zu je 40px, also 2880 x 4320 Pixel. Die Kamera
+folgt dem Spieler. Biome sind organische Regionen mit weichen
+Grenzen, dazwischen laufen begehbare Wege. Landmarken werden an
+festen Stellen eingesetzt, der Rest wächst prozedural.
 """
+import math
 import random
+from collections import deque
 
-RW, RH = 9, 14
-MX, MY = 4, 7
-
-# Legende:
-#  . Boden   , Innenboden  # Mauer    R Fels    W Fenster
-#  ~ tiefes Wasser  w flach  T Baum   = Pflaster D Tür
-#  * Leylinie  c Kristall  s Sand  g Gras  p Blume
-#  o Säule  b Regal  x Statue  f Fackel  v Abgrund
-#  B Brücke  i Eis  M Monolith  ^ Treppe  r Wurzeln
+W, H = 72, 108
+rng = random.Random(20260728)
 
 SOLID = set('#R~vcTWoxbfMi')
 
-
-def blank(fill='.'):
-    return [[fill for _ in range(RW)] for _ in range(RH)]
-
-
-def border(g, wall):
-    for x in range(RW):
-        g[0][x] = wall
-        g[RH - 1][x] = wall
-    for y in range(RH):
-        g[y][0] = wall
-        g[y][RW - 1] = wall
-
-
-def neighbours(g, x, y, ch):
-    n = 0
-    for dy in (-1, 0, 1):
-        for dx in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < RW and 0 <= ny < RH:
-                if g[ny][nx] == ch:
-                    n += 1
-            else:
-                n += 1
-    return n
-
-
-# ============================================================
-# ARCHETYPEN. Jeder liefert ein Gitter. rng steuert die Varianz.
-# ============================================================
-
-def arch_cave(rng, wall='R', floor='.'):
-    """Organische Höhle über zellulären Automaten. Immer asymmetrisch."""
-    g = blank(floor)
-    for y in range(RH):
-        for x in range(RW):
-            g[y][x] = wall if rng.random() < 0.42 else floor
-    for _ in range(4):
-        ng = [row[:] for row in g]
-        for y in range(RH):
-            for x in range(RW):
-                n = neighbours(g, x, y, wall)
-                ng[y][x] = wall if n >= 5 else floor
-        g = ng
-    border(g, wall)
-    return g
-
-
-def arch_hall(rng, wall='#', floor='.', pillar='o'):
-    """Halle mit Säulenreihen, versetzt statt gespiegelt."""
-    g = blank(floor)
-    border(g, wall)
-    off = rng.choice([0, 1])
-    for row in range(2, RH - 2, 3):
-        for col in range(1 + (row // 3 + off) % 2, RW - 1, 3):
-            if rng.random() < 0.78:
-                g[row][col] = pillar
-    # Ein Seitengang, nur auf einer Seite
-    if rng.random() < 0.6:
-        sx = rng.choice([1, RW - 2])
-        for y in range(3, RH - 3):
-            g[y][sx] = floor
-    return g
-
-
-def arch_maze(rng, wall='#', floor='.'):
-    """Verwinkelte Gänge, ausgehend von einem Zufallsbaum."""
-    g = blank(wall)
-    x, y = rng.randrange(2, RW - 2), rng.randrange(2, RH - 2)
-    g[y][x] = floor
-    for _ in range(150):
-        d = rng.choice([(1, 0), (-1, 0), (0, 1), (0, -1)])
-        nx, ny = x + d[0] * rng.choice([1, 2]), y + d[1] * rng.choice([1, 2])
-        if 1 <= nx < RW - 1 and 1 <= ny < RH - 1:
-            for step in range(1, 3):
-                mx_, my_ = x + d[0] * min(step, 2), y + d[1] * min(step, 2)
-                if 1 <= mx_ < RW - 1 and 1 <= my_ < RH - 1:
-                    g[my_][mx_] = floor
-            x, y = nx, ny
-    border(g, wall)
-    return g
-
-
-def arch_open(rng, wall='#', floor='.', deco=None):
-    """Weites Feld, wenige Objekte, viel Luft."""
-    g = blank(floor)
-    border(g, wall)
-    if deco:
-        for _ in range(rng.randrange(3, 7)):
-            x, y = rng.randrange(1, RW - 1), rng.randrange(1, RH - 1)
-            g[y][x] = rng.choice(deco)
-    return g
-
-
-def arch_islands(rng, water='~', floor='.', shallow='w', deco=None):
-    """Inseln im Wasser, unregelmäßig verteilt."""
-    g = blank(water)
-    centres = [(rng.randrange(2, RW - 2), rng.randrange(2, RH - 2))
-               for _ in range(rng.randrange(3, 6))]
-    for (cx, cy) in centres:
-        r = rng.choice([1, 1, 2])
-        for y in range(RH):
-            for x in range(RW):
-                if abs(x - cx) + abs(y - cy) <= r:
-                    g[y][x] = floor
-    # Untiefen als Verbindungen
-    for i in range(len(centres) - 1):
-        (ax, ay), (bx, by) = centres[i], centres[i + 1]
-        cx, cy = ax, ay
-        while (cx, cy) != (bx, by):
-            if g[cy][cx] == water:
-                g[cy][cx] = shallow
-            if cx != bx:
-                cx += 1 if bx > cx else -1
-            elif cy != by:
-                cy += 1 if by > cy else -1
-    if deco:
-        for _ in range(rng.randrange(2, 5)):
-            x, y = rng.randrange(1, RW - 1), rng.randrange(1, RH - 1)
-            if g[y][x] == floor:
-                g[y][x] = rng.choice(deco)
-    return g
-
-
-def arch_ruin(rng, wall='#', floor='.'):
-    """Zerfallene Struktur: Mauerreste, keine geschlossene Form."""
-    g = blank(floor)
-    border(g, wall)
-    for _ in range(rng.randrange(3, 6)):
-        w = rng.randrange(2, 5)
-        h = rng.randrange(2, 5)
-        x = rng.randrange(1, RW - w - 1)
-        y = rng.randrange(1, RH - h - 1)
-        for yy in range(y, y + h):
-            for xx in range(x, x + w):
-                # Nur der Rand des Rechtecks, und dort mit Lücken
-                edge = (yy in (y, y + h - 1)) or (xx in (x, x + w - 1))
-                if edge and rng.random() < 0.72:
-                    g[yy][xx] = wall
-    return g
-
-
-def arch_canyon(rng, wall='R', floor='.'):
-    """Schlucht: ein gewundener Pfad zwischen Felswänden."""
-    g = blank(wall)
-    x = rng.randrange(3, RW - 3)
-    for y in range(RH):
-        width = rng.choice([1, 1, 2])
-        for dx in range(-width, width + 1):
-            nx = x + dx
-            if 1 <= nx < RW - 1:
-                g[y][nx] = floor
-        x += rng.choice([-1, 0, 0, 1])
-        x = max(2, min(RW - 3, x))
-    # Eine Seitenkammer
-    if rng.random() < 0.7:
-        cy = rng.randrange(3, RH - 4)
-        cx = rng.choice([1, RW - 3])
-        for yy in range(cy, cy + 3):
-            for xx in range(cx, cx + 2):
-                if 1 <= xx < RW - 1 and 1 <= yy < RH - 1:
-                    g[yy][xx] = floor
-    border(g, wall)
-    return g
-
-
-def arch_terrace(rng, wall='#', floor='.', step='i'):
-    """Stufen und Ebenen, versetzt."""
-    g = blank(floor)
-    border(g, wall)
-    y = 2
-    while y < RH - 2:
-        w = rng.randrange(3, 7)
-        x = rng.randrange(1, RW - w)
-        for xx in range(x, x + w):
-            g[y][xx] = step
-        y += rng.randrange(2, 4)
-    return g
-
-
-def arch_grove(rng, wall='#', floor='.', flora=('T', 'g', 'p', 'r')):
-    """Verstreute Vegetation, Lichtungen."""
-    g = blank(floor)
-    border(g, wall)
-    for _ in range(rng.randrange(10, 18)):
-        x, y = rng.randrange(1, RW - 1), rng.randrange(1, RH - 1)
-        g[y][x] = rng.choice(flora)
-    # Eine Lichtung freiräumen
-    cx, cy = rng.randrange(2, RW - 2), rng.randrange(3, RH - 3)
-    for yy in range(cy - 1, cy + 2):
-        for xx in range(cx - 1, cx + 2):
-            if 1 <= xx < RW - 1 and 1 <= yy < RH - 1:
-                g[yy][xx] = floor
-    return g
-
-
-def arch_chasm(rng, wall='#', floor='.', void='v', bridge='B'):
-    """Abgrund mit Übergängen, asymmetrisch."""
-    g = blank(floor)
-    border(g, wall)
-    top = rng.randrange(3, 5)
-    bot = rng.randrange(RH - 5, RH - 3)
-    for y in range(top, bot):
-        left = rng.randrange(1, 3)
-        right = rng.randrange(RW - 3, RW - 1)
-        for x in range(left, right):
-            g[y][x] = void
-    # Ein bis zwei Brücken auf verschiedenen Höhen
-    for by in rng.sample(range(top, bot), rng.choice([1, 2])):
-        for x in range(1, RW - 1):
-            if g[by][x] == void:
-                g[by][x] = bridge
-    return g
-
-
-def arch_chamber(rng, wall='#', floor=',', furn=('b', 'x', 'o')):
-    """Innenraum mit Einrichtung an den Wänden."""
-    g = blank(floor)
-    border(g, wall)
-    for y in range(1, RH - 1):
-        for x in (1, RW - 2):
-            if rng.random() < 0.55:
-                g[y][x] = rng.choice(furn)
-    for x in range(1, RW - 1):
-        for y in (1, RH - 2):
-            if rng.random() < 0.45:
-                g[y][x] = rng.choice(furn)
-    # Ein Objekt in der Mitte, aber nicht zentriert
-    g[rng.randrange(4, RH - 4)][rng.randrange(3, RW - 3)] = rng.choice(furn)
-    return g
-
-
-# ============================================================
-# RAUMDEFINITIONEN
-# ============================================================
-# (biome, name, archetyp, streu-deko)
-ROOMS = {
-    '2,2': ('asche', 'Aschenstadt', 'ruin', ['f', 'o', '*']),
-    '2,1': ('asche', 'Spiegelhof', 'hall', ['x', 'f']),
-    '2,3': ('asche', 'Markt der Mustersucher', 'open', ['=', '=', 'f', 'o']),
-    '2,0': ('sternen', 'Sternenwarte', 'chamber', ['b', 'o', 'M']),
-    '1,1': ('bibliothek', 'Verbrannte Bibliothek', 'maze', ['b', 'b', 'f']),
-    '1,0': ('mond', 'Halle der stillen Spiegel', 'terrace', ['x', 'i']),
-    '3,1': ('kristall', 'Kristallkaverne', 'cave', ['c', 'c', 'M']),
-    '3,0': ('kristall', 'Echokammer', 'maze', ['c', 'M']),
-    '0,2': ('sumpf', 'Nebelsumpf', 'islands', ['g', 'p', 'r']),
-    '0,1': ('sumpf', 'Ufer der Vergessenen', 'islands', ['g', 'x', 'r']),
-    '0,3': ('mond', 'Stille Bucht', 'islands', ['i', 'p']),
-    '1,2': ('hain', 'Wurzelhain', 'grove', ['T', 'r', 'p', 'g']),
-    '1,3': ('mond', 'Mondgarten', 'grove', ['p', 'i', 'g', 'w']),
-    '3,2': ('wueste', 'Sandtor', 'open', ['M', 'M', 's', 'x']),
-    '4,1': ('wueste', 'Wandernde Dünen', 'open', ['s', 's', 's', 'M']),
-    '4,2': ('wueste', 'Die stumme Pyramide', 'chamber', ['x', 'o', 'M']),
-    '4,3': ('unterwelt', 'Obsidianfeld', 'canyon', ['f', 'M']),
-    '3,3': ('unterwelt', 'Glutschlund', 'chasm', ['f', 'f']),
-    '3,4': ('unterwelt', 'Adern des Glutschlunds', 'cave', ['f', 'M']),
-    '2,4': ('unterwelt', 'Die Tiefe', 'chamber', ['M', 'M', 'x', 'f']),
-}
-
-LINKS = [
-    ('2,2', '2,1'), ('2,2', '2,3'), ('2,2', '1,2'), ('2,2', '3,2'),
-    ('2,1', '2,0'), ('2,1', '1,1'), ('2,1', '3,1'),
-    ('1,1', '1,0'),
-    ('3,1', '3,0'),
-    ('1,2', '0,2'), ('1,2', '1,3'),
-    ('0,2', '0,1'), ('0,2', '0,3'),
-    ('3,2', '4,2'),
-    ('4,2', '4,1'), ('4,2', '4,3'),
-    ('2,3', '1,3'), ('2,3', '3,3'), ('2,3', '2,4'),
-    ('3,3', '3,4'),
+# ------------------------------------------------------------
+# 1. Biom-Regionen über gestörte Voronoi-Zellen
+# ------------------------------------------------------------
+# (name, x, y, gewicht) Gewicht steuert die Ausdehnung
+CENTERS = [
+    ('asche',      36,  54, 1.00),   # Zentrum, die Aschenstadt
+    ('asche',      36,  72, 0.80),   # Markt, südlich
+    ('bibliothek', 16,  44, 0.85),
+    ('mond',       14,  20, 0.90),
+    ('sternen',    38,  14, 0.95),
+    ('kristall',   58,  26, 1.00),
+    ('wueste',     60,  60, 1.05),
+    ('unterwelt',  56,  92, 1.00),
+    ('hain',       18,  76, 0.95),
+    ('sumpf',       8,  62, 0.95),
+    ('mond',       10,  98, 0.75),   # Stille Bucht, ganz unten
 ]
 
-BIOME_WALL = {'kristall': 'R', 'unterwelt': 'R', 'sumpf': '~', 'hain': '#',
-              'mond': '#', 'wueste': '#', 'sternen': '#', 'bibliothek': '#', 'asche': '#'}
-BIOME_FLOOR = {'wueste': 's', 'sumpf': '.', 'hain': '.', 'mond': '.',
-               'kristall': '.', 'unterwelt': '.', 'sternen': '.',
-               'bibliothek': '.', 'asche': '.'}
+# Rauschen für organische Grenzen
+def fbm(x, y, seed=0):
+    v, amp, f = 0.0, 1.0, 0.055
+    for o in range(4):
+        n = math.sin((x * f + seed * 13.7) * 1.7) * math.cos((y * f + seed * 7.3) * 1.9)
+        n += math.sin((x * f * 2.3 - y * f * 1.1 + seed) * 2.1) * 0.6
+        v += n * amp
+        amp *= 0.5
+        f *= 2.0
+    return v
 
-ARCHES = {
-    'cave': arch_cave, 'hall': arch_hall, 'maze': arch_maze, 'open': arch_open,
-    'islands': arch_islands, 'ruin': arch_ruin, 'canyon': arch_canyon,
-    'terrace': arch_terrace, 'grove': arch_grove, 'chasm': arch_chasm,
-    'chamber': arch_chamber,
+biome = [[None] * W for _ in range(H)]
+for y in range(H):
+    for x in range(W):
+        best, bestd = None, 1e9
+        wob = fbm(x, y, 3) * 5.5
+        for (nm, cx, cy, wt) in CENTERS:
+            d = math.hypot((x - cx) * 1.0, (y - cy) * 0.72) / wt + wob
+            if d < bestd:
+                bestd, best = d, nm
+        biome[y][x] = best
+
+# ------------------------------------------------------------
+# 2. Grundgelände je Biom
+# ------------------------------------------------------------
+FLOOR = {'asche': '.', 'bibliothek': '.', 'mond': '.', 'sternen': '.',
+         'kristall': '.', 'wueste': 's', 'unterwelt': '.', 'hain': '.', 'sumpf': '.'}
+WALL = {'asche': '#', 'bibliothek': '#', 'mond': '#', 'sternen': '#',
+        'kristall': 'R', 'wueste': '#', 'unterwelt': 'R', 'hain': '#', 'sumpf': '~'}
+
+g = [[FLOOR[biome[y][x]] for x in range(W)] for y in range(H)]
+
+# Massive Struktur je Biom über Rauschschwellen
+for y in range(H):
+    for x in range(W):
+        b = biome[y][x]
+        n = fbm(x, y, 1)
+        m = fbm(x * 1.6, y * 1.6, 5)
+        if b == 'kristall':
+            if n > 0.55: g[y][x] = 'R'
+            elif m > 1.15: g[y][x] = 'c'
+        elif b == 'unterwelt':
+            if n > 0.62: g[y][x] = 'R'
+            elif m > 1.3: g[y][x] = 'v'
+            elif m < -1.35: g[y][x] = 'f'
+        elif b == 'sumpf':
+            if n > 0.15: g[y][x] = '~'
+            elif n > -0.05: g[y][x] = 'w'
+            elif m > 1.0: g[y][x] = 'g'
+        elif b == 'hain':
+            if m > 0.85: g[y][x] = 'T'
+            elif m > 0.35: g[y][x] = 'r'
+            elif m < -1.1: g[y][x] = 'p'
+            elif n > 0.6: g[y][x] = 'g'
+        elif b == 'wueste':
+            if n > 0.95: g[y][x] = '#'
+            elif m > 1.45: g[y][x] = 'M'
+        elif b == 'mond':
+            if n > 0.7: g[y][x] = '#'
+            elif m > 1.2: g[y][x] = 'i'
+            elif m < -1.3: g[y][x] = 'p'
+        elif b == 'sternen':
+            if n > 0.8: g[y][x] = '#'
+            elif m > 1.5: g[y][x] = 'o'
+        elif b == 'bibliothek':
+            if n > 0.5: g[y][x] = '#'
+            elif m > 1.05: g[y][x] = 'b'
+        elif b == 'asche':
+            if n > 0.85: g[y][x] = '#'
+            elif m > 1.4: g[y][x] = 'o'
+
+# Kartenrand dicht
+for x in range(W):
+    g[0][x] = g[1][x] = '#'
+    g[H - 1][x] = g[H - 2][x] = '#'
+for y in range(H):
+    g[y][0] = g[y][1] = '#'
+    g[y][W - 1] = g[y][W - 2] = '#'
+
+# ------------------------------------------------------------
+# 3. Landmarken einsetzen
+# ------------------------------------------------------------
+def stamp(x0, y0, block, transparent=' '):
+    rows = [r for r in block.strip('\n').split('\n')]
+    for dy, row in enumerate(rows):
+        for dx, ch in enumerate(row):
+            if ch == transparent:
+                continue
+            x, y = x0 + dx, y0 + dy
+            if 2 <= x < W - 2 and 2 <= y < H - 2:
+                g[y][x] = ch
+
+# Die Ruine des Großen Archivs, Herz der Karte
+stamp(29, 47, """
+  #########
+ ###.....###
+##..bbbbb..##
+#..b,,,,,b..#
+#.b,,,,,,,b.#
+#.b,,ooo,,b.#
+#.b,,o.o,,b.#
+#..,,o.o,,..#
+#.b,,ooo,,b.#
+#.b,,,,,,,b.#
+#..b,,,,,b..#
+##..bbbbb..##
+ ###.....###
+  #########
+""")
+# Zugänge in die Ruine
+for dx in (-1, 0, 1):
+    g[47 + 13][29 + 6 + dx] = '.'
+    g[47][29 + 6 + dx] = '.'
+for dy in (-1, 0, 1):
+    g[47 + 7 + dy][29] = '.'
+    g[47 + 7 + dy][29 + 12] = '.'
+
+# Sternenwarte im Norden
+stamp(33, 8, """
+ ##vvv##
+###...###
+##..M..##
+#...o...#
+#.o...o.#
+##.....##
+###...###
+ ##...##
+""")
+
+# Die stumme Pyramide im Osten
+stamp(56, 55, """
+###########
+#sssssssss#
+#s#######s#
+#s#,,,,,#s#
+#s#,,x,,#s#
+#s#,,,,,#s#
+#s#,,,,,#s#
+#s#######s#
+#sssssssss#
+###########
+""")
+for dy in (-1, 0, 1):
+    g[55 + 4 + dy][56] = 's'
+    g[55 + 4 + dy][56 + 1] = 's'
+    g[55 + 4 + dy][56 + 2] = ','
+
+# Spiegelhof, Säulenring nördlich des Zentrums
+stamp(31, 34, """
+ ooooooo
+o.......o
+o..ooo..o
+o.o...o.o
+o.o.x.o.o
+o.o...o.o
+o..ooo..o
+o.......o
+ ooooooo
+""")
+for dy in range(3, 6):
+    g[34 + dy][31] = '.'
+    g[34 + dy][31 + 8] = '.'
+
+# Brückenschlucht in der Unterwelt
+for y in range(84, 96):
+    for x in range(46, 66):
+        if 86 <= y <= 93 and 48 <= x <= 64:
+            g[y][x] = 'v'
+for bx in (52, 60):
+    for y in range(86, 94):
+        g[y][bx] = 'B'
+for by in (89,):
+    for x in range(48, 65):
+        g[by][x] = 'B'
+
+# Steg über den Sumpf
+for x in range(5, 20):
+    g[62][x] = 'B'
+for y in range(56, 70):
+    g[y][12] = 'B'
+
+# ------------------------------------------------------------
+# 4. Wege zwischen den Regionen carven
+# ------------------------------------------------------------
+HUBS = {
+    'zentrum': (36, 54), 'markt': (36, 74), 'spiegelhof': (35, 38),
+    'sternwarte': (37, 12), 'kristall': (58, 26), 'bibliothek': (16, 44),
+    'mondgarten': (14, 22), 'wueste': (60, 58), 'pyramide': (61, 59),
+    'unterwelt': (56, 88), 'hain': (18, 76), 'sumpf': (10, 62),
+    'bucht': (10, 98), 'tiefe': (40, 100), 'duenen': (64, 40),
 }
+ROADS = [
+    ('zentrum', 'spiegelhof'), ('spiegelhof', 'sternwarte'),
+    ('spiegelhof', 'kristall'), ('spiegelhof', 'bibliothek'),
+    ('bibliothek', 'mondgarten'), ('kristall', 'duenen'),
+    ('zentrum', 'markt'), ('zentrum', 'wueste'), ('zentrum', 'hain'),
+    ('wueste', 'pyramide'), ('duenen', 'wueste'),
+    ('markt', 'unterwelt'), ('markt', 'tiefe'), ('markt', 'hain'),
+    ('hain', 'sumpf'), ('sumpf', 'bucht'), ('unterwelt', 'tiefe'),
+]
 
-
-def build(key, biome, arch, deco, seed):
-    rng = random.Random(seed)
-    wall = BIOME_WALL[biome]
-    floor = BIOME_FLOOR[biome]
-    fn = ARCHES[arch]
-    if arch == 'cave':
-        g = fn(rng, wall=wall, floor=floor)
-    elif arch == 'islands':
-        g = fn(rng, water=wall if wall == '~' else '~', floor=floor, deco=deco)
-    elif arch == 'canyon':
-        g = fn(rng, wall=wall, floor=floor)
-    elif arch == 'chasm':
-        g = fn(rng, wall=wall, floor=floor)
-    elif arch == 'terrace':
-        g = fn(rng, wall=wall, floor=floor)
-    elif arch == 'grove':
-        g = fn(rng, wall=wall, floor=floor, flora=tuple(deco))
-    elif arch == 'chamber':
-        g = fn(rng, wall=wall, floor=',', furn=tuple(deco))
-    elif arch in ('hall', 'maze', 'ruin'):
-        g = fn(rng, wall=wall, floor=floor)
-    else:
-        g = fn(rng, wall=wall, floor=floor, deco=deco)
-
-    # Streu-Deko zusätzlich, damit auch gleiche Archetypen anders aussehen
-    if deco and arch not in ('grove', 'chamber', 'islands'):
-        for _ in range(rng.randrange(2, 6)):
-            x, y = rng.randrange(1, RW - 1), rng.randrange(1, RH - 1)
-            if g[y][x] == floor:
-                g[y][x] = rng.choice(deco)
-    return g
-
-
-def open_edge(g, side, floor):
-    """Durchgang drei breit und drei tief. Die Figur ist 42px hoch,
-    ihre Fussbox ueberspannt zwei Kachelreihen. Zwei Reihen reichen
-    deshalb nicht, sonst steht sie beim Betreten in der Wand."""
-    if side == 'n':
-        for x in (MX - 1, MX, MX + 1):
-            for y in (0, 1, 2): g[y][x] = floor
-    elif side == 's':
-        for x in (MX - 1, MX, MX + 1):
-            for y in (RH - 1, RH - 2, RH - 3): g[y][x] = floor
-    elif side == 'w':
-        for y in (MY - 1, MY, MY + 1):
-            for x in (0, 1, 2): g[y][x] = floor
-    else:
-        for y in (MY - 1, MY, MY + 1):
-            for x in (RW - 1, RW - 2, RW - 3): g[y][x] = floor
-
-
-def carve(g, a, b, floor):
-    """Verbindet zwei Punkte begehbar, damit nichts abgeschnitten bleibt."""
+def carve_path(a, b, width=2):
+    """Gewundener Weg, räumt Festes weg und legt Untiefen über Wasser."""
     (ax, ay), (bx, by) = a, b
     x, y = ax, ay
-    while (x, y) != (bx, by):
-        g[y][x] = floor if g[y][x] in SOLID else g[y][x]
-        if x != bx:
-            x += 1 if bx > x else -1
-        elif y != by:
-            y += 1 if by > y else -1
-    g[by][bx] = floor if g[by][bx] in SOLID else g[by][bx]
+    guard = 0
+    while (x, y) != (bx, by) and guard < 4000:
+        guard += 1
+        for dy in range(-width, width + 1):
+            for dx in range(-width, width + 1):
+                if abs(dx) + abs(dy) > width:
+                    continue
+                nx, ny = x + dx, y + dy
+                if not (2 <= nx < W - 2 and 2 <= ny < H - 2):
+                    continue
+                b_ = biome[ny][nx]
+                cur = g[ny][nx]
+                if cur in SOLID:
+                    g[ny][nx] = 'w' if b_ == 'sumpf' else ('B' if cur == 'v' else FLOOR[b_])
+        # Bewegung mit leichtem Zufall, damit die Wege nicht schnurgerade sind
+        dx = 1 if bx > x else (-1 if bx < x else 0)
+        dy = 1 if by > y else (-1 if by < y else 0)
+        if dx and dy:
+            if rng.random() < 0.5: dy = 0
+            else: dx = 0
+        if rng.random() < 0.22:
+            if dx: dy = rng.choice([-1, 0, 1])
+            elif dy: dx = rng.choice([-1, 0, 1])
+        x = max(2, min(W - 3, x + dx))
+        y = max(2, min(H - 3, y + dy))
 
+for a, b in ROADS:
+    carve_path(HUBS[a], HUBS[b], width=2)
 
-def reachable(g, starts):
-    """Kachel-Erreichbarkeit, nur fuer grobe Checks."""
-    def free(x, y):
-        return 0 <= x < RW and 0 <= y < RH and g[y][x] not in SOLID
-    seen, q = set(), []
-    for s in starts:
-        if free(*s):
-            seen.add(s); q.append(s)
-    while q:
-        x, y = q.pop()
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            n = (x + dx, y + dy)
-            if n in seen or not free(*n):
-                continue
-            seen.add(n); q.append(n)
-    return seen
-
-
-# ---- Pixel-genaue Simulation, identisch zur Spiel-Logik ----
-TP = 40                       # Kachelgroesse in Pixeln
-FW, FH = 360, RH * TP         # Spielfeld
-def can_stand(g, nx, ny):
-    """Vier Fusspunkte wie in canStand() im Spiel."""
+# ------------------------------------------------------------
+# 5. Erreichbarkeit mit exakter Spiel-Physik prüfen
+# ------------------------------------------------------------
+TP = 40
+def can_stand(nx, ny):
     for px, py in ((nx + 7, ny + 30), (nx + 19, ny + 30),
                    (nx + 7, ny + 39), (nx + 19, ny + 39)):
         tx, ty = int(px // TP), int(py // TP)
-        if 0 <= tx < RW and 0 <= ty < RH and g[ty][tx] in SOLID:
+        if tx < 0 or ty < 0 or tx >= W or ty >= H:
+            return False
+        if g[ty][tx] in SOLID:
             return False
     return True
 
+START = (36 * TP + 4, 54 * TP + 2)
 
-def pixel_reachable(g, entry_tiles):
-    """Flutet in 4px-Schritten von den Eintrittspositionen aus."""
-    starts = []
-    for (tx, ty) in entry_tiles:
-        starts.append((tx * TP + 4, ty * TP + 2))
-    seen, q = set(), []
-    for (sx, sy) in starts:
-        gx, gy = round(sx / 4) * 4 + 2, round(sy / 4) * 4 + 2
-        if can_stand(g, gx, gy):
-            seen.add((gx, gy)); q.append((gx, gy))
+def pixel_flood(start):
+    sx, sy = round(start[0] / 4) * 4 + 2, round(start[1] / 4) * 4 + 2
+    if not can_stand(sx, sy):
+        for r in range(4, 200, 4):
+            found = False
+            for a in range(24):
+                ang = a / 24 * 6.283
+                nx, ny = sx + math.cos(ang) * r, sy + math.sin(ang) * r
+                nx, ny = round(nx / 4) * 4 + 2, round(ny / 4) * 4 + 2
+                if can_stand(nx, ny):
+                    sx, sy = nx, ny; found = True; break
+            if found:
+                break
+    seen, q = {(sx, sy)}, deque([(sx, sy)])
     while q:
-        x, y = q.pop()
+        x, y = q.popleft()
         for dx, dy in ((4, 0), (-4, 0), (0, 4), (0, -4)):
-            nx, ny = x + dx, y + dy
-            if nx < 0 or ny < 0 or nx > FW - 26 or ny > FH - 42:
+            n = (x + dx, y + dy)
+            if n in seen:
                 continue
-            if (nx, ny) in seen or not can_stand(g, nx, ny):
+            if not (0 <= n[0] <= W * TP - 26 and 0 <= n[1] <= H * TP - 42):
                 continue
-            seen.add((nx, ny)); q.append((nx, ny))
-    return seen
+            if not can_stand(*n):
+                continue
+            seen.add(n); q.append(n)
+    return seen, (sx, sy)
 
+pix, start_px = pixel_flood(START)
+reach_tiles = {(int((x + 13) // TP), int((y + 32) // TP)) for (x, y) in pix}
+print(f"Karte {W}x{H} Kacheln = {W*TP}x{H*TP} px")
+print(f"Erreichbare Kachelfelder vom Start: {len(reach_tiles)}")
 
-def tiles_from_pixels(pix):
-    """Welche Kachel-Felder sind von der Figur wirklich erreichbar?"""
-    out = set()
-    for (x, y) in pix:
-        out.add((int((x + 13) // TP), int((y + 32) // TP)))
+# Biome-Abdeckung prüfen: jedes Biom muss erreichbar sein
+per_biome = {}
+for (x, y) in reach_tiles:
+    if 0 <= x < W and 0 <= y < H:
+        per_biome[biome[y][x]] = per_biome.get(biome[y][x], 0) + 1
+print("Erreichbar je Biom:", {k: v for k, v in sorted(per_biome.items())})
+fehlend = [nm for nm in set(b for b, *_ in CENTERS) if per_biome.get(nm, 0) < 20]
+if fehlend:
+    print("  ⚠ kaum erreichbar:", fehlend)
+
+# ------------------------------------------------------------
+# 6. Objekte platzieren, nur auf erreichbaren Feldern
+# ------------------------------------------------------------
+# Regionen für Story und HUD: (name, x, y, radius)
+REGIONS = [
+    ('Aschenstadt',            36, 54, 13), ('Markt der Mustersucher', 36, 74, 11),
+    ('Spiegelhof',             35, 38, 9),  ('Sternenwarte',           37, 12, 12),
+    ('Kristallkaverne',        58, 26, 14), ('Verbrannte Bibliothek',  16, 44, 12),
+    ('Mondgarten',             14, 22, 13), ('Sandtor',                60, 58, 10),
+    ('Die stumme Pyramide',    61, 59, 7),  ('Wandernde Dünen',        64, 40, 12),
+    ('Glutschlund',            56, 88, 13), ('Wurzelhain',             18, 76, 13),
+    ('Nebelsumpf',             10, 62, 12), ('Stille Bucht',           10, 98, 11),
+    ('Die Tiefe',              40, 100, 11),
+]
+
+def region_of(x, y):
+    best, bd = None, 1e9
+    for (nm, cx, cy, r) in REGIONS:
+        d = math.hypot(x - cx, (y - cy) * 0.8)
+        if d < bd:
+            bd, best = d, nm
+    return best
+
+cand = sorted(reach_tiles)
+rng.shuffle(cand)
+
+def pick(n, taken, mind=5, filt=None):
+    out = []
+    for c in cand:
+        if len(out) >= n:
+            break
+        if filt and not filt(c):
+            continue
+        if all(abs(c[0] - t[0]) + abs(c[1] - t[1]) >= mind for t in taken + out):
+            out.append(c)
     return out
 
+# Wichtigste Objekte zuerst, damit sie die besten Plaetze bekommen.
+# Schreine sollen weit auseinander und in verschiedenen Regionen liegen.
+taken = []
+shrine_spots = []
+used_reg = set()
+for c in cand:
+    if len(shrine_spots) >= 4:
+        break
+    reg = region_of(*c)
+    if reg in used_reg:
+        continue
+    if all(abs(c[0] - t[0]) + abs(c[1] - t[1]) >= 22 for t in shrine_spots):
+        shrine_spots.append(c); used_reg.add(reg)
+taken += shrine_spots
 
-# --- Bauen ---
-grids = {}
-for i, (k, (biome, name, arch, deco)) in enumerate(sorted(ROOMS.items())):
-    grids[k] = build(k, biome, arch, deco, seed=1000 + i * 37)
+npc_spots = []
+npc_reg = set()
+for c in cand:
+    if len(npc_spots) >= 15:
+        break
+    reg = region_of(*c)
+    if reg in npc_reg:
+        continue
+    if all(abs(c[0] - t[0]) + abs(c[1] - t[1]) >= 9 for t in taken + npc_spots):
+        npc_spots.append(c); npc_reg.add(reg)
+taken += npc_spots
 
-# Ränder dicht, dann Durchgänge öffnen
-for k, (biome, name, arch, deco) in ROOMS.items():
-    g = grids[k]
-    wall = BIOME_WALL[biome]
-    for x in (MX - 1, MX, MX + 1):
-        g[0][x] = wall; g[RH - 1][x] = wall
-    for y in (MY - 1, MY, MY + 1):
-        g[y][0] = wall; g[y][RW - 1] = wall
+insch_spots = pick(45, taken, mind=6); taken += insch_spots
+frag_spots = pick(95, taken, mind=5); taken += frag_spots
 
-DIRS = {(0, -1): ('n', 's'), (0, 1): ('s', 'n'), (-1, 0): ('w', 'o'), (1, 0): ('o', 'w')}
-entries = {k: set() for k in ROOMS}
-for a, b in LINKS:
-    ax, ay = map(int, a.split(',')); bx, by = map(int, b.split(','))
-    d = (bx - ax, by - ay)
-    assert d in DIRS, f"{a}<->{b} nicht benachbart"
-    sa, sb = DIRS[d]
-    open_edge(grids[a], sa, BIOME_FLOOR[ROOMS[a][0]])
-    open_edge(grids[b], sb, BIOME_FLOOR[ROOMS[b][0]])
-    if d == (0, -1): entries[a].add((MX, 1)); entries[b].add((MX, RH - 2))
-    elif d == (0, 1): entries[a].add((MX, RH - 2)); entries[b].add((MX, 1))
-    elif d == (-1, 0): entries[a].add((1, MY)); entries[b].add((RW - 2, MY))
-    else: entries[a].add((RW - 2, MY)); entries[b].add((1, MY))
-entries['2,2'].add((MX, MY))
+print(f"Fragmente {len(frag_spots)}, Inschriften {len(insch_spots)}, "
+      f"NPCs {len(npc_spots)}, Schreine {len(shrine_spots)}")
 
-# Alle Eingänge eines Raums müssen untereinander verbunden sein
-for k, g in grids.items():
-    floor = BIOME_FLOOR[ROOMS[k][0]]
-    pts = sorted(entries[k])
-    for i in range(len(pts) - 1):
-        reach = reachable(g, [pts[i]])
-        if pts[i + 1] not in reach:
-            carve(g, pts[i], pts[i + 1], floor)
-    # Sicherstellen, dass genug Fläche erreichbar ist
-    reach = tiles_from_pixels(pixel_reachable(g, pts))
-    if len(reach) < 22:
-        cx, cy = MX, MY
-        for yy in range(cy - 3, cy + 4):
-            for xx in range(cx - 2, cx + 3):
-                if 1 <= xx < RW - 1 and 1 <= yy < RH - 1 and g[yy][xx] in SOLID:
-                    g[yy][xx] = floor
-        for i in range(len(pts)):
-            carve(g, pts[i], (cx, cy), floor)
+# ------------------------------------------------------------
+# 7. Ausgabe
+# ------------------------------------------------------------
+out = []
+out.append("  const MAP_W = %d, MAP_H = %d;" % (W, H))
+out.append("  const tiles = [")
+for row in g:
+    out.append("    '" + "".join(row) + "',")
+out.append("  ];")
 
-# Fragment-Plätze und NPC-Plätze aus erreichbaren Feldern
-frag_spots, npc_spots, insch_spots = {}, {}, {}
-for k, g in grids.items():
-    rng = random.Random(sum(ord(ch) for ch in k) * 7919)
-    pix = pixel_reachable(g, entries[k])
-    reach = tiles_from_pixels(pix)
-    cand = sorted([(x, y) for (x, y) in reach if 1 <= x <= RW - 2 and 1 <= y <= RH - 2])
-    rng.shuffle(cand)
-    picked, npcs, insch = [], [], []
-    for c in cand:
-        if len(picked) >= 4:
-            break
-        if all(abs(c[0] - p[0]) + abs(c[1] - p[1]) >= 3 for p in picked):
-            picked.append(c)
-    rest = [c for c in cand if c not in picked]
-    for c in rest:
-        if len(npcs) >= 1:
-            break
-        if all(abs(c[0] - p[0]) + abs(c[1] - p[1]) >= 3 for p in picked):
-            npcs.append(c)
-    rest2 = [c for c in rest if c not in npcs]
-    for c in rest2:
-        if len(insch) >= 3:
-            break
-        if all(abs(c[0] - p[0]) + abs(c[1] - p[1]) >= 3 for p in picked + npcs + insch):
-            insch.append(c)
-    frag_spots[k] = picked
-    npc_spots[k] = npcs
-    insch_spots[k] = insch
+# Biom-Karte als kompakte Zeichenkette
+bkeys = sorted(set(b for b, *_ in CENTERS))
+bidx = {b: str(i) for i, b in enumerate(bkeys)}
+out.append("  const BIOME_KEYS = [%s];" % ", ".join("'%s'" % b for b in bkeys))
+out.append("  const biomeMap = [")
+for y in range(H):
+    out.append("    '" + "".join(bidx[biome[y][x]] for x in range(W)) + "',")
+out.append("  ];")
 
-# Statistik
-print(f"Räume: {len(grids)}")
-for k in sorted(grids):
-    g = grids[k]
-    reach = len(tiles_from_pixels(pixel_reachable(g, entries[k])))
-    solid = sum(1 for row in g for ch in row if ch in SOLID)
-    print(f"  {k:5} {ROOMS[k][2]:8} {ROOMS[k][1][:26]:28} begehbar {reach:3}  fest {solid:3}")
+def dumplist(name, pts):
+    out.append("  const %s = [%s];" % (name, ", ".join("[%d,%d]" % (x, y) for x, y in pts)))
 
-total_frag = sum(len(v) for v in frag_spots.values())
-total_insch = sum(len(v) for v in insch_spots.values())
-print(f"\nFragment-Plätze {total_frag}, Inschriften-Plätze {total_insch}, NPC-Plätze {sum(len(v) for v in npc_spots.values())}")
-leer = [k for k, v in frag_spots.items() if len(v) < 3]
-if leer:
-    print("  ⚠ wenig Platz in:", leer)
-fehlend = [k for k in ROOMS if not npc_spots.get(k) or not insch_spots.get(k)]
-if fehlend:
-    print("  ⚠ NPC oder Inschrift fehlt in:", fehlend)
+out.append("  const npcRegions = [%s];" % ", ".join("'%s'" % region_of(*c) for c in npc_spots))
+out.append("  const inschRegions = [%s];" % ", ".join("'%s'" % region_of(*c) for c in insch_spots))
+dumplist('fragSpots', frag_spots)
+dumplist('inschriftSpots', insch_spots)
+dumplist('npcSpots', npc_spots)
+dumplist('shrineSpots', shrine_spots)
+out.append("  const START = [%d, %d];" % start_px)
+out.append("  const REGIONS = [")
+for (nm, x, y, r) in REGIONS:
+    out.append("    { name: '%s', x: %d, y: %d, r: %d }," % (nm, x, y, r))
+out.append("  ];")
 
-# --- JS ausgeben ---
-out = ["  const rooms = {};"]
-for k in sorted(grids):
-    biome, name, arch, _ = ROOMS[k]
-    lines = ",\n".join("      '" + "".join(r) + "'" for r in grids[k])
-    out.append(f"  rooms['{k}'] = {{ biome: '{biome}', name: '{name}', arch: '{arch}', tiles: [\n{lines},\n  ] }};")
+open('/tmp/arkana_bigmap.js', 'w').write("\n".join(out))
+print("→ /tmp/arkana_bigmap.js")
 
-def dump(name, data):
-    out.append("")
-    out.append(f"  const {name} = {{")
-    for k in sorted(data):
-        pts = ", ".join(f"[{x},{y}]" for x, y in data[k])
-        out.append(f"    '{k}': [{pts}],")
-    out.append("  };")
-
-dump('autoFragSpots', frag_spots)
-dump('autoNpcSpots', npc_spots)
-dump('autoInschriften', insch_spots)
-open('/tmp/arkana_rooms.js', 'w').write("\n".join(out))
-print("→ /tmp/arkana_rooms.js")
+# Kleine ASCII-Vorschau, jede 3. Kachel
+print("\nVorschau (jede dritte Kachel):")
+for y in range(0, H, 3):
+    print("  " + "".join(g[y][x] for x in range(0, W, 3)))
