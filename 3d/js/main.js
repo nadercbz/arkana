@@ -9,6 +9,9 @@ import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
+import { ATRIUM, baueAtrium, atriumBlockiert, atriumBoden } from './atrium.js';
+import { klangStart, klangStumm, musik, raumton, klangSchritt, klangFragment,
+         klangBeam, erzaehler } from './klang.js';
 
 const T3 = 4;                     // eine Kachel = 4 Welt-Einheiten
 const $ = (id) => document.getElementById(id);
@@ -70,13 +73,18 @@ function makeSignatur(name, zi, alter) {
 let S = null;
 function neuerStand(sig) {
   return { sig, px: 0, py: 0, neu: true,
-    fragmente: [], gelesen: {}, stats: { geglaubt: 0, geprueft: 0 } };
+    fragmente: [], gelesen: {}, stats: { geglaubt: 0, geprueft: 0 },
+    ort: 'atrium' };            // erst das Atrium, dann Arkana
 }
 function speichern() { try { localStorage.setItem('arkana3d', JSON.stringify(S)); } catch (e) { /* egal */ } }
 function laden() {
   try {
     const s = JSON.parse(localStorage.getItem('arkana3d'));
-    if (s && s.sig && Number.isFinite(s.px)) return s;
+    if (s && s.sig && Number.isFinite(s.px)) {
+      // Alte Spielstaende kennen das Atrium nicht, die starten in Arkana
+      if (!s.ort) s.ort = 'arkana';
+      return s;
+    }
   } catch (e) { /* egal */ }
   return null;
 }
@@ -1094,6 +1102,15 @@ function punktBlockiert(x, z) {
 }
 
 function stehtFrei(tx, tz) {
+  if (ort === 'atrium') {
+    // Im Atrium in Weltmassen pruefen, das Kachelraster gilt dort nicht
+    const R = 0.30 * T3;
+    const wx = tx * T3, wz = tz * T3;
+    for (const [ox, oz] of [[0,0],[R,0],[-R,0],[0,R],[0,-R],[R*0.7,R*0.7],[-R*0.7,R*0.7],[R*0.7,-R*0.7],[-R*0.7,-R*0.7]]) {
+      if (atriumBlockiert(wx + ox, wz + oz)) return false;
+    }
+    return true;
+  }
   // Acht Punkte auf dem Spielerkreis plus die Mitte, damit auch ein
   // duenner Pfosten nicht zwischen zwei Messpunkten durchrutscht
   for (const [ox, oz] of [[0,0],[RADIUS,0],[-RADIUS,0],[0,RADIUS],[0,-RADIUS],[RADIUS*0.7,RADIUS*0.7],[-RADIUS*0.7,RADIUS*0.7],[RADIUS*0.7,-RADIUS*0.7],[-RADIUS*0.7,-RADIUS*0.7]]) {
@@ -1126,9 +1143,11 @@ let sprichAn = false;
 const sprichEl = $('sprich');
 sprichEl.addEventListener('click', () => {
   sprichAn = !sprichAn;
-  sprichEl.textContent = sprichAn ? '🔊 STIMME AN' : '🔊 STIMME AUS';
+  sprichEl.textContent = sprichAn ? '🔊 TON AN' : '🔊 TON AUS';
   sprichEl.classList.toggle('an', sprichAn);
+  klangStumm(!sprichAn);
   if (!sprichAn) speechSynthesis.cancel();
+  else if (ort === 'atrium') raumton(true);
 });
 function sprich(text) {
   if (!sprichAn || !('speechSynthesis' in window)) return;
@@ -1223,6 +1242,7 @@ function zeigeFragment(ding) {
   </div>`;
   sprich((f.titel || '') + '. ' + (f.text || ''));
   const schliesse = (was) => {
+    klangFragment();
     S.stats[was]++;
     S.fragmente.push(ding.idx);
     ding.aktiv = false;
@@ -1261,9 +1281,97 @@ function zeigeSchrein() {
 }
 
 // ------------------------------------------------------------
+// Der Beam. Wer den Lichtfleck in der Mitte betritt, wird langsam
+// nach oben getragen, so wie die anderen im Raum. Am Ende der Fahrt
+// steht man in Arkana.
+// ------------------------------------------------------------
+const blende = document.createElement('div');
+blende.style.cssText = 'position:fixed;inset:0;z-index:29;background:#fff;'
+  + 'opacity:0;pointer-events:none;transition:none';
+document.body.appendChild(blende);
+
+function starteBeam() {
+  if (beam) return;
+  beam = { t: 0, phase: 'hoch' };
+  sprich('');
+  klangBeam();
+  zeigeDialog('', ['Der Boden lässt dich los.']);
+}
+
+function pruefeBeam(dt, wx, wz) {
+  if (!beam) {
+    const d = Math.hypot(wx - ATRIUM.mitte.x, wz - ATRIUM.mitte.z);
+    if (d < ATRIUM.mitteRadius) starteBeam();
+    return;
+  }
+  beam.t += dt;
+  // Erst langsam anheben, dann schneller. 9 Sekunden bis zur Blende.
+  const p = Math.min(1, beam.t / 9);
+  beamHoehe = Math.pow(p, 2.2) * 42;
+  // Kamera weicht zurueck und kippt nach oben mit
+  maus.pitch = Math.max(-0.5, 0.20 - p * 0.7);
+  bloom.strength = 0.42 + p * 1.5;
+  renderer.toneMappingExposure = 1.28 + p * 1.1;
+  blende.style.opacity = String(Math.max(0, (beam.t - 7.6) / 1.6));
+  if (beam.t > 9.4 && beam.phase === 'hoch') {
+    beam.phase = 'ankunft';
+    // Umschalten nach Arkana, waehrend das Bild weiss ist
+    setzeOrt('arkana');
+    beamHoehe = 0; bodenY = 0;
+    const sp = findeSpawn();
+    pos.x = sp[0]; pos.z = sp[1];
+    camYaw = blick = zielBlick = maus.yaw = 0;
+    maus.pitch = 0.16;
+    cam.x = pos.x * T3; cam.z = pos.z * T3 + 6; cam.y = 3.3;
+    speichern();
+  }
+  if (beam.phase === 'ankunft') {
+    blende.style.opacity = String(Math.max(0, 1 - (beam.t - 9.6) / 2.2));
+    bloom.strength = Math.max(0.42, 1.92 - (beam.t - 9.6));
+    renderer.toneMappingExposure = Math.max(1.28, 2.38 - (beam.t - 9.6) * 0.6);
+    if (beam.t > 12) {
+      beam = null;
+      blende.style.opacity = '0';
+      bloom.strength = 0.42;
+      renderer.toneMappingExposure = 1.28;
+      zeigeDialog('', [
+        'Du stehst in Arkana.',
+        `${S.sig.name}. ${S.sig.element}. Die ${S.sig.zahl}. ${S.sig.saturn.name}.`,
+        'Sammle die Fragmente des verbrannten Archivs. Jedes sagt etwas über die Welt. Und etwas über dich.',
+      ]);
+    }
+  }
+}
+
+// ------------------------------------------------------------
 // Start und Hauptschleife
 // ------------------------------------------------------------
+// Alles, was die Weltbauer jetzt hinzufuegen, gehoert zu Arkana und
+// wird anschliessend in eine Gruppe gehoben. So laesst sich die ganze
+// Welt mit einem Schalter ausblenden, waehrend das Atrium laeuft.
+const vorWelt = scene.children.length;
 bauBoden(); bauWelt(); bauPortale(); bauDinge(); bauPlatten(); baueGluehWolke();
+const ARKANA_GRUPPE = new THREE.Group();
+ARKANA_GRUPPE.name = 'arkana';
+for (const kind of scene.children.slice(vorWelt)) ARKANA_GRUPPE.add(kind);
+scene.add(ARKANA_GRUPPE);
+
+const atrium = baueAtrium(MAT_WAND, MAT_BODEN, GLOW, IST_MOBIL);
+scene.add(atrium.gruppe);
+
+let ort = 'atrium';             // wo der Spieler gerade ist
+function setzeOrt(neu) {
+  ort = neu;
+  const imAtrium = neu === 'atrium';
+  atrium.gruppe.visible = imAtrium;
+  ARKANA_GRUPPE.visible = !imAtrium;
+  // Die Sonne von Arkana wuerde im Atrium durch die Decke scheinen
+  sonne.visible = !imAtrium;
+  tragelicht.intensity = imAtrium ? 3 : 16;
+  hemi.intensity = imAtrium ? 1.5 : 2.6;
+  fog.density = imAtrium ? 0.021 : 0.0125;
+  if (S) S.ort = neu;
+}
 const spieler = bauSpieler();
 ladeHeldModell(spieler);
 $('lade').remove();
@@ -1280,6 +1388,7 @@ WELT.zodiac.forEach((z, i) => {
   zEl.appendChild(d);
 });
 $('start').addEventListener('click', () => {
+  klangStart();                  // Browser erlauben Ton erst nach einer Eingabe
   $('titel').classList.add('hidden');
   const alt = laden();
   if (alt) { S = alt; spielStart(); }
@@ -1294,11 +1403,14 @@ $('los').addEventListener('click', () => {
   speichern();
   $('sig').classList.add('hidden');
   spielStart();
-  zeigeDialog('', [
-    'Der Bildschirm hat dich genommen. Du stehst in Arkana.',
-    `${S.sig.name}. ${S.sig.element}. Die ${S.sig.zahl}. ${S.sig.saturn.name}.`,
-    'Sammle die Fragmente des verbrannten Archivs. Jedes sagt etwas über die Welt. Und etwas über dich.',
-  ]);
+  // Der Ankunftstext kommt erst nach dem Beam. Hier steht man noch
+  // auf der Schwelle, und dort spricht der Erzaehler.
+  if (ort !== 'atrium') {
+    zeigeDialog('', [
+      'Der Bildschirm hat dich genommen. Du stehst in Arkana.',
+      `${S.sig.name}. ${S.sig.element}. Die ${S.sig.zahl}. ${S.sig.saturn.name}.`,
+    ]);
+  }
 });
 
 // In 3D startet man im Freien. Der 2D-Start liegt in einem engen
@@ -1327,17 +1439,44 @@ let zielBlick = 0;               // letzte Laufrichtung, Drehziel
 let camYaw = 0;
 let laufzeit = 0;
 let sprungY = 0, sprungV = 0;    // Sprunghoehe und -geschwindigkeit
+let bodenY = 0;                  // Hoehe des Untergrunds, im Atrium mit Treppen
+let beamHoehe = 0;               // wie weit die Figur schon hochgezogen ist
+let beam = null;                 // laufende Beam-Sequenz
+let letzterSchritt = -1;         // fuer den Schrittklang
 const cam = { x: 0, y: 8, z: 10 };
 let naechstes = null;
 
 // Sichthoehe an einer Weltposition
 function sichtHoehe(wx, wz) {
+  if (ort === 'atrium') {
+    // Im Atrium verdecken nur Waende und Staemme, und die sind hoch
+    return atriumBlockiert(wx, wz) ? 40 : atriumBoden(wx, wz);
+  }
   const tx = Math.floor(wx / T3), tz = Math.floor(wz / T3);
   if (tx < 0 || tz < 0 || tx >= MAP.W || tz >= MAP.H) return 999;
   return HOEHEN[tz * MAP.W + tx] || 0;
 }
 
 function spielStart() {
+  setzeOrt(S.ort || 'atrium');
+  if (ort === 'atrium') {
+    // Auf der Kanzel unter dem Torrahmen, Blick in den Raum hinein
+    pos.x = ATRIUM.start.x / T3; pos.z = ATRIUM.start.z / T3;
+    camYaw = blick = zielBlick = maus.yaw = ATRIUM.startBlick;
+    maus.pitch = 0.46;
+    cam.x = pos.x * T3 - Math.sin(camYaw) * 5;
+    cam.z = pos.z * T3 - Math.cos(camYaw) * 5;
+    cam.y = atriumBoden(ATRIUM.start.x, ATRIUM.start.z) + 2.5;
+    delete S.neu;
+    $('hud').classList.remove('hidden');
+    sprichEl.classList.remove('hidden');
+    $('zaehler').textContent = '\u2726 ' + S.fragmente.length;
+    musik('musik_atrium');
+    raumton(true);
+    // Die drei Saetze mit Luft dazwischen, waehrend man sich umsieht
+    erzaehler(['erz1', 'erz2', 'erz3'], [2.5, 9.5, 8.5]);
+    return;
+  }
   pos.x = S.px; pos.z = S.py;
   if (S.neu || !stehtFrei(pos.x, pos.z)) {
     const sp = findeSpawn();
@@ -1363,6 +1502,8 @@ function spielStart() {
   sprichEl.classList.remove('hidden');
   $('zaehler').textContent = '✦ ' + S.fragmente.length;
   cam.x = pos.x * T3; cam.z = pos.z * T3 + 10;
+  musik('musik_arkana');
+  raumton(false);
 }
 
 let letztes = performance.now();
@@ -1385,7 +1526,7 @@ function tickInner(now) {
     // W laeuft dahin, wo die Kamera hinschaut. Der Rechts-Vektor ist das
     // Kreuzprodukt aus Oben und Blickrichtung, NICHT die um 90 Grad
     // gedrehte Blickrichtung. Vertauscht man das, sind A und D getauscht.
-    const roh = (dialog || fragOffen) ? { x: 0, y: 0 } : richtung();
+    const roh = (dialog || fragOffen || beam) ? { x: 0, y: 0 } : richtung();
     const vor = { x: Math.sin(maus.yaw), z: Math.cos(maus.yaw) };
     const rechts = { x: -vor.z, z: vor.x };
     const d = { x: vor.x * -roh.y + rechts.x * roh.x,
@@ -1421,13 +1562,22 @@ function tickInner(now) {
 
     // ---- Figur ----
     const wx = pos.x * T3, wz = pos.z * T3;
-    spieler.grp.position.set(wx, 0, wz);
+    // Im Atrium gibt es Treppen, der Boden liegt nicht ueberall auf null
+    const zielBoden = ort === 'atrium' ? atriumBoden(wx, wz) : 0;
+    bodenY += (zielBoden - bodenY) * Math.min(1, dt * 12);
+    spieler.grp.position.set(wx, bodenY, wz);
     // Das Modell schaut in seinem eigenen Raum nach +Z, genau wie die
     // Ersatzfigur. rotation.y = blick richtet es also entlang der
     // Blickrichtung der Kamera aus, weg vom Betrachter. Ein Aufschlag
     // von 180 Grad drehte es frueher zum Spieler hin.
     spieler.grp.rotation.y = blick;
     const ph = laufzeit * 7;
+    // Zwei Schritte pro Zyklus. Der Zaehler laeuft mit der Laufzeit,
+    // also passt der Klang automatisch zu Gehen und Rennen.
+    if (geht && !beam) {
+      const schrittPhase = Math.floor(laufzeit * 2.6);
+      if (schrittPhase !== letzterSchritt) { letzterSchritt = schrittPhase; klangSchritt(); }
+    }
     const amp = geht ? 0.55 : 0;
     if (spieler.teile) {
       spieler.teile.beinL.rotation.x = Math.sin(ph) * amp;
@@ -1447,7 +1597,7 @@ function tickInner(now) {
       if (ruheClip) ruheClip.weight += ((1 - ziel) - ruheClip.weight) * Math.min(1, dt * 8);
       mixer.update(dt);
     }
-    spieler.grp.position.y = sprungY * 2.2
+    spieler.grp.position.y = bodenY + sprungY * 2.2 + beamHoehe
       + (modellGeladen ? 0 : (geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03));
     tragelicht.position.set(wx + Math.sin(blick) * 1.5, 4.2, wz + Math.cos(blick) * 1.5);
     sonne.position.set(wx + 60, 90, wz + 30);
@@ -1459,7 +1609,7 @@ function tickInner(now) {
     // auf den Boden und schaut die Tuerme hinauf.
     camYaw = maus.yaw;
     const abst = 4.6;
-    const kopf = 1.8 + sprungY * T3 / 2;
+    const kopf = bodenY + 1.8 + sprungY * T3 / 2 + beamHoehe;
     const cp = Math.cos(maus.pitch), sp = Math.sin(maus.pitch);
     let zx = wx - Math.sin(camYaw) * cp * abst;
     let zz = wz - Math.cos(camYaw) * cp * abst;
@@ -1501,12 +1651,16 @@ function tickInner(now) {
         + ' T ' + Object.keys(tasten).filter(k => tasten[k]).join('+');
     }
     // ---- Region im HUD ----
+    if (ort === 'atrium') {
+      if (!location.search.includes('debug')) $('region').textContent = 'DIE SCHWELLE';
+    } else {
     let best = null, bd = 1e9;
     for (const r of MAP.regions) {
       const dd = Math.hypot(pos.x - r.x, (pos.z - r.y) * 0.8);
       if (dd < bd) { bd = dd; best = r; }
     }
     if (best && !location.search.includes('debug')) $('region').textContent = best.name.toUpperCase();
+    }
 
     // ---- Naechstes Interaktives ----
     naechstes = null; let nd = 2.2 * T3;
@@ -1530,7 +1684,8 @@ function tickInner(now) {
       }
     }
 
-    bewegePlatten(t);
+    if (ort === 'atrium') { atrium.update(dt, t); pruefeBeam(dt, wx, wz); }
+    else bewegePlatten(t);
 
     // ---- Fragmente drehen ----
     if (fragInst) {
