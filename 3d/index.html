@@ -64,6 +64,10 @@ body.touch #ok { display: flex; }
   font-size: 11px; letter-spacing: 1px; color: #8fa0b4; border: 1px solid #2c3644; padding: 6px 10px;
   background: rgba(10,14,20,0.7); cursor: pointer; }
 #sprich.an { color: #ffd9a0; border-color: #a86a2a; }
+#neustart { position: fixed; right: 16px; top: calc(78px + env(safe-area-inset-top, 0px)); z-index: 31;
+  font-size: 11px; letter-spacing: 1px; color: #8fa0b4; border: 1px solid #2c3644; padding: 6px 10px;
+  background: rgba(10,14,20,0.7); cursor: pointer; }
+#neustart:active { color: #ffd9a0; border-color: #a86a2a; }
 
 /* Fragment-Karte */
 #frag { position: fixed; inset: 0; z-index: 28; display: flex; align-items: center; justify-content: center;
@@ -91,7 +95,7 @@ body.touch #mausHinweis { display: none; }
 <body>
 <canvas id="c"></canvas>
 
-<div id="build">BUILD 11</div>
+<div id="build">BUILD 12</div>
 <div id="hud" class="hidden">
   <span id="region">ARKANA</span>
   <span id="zaehler">✦ 0</span>
@@ -99,6 +103,7 @@ body.touch #mausHinweis { display: none; }
 <div id="stick"><div id="knob"></div></div>
 <button id="ok">OK</button>
 <button id="sprich" class="hidden">🔊 TON AUS</button>
+<button id="neustart">⟲ NEU STARTEN</button>
 <div id="mausHinweis">Klick ins Bild für die Maussteuerung · ESC gibt sie frei</div>
 
 
@@ -131,6 +136,6 @@ body.touch #mausHinweis { display: none; }
 <div id="lade">DIE WELT VERDICHTET SICH ...</div>
 
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
-<script type="module" src="./js/main.js?v=1785337505"></script>
+<script type="module" src="./js/main.js?v=1785343200"></script>
 </body>
 </html>

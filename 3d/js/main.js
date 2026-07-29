@@ -1149,6 +1149,11 @@ sprichEl.addEventListener('click', () => {
   if (!sprichAn) speechSynthesis.cancel();
   else if (ort === 'atrium') raumton(true);
 });
+$('neustart').addEventListener('click', () => {
+  if (!confirm('Wirklich neu starten? Der Fortschritt geht verloren.')) return;
+  try { localStorage.removeItem('arkana3d'); } catch (e) { /* egal */ }
+  location.reload();
+});
 function sprich(text) {
   if (!sprichAn || !('speechSynthesis' in window)) return;
   speechSynthesis.cancel();
