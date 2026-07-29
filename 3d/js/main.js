@@ -970,7 +970,7 @@ const tasten = {};
 const KEYMAP = { w: 'KeyW', a: 'KeyA', s: 'KeyS', d: 'KeyD',
   W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD',
   ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight',
-  Enter: 'Enter', ' ': 'Space', e: 'KeyE', E: 'KeyE' };
+  Enter: 'Enter', ' ': 'Space', e: 'KeyE', E: 'KeyE', Shift: 'ShiftLeft' };
 const keyVon = (e) => e.code || KEYMAP[e.key] || '';
 addEventListener('keydown', (e) => {
   const k = keyVon(e);
@@ -1362,16 +1362,22 @@ function tickInner(now) {
     const rechts = { x: -vor.z, z: vor.x };
     const d = { x: vor.x * -roh.y + rechts.x * roh.x,
                 y: vor.z * -roh.y + rechts.z * roh.x };
-    const tempo = 3.9;             // Kacheln pro Sekunde
+    // Gehen ist Standard, Shift rennt. Vorher waren 3.9 Kacheln pro
+    // Sekunde fest verdrahtet, das sind 13 Meter pro Sekunde. Sprinttempo
+    // als Dauerzustand.
+    const rennt = tasten.ShiftLeft || tasten.ShiftRight;
+    const tempo = rennt ? 3.2 : 1.9;
     const geht = Math.hypot(d.x, d.y) > 0.05;
     if (geht) {
       bewege(pos, d.x * tempo * dt, d.y * tempo * dt);
       laufzeit += dt * (1 + Math.hypot(d.x, d.y));
+      // Der Koerper dreht sich in die Laufrichtung, wie in jedem grossen
+      // Third-Person-Spiel: W weg von der Kamera, S auf sie zu (man sieht
+      // das Gesicht), A und D im Profil. Im Stehen dreht er sich NICHT
+      // mit der Kamera, er behaelt seine letzte Richtung.
+      const ziel = Math.atan2(d.x, d.y);
+      blick += ((ziel - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 11);
     }
-    // Der Koerper schaut dorthin, wo die Kamera hinschaut. Bei S laeuft
-    // er rueckwaerts, bei A und D seitwaerts, so wie man es erwartet.
-    blick += ((maus.yaw - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 10);
-    const rueckwaerts = geht && (d.x * vor.x + d.y * vor.z) < -0.25;
     // Sprung: Leertaste, einfache Schwerkraft
     if (tasten.Space && sprungY <= 0.001 && !dialog && !fragOffen) sprungV = 7.2;
     sprungV -= 20 * dt;
@@ -1389,7 +1395,7 @@ function tickInner(now) {
     // Blickrichtung der Kamera aus, weg vom Betrachter. Ein Aufschlag
     // von 180 Grad drehte es frueher zum Spieler hin.
     spieler.grp.rotation.y = blick;
-    const ph = laufzeit * 7 * (rueckwaerts ? -1 : 1);
+    const ph = laufzeit * 7;
     const amp = geht ? 0.55 : 0;
     if (spieler.teile) {
       spieler.teile.beinL.rotation.x = Math.sin(ph) * amp;
@@ -1401,7 +1407,8 @@ function tickInner(now) {
       // Weich zwischen Ruhe und Gehen ueberblenden
       const ziel = geht ? 1 : 0;
       if (laufClip) {
-        laufClip.timeScale = rueckwaerts ? -1.05 : 1.25;
+        // Cliptempo folgt dem Bodentempo, sonst rutschen die Fuesse
+        laufClip.timeScale = 0.55 * tempo;
         laufClip.weight += (ziel - laufClip.weight) * Math.min(1, dt * 8);
         if (!ruheClip) laufClip.paused = !geht && laufClip.weight < 0.02;
       }
