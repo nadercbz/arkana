@@ -983,7 +983,7 @@ addEventListener('keyup', (e) => { const k = keyVon(e); if (k) tasten[k] = false
 
 // Maus wie in Minecraft: Klick ins Spiel sperrt den Zeiger,
 // Bewegung dreht die Kamera, Escape gibt ihn frei
-const maus = { yaw: 0, pitch: 0.13, aktiv: false };
+const maus = { yaw: 0, pitch: 0.16, aktiv: false };
 canvas.addEventListener('click', () => {
   if (!IST_MOBIL && S && !dialog && !fragOffen && document.pointerLockElement !== canvas) {
     canvas.requestPointerLock();
@@ -997,15 +997,15 @@ document.addEventListener('pointerlockchange', () => {
 addEventListener('mousemove', (e) => {
   if (!maus.aktiv) return;
   maus.yaw -= e.movementX * 0.0028;
-  maus.pitch = Math.min(1.15, Math.max(-0.30, maus.pitch + e.movementY * 0.0022));
+  maus.pitch = Math.min(1.35, Math.max(-0.62, maus.pitch + e.movementY * 0.0022));
 });
 // Am Handy: zweiter Finger auf der rechten Haelfte dreht die Kamera
-let drehId = null, drehX = 0;
+let drehId = null, drehX = 0, drehY = 0;
 addEventListener('touchstart', (e) => {
   for (const t of e.changedTouches) {
     if (t.clientX > innerWidth * 0.55 && drehId === null
         && !(t.target.closest && t.target.closest('button, .overlay, #dlg, #frag'))) {
-      drehId = t.identifier; drehX = t.clientX;
+      drehId = t.identifier; drehX = t.clientX; drehY = t.clientY;
     }
   }
 }, { passive: true });
@@ -1013,7 +1013,8 @@ addEventListener('touchmove', (e) => {
   for (const t of e.changedTouches) {
     if (t.identifier !== drehId) continue;
     maus.yaw -= (t.clientX - drehX) * 0.006;
-    drehX = t.clientX;
+    maus.pitch = Math.min(1.35, Math.max(-0.62, maus.pitch + (t.clientY - drehY) * 0.005));
+    drehX = t.clientX; drehY = t.clientY;
   }
 }, { passive: true });
 addEventListener('touchend', (e) => {
@@ -1067,10 +1068,36 @@ function richtung() {
 // ------------------------------------------------------------
 // Kollision: Kreis gegen das Kachelraster, mit Eckenhilfe
 // ------------------------------------------------------------
-const RADIUS = 0.32;             // in Kacheln
+const RADIUS = 0.32;             // Spielerkreis in Kacheln
+
+// Wie viel von seiner Kachel ein Objekt wirklich verstellt, als Radius
+// um die Kachelmitte in Kacheleinheiten. Was hier nicht steht, blockiert
+// die ganze Kachel (Mauern, Fels, Fenster). Ohne diese Tabelle sperrte
+// jede Laterne 4 mal 4 Meter, das waren die unsichtbaren Waende.
+const KOLL_RADIUS = {
+  L: 0.14, f: 0.14,               // Laterne, Fackel: ein Pfosten
+  '1': 0.22, '2': 0.24, '6': 0.30, 'P': 0.30, '3': 0.14, 'T': 0.26,  // Baeume: der Stamm
+  '4': 0.40, 'H': 0.26, 'F': 0.32, 'S': 0.36, x: 0.30, o: 0.24, M: 0.34,
+  '7': 0.28, '8': 0.36, C: 0.38, A: 0.42, '0': 0.38, U: 0.40, J: 0.42,
+  K: 0.38, c: 0.38, Q: 0.30,
+};
+
+function punktBlockiert(x, z) {
+  const tx = Math.floor(x), tz = Math.floor(z);
+  if (tx < 0 || tz < 0 || tx >= MAP.W || tz >= MAP.H) return true;
+  if (extraFest.has(tx + ',' + tz)) return true;
+  const ch = at(tx, tz);
+  if (!SOLID[ch]) return false;
+  const r = KOLL_RADIUS[ch];
+  if (r === undefined) return true;               // volle Kachel
+  return Math.hypot(x - (tx + 0.5), z - (tz + 0.5)) < r;
+}
+
 function stehtFrei(tx, tz) {
-  for (const [ox, oz] of [[RADIUS,0],[-RADIUS,0],[0,RADIUS],[0,-RADIUS],[RADIUS*0.7,RADIUS*0.7],[-RADIUS*0.7,RADIUS*0.7],[RADIUS*0.7,-RADIUS*0.7],[-RADIUS*0.7,-RADIUS*0.7]]) {
-    if (fest(Math.floor(tx + ox), Math.floor(tz + oz))) return false;
+  // Acht Punkte auf dem Spielerkreis plus die Mitte, damit auch ein
+  // duenner Pfosten nicht zwischen zwei Messpunkten durchrutscht
+  for (const [ox, oz] of [[0,0],[RADIUS,0],[-RADIUS,0],[0,RADIUS],[0,-RADIUS],[RADIUS*0.7,RADIUS*0.7],[-RADIUS*0.7,RADIUS*0.7],[RADIUS*0.7,-RADIUS*0.7],[-RADIUS*0.7,-RADIUS*0.7]]) {
+    if (punktBlockiert(tx + ox, tz + oz)) return false;
   }
   return true;
 }
@@ -1296,6 +1323,7 @@ function findeSpawn() {
 
 const pos = { x: 0, z: 0 };
 let blick = 0;
+let zielBlick = 0;               // letzte Laufrichtung, Drehziel
 let camYaw = 0;
 let laufzeit = 0;
 let sprungY = 0, sprungV = 0;    // Sprunghoehe und -geschwindigkeit
@@ -1326,7 +1354,7 @@ function spielStart() {
     }
     if (f > bestFrei) { bestFrei = f; bester = yaw; }
   }
-  camYaw = blick = bester;
+  camYaw = blick = zielBlick = bester;
   maus.yaw = bester;
   cam.x = pos.x * T3 - Math.sin(camYaw) * 9;
   cam.z = pos.z * T3 - Math.cos(camYaw) * 9;
@@ -1371,12 +1399,16 @@ function tickInner(now) {
     if (geht) {
       bewege(pos, d.x * tempo * dt, d.y * tempo * dt);
       laufzeit += dt * (1 + Math.hypot(d.x, d.y));
-      // Der Koerper dreht sich in die Laufrichtung, wie in jedem grossen
-      // Third-Person-Spiel: W weg von der Kamera, S auf sie zu (man sieht
-      // das Gesicht), A und D im Profil. Im Stehen dreht er sich NICHT
-      // mit der Kamera, er behaelt seine letzte Richtung.
-      const ziel = Math.atan2(d.x, d.y);
-      blick += ((ziel - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 11);
+      zielBlick = Math.atan2(d.x, d.y);
+    }
+    // Der Koerper dreht mit fester Geschwindigkeit auf die letzte
+    // Laufrichtung zu und fuehrt die Drehung auch nach dem Loslassen zu
+    // Ende. Dann friert die Pose ein: wer nach rechts lief, steht nach
+    // rechts. Die Kamera dreht ihn nie.
+    {
+      const diff = ((zielBlick - blick + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      const schritt = 11 * dt;                      // Bogenmass pro Sekunde
+      blick += Math.abs(diff) <= schritt ? diff : Math.sign(diff) * schritt;
     }
     // Sprung: Leertaste, einfache Schwerkraft
     if (tasten.Space && sprungY <= 0.001 && !dialog && !fragOffen) sprungV = 7.2;
@@ -1421,36 +1453,32 @@ function tickInner(now) {
     sonne.position.set(wx + 60, 90, wz + 30);
     if (sonne.target) { sonne.target.position.set(wx, 0, wz); sonne.target.updateMatrixWorld(); }
 
-    // ---- Kamera: Orbit um die Figur, Maus bestimmt den Winkel ----
+    // ---- Kamera: Kugel-Orbit um den Kopf ----
+    // Gier und Neigung kommen beide von der Maus. Neigung nach unten
+    // hebt die Kamera und schaut herab, Neigung nach oben senkt sie fast
+    // auf den Boden und schaut die Tuerme hinauf.
     camYaw = maus.yaw;
-    // Nah und tief hinter der Schulter. So fuellt die Architektur das Bild
-    // statt des Bodens. Das ist der Blick aus dem Moodboard.
     const abst = 4.6;
-    const hoehe = 2.5 + Math.sin(maus.pitch) * abst;
-    let zx = wx - Math.sin(camYaw) * Math.cos(maus.pitch) * abst;
-    let zz = wz - Math.cos(camYaw) * Math.cos(maus.pitch) * abst;
-    // Sichtpruefung: steht ein Monolith zwischen Figur und Kamera,
-    // rueckt die Kamera davor, statt hineinzuschneiden
+    const kopf = 1.8 + sprungY * T3 / 2;
+    const cp = Math.cos(maus.pitch), sp = Math.sin(maus.pitch);
+    let zx = wx - Math.sin(camYaw) * cp * abst;
+    let zz = wz - Math.cos(camYaw) * cp * abst;
+    let zy = kopf + sp * abst;
+    // Sichtpruefung entlang der echten Sichtlinie Kopf -> Kamera
     let frei = 1;
     for (let f = 0.15; f <= 1; f += 0.05) {
       const sx = wx + (zx - wx) * f, sz = wz + (zz - wz) * f;
-      const sy = 2.5 + (hoehe - 2.5) * f;
-      if (sichtHoehe(sx, sz) > sy) { frei = Math.max(0.26, f - 0.06); break; }
+      const sy = kopf + (zy - kopf) * f;
+      if (sy > 0.2 && sichtHoehe(sx, sz) > sy) { frei = Math.max(0.24, f - 0.06); break; }
     }
     zx = wx + (zx - wx) * frei;
     zz = wz + (zz - wz) * frei;
-    // In der Enge rueckt die Kamera naeher heran und bleibt dabei flach.
-    // Frueher stieg sie nach oben, dadurch wurde aus dem Spiel in jedem
-    // Innenhof eine Draufsicht.
-    const zy = Math.max(1.9, 2.5 + (hoehe - 2.5) * frei);
-    cam.x += (zx - cam.x) * Math.min(1, dt * 4.5);
-    cam.z += (zz - cam.z) * Math.min(1, dt * 4.5);
-    cam.y = (cam.y || hoehe) + (zy - (cam.y || hoehe)) * Math.min(1, dt * 4.5);
+    zy = Math.max(0.35, kopf + (zy - kopf) * frei);
+    cam.x += (zx - cam.x) * Math.min(1, dt * 5.5);
+    cam.z += (zz - cam.z) * Math.min(1, dt * 5.5);
+    cam.y = (cam.y || zy) + (zy - (cam.y || zy)) * Math.min(1, dt * 5.5);
     camera.position.set(cam.x, cam.y, cam.z);
-
-    // Zielpunkt knapp ueber der Schulter und nur leicht voraus. Zu weit
-    // vorne, und die Figur rutscht aus dem Bild.
-    camera.lookAt(wx + vor.x * 0.6, 2.0 + sprungY * T3 / 2, wz + vor.z * 0.6);
+    camera.lookAt(wx, kopf, wz);
 
     // ---- Nebel folgt dem Biom ----
     const bio = BIO[biomAt(Math.floor(pos.x), Math.floor(pos.z))];
@@ -1462,6 +1490,9 @@ function tickInner(now) {
     himmelMat.uniforms.oben.value.lerp(
       fogZiel.clone().multiplyScalar(0.32), Math.min(1, dt * 1.5));
 
+    if (location.search.includes('debug')) {
+      window.__mess = { spieler, camera, THREE, pos, maus, mixer, laufClip, ruheClip };
+    }
     // ---- Debug (nur Entwicklung) ----
     if (location.search.includes('debug')) {
       $('region').textContent = pos.x.toFixed(1) + ',' + pos.z.toFixed(1)
