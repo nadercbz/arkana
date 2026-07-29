@@ -95,18 +95,43 @@ renderer.shadowMap.enabled = !IST_MOBIL;          // Schatten kosten, Handys spa
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 400);
 
 // Nebel traegt den Look. Farbe wandert mit dem Biom.
-const fog = new THREE.FogExp2(0x232c38, 0.016);
+const fog = new THREE.FogExp2(0x2b3644, 0.0125);
 scene.fog = fog;
-scene.background = new THREE.Color(0x232c38);
+// Statt einer flachen Hintergrundfarbe eine Kuppel mit Verlauf und
+// einer fernen blendenden Quelle. Das gibt dem Dunst eine Richtung.
+const HIMMEL_RICHTUNG = new THREE.Vector3(0.72, 0.16, 0.34).normalize();
+const himmelMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: {
+    unten: { value: new THREE.Color(0x2b3644) },
+    oben: { value: new THREE.Color(0x101725) },
+    glanz: { value: new THREE.Color(0xffe9c8) },
+    richtung: { value: HIMMEL_RICHTUNG },
+  },
+  vertexShader: `varying vec3 vP;
+    void main(){ vP = normalize(position);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform vec3 unten, oben, glanz; uniform vec3 richtung; varying vec3 vP;
+    void main(){
+      float h = clamp(vP.y * 0.5 + 0.5, 0.0, 1.0);
+      vec3 c = mix(unten, oben, pow(h, 0.7));
+      float d = max(dot(normalize(vP), normalize(richtung)), 0.0);
+      c += glanz * (pow(d, 22.0) * 1.5 + pow(d, 4.0) * 0.16);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+const himmel = new THREE.Mesh(new THREE.SphereGeometry(320, 24, 16), himmelMat);
+himmel.frustumCulled = false;
+scene.add(himmel);
 
-const hemi = new THREE.HemisphereLight(0x9fb8d8, 0x2b3440, 2.1);
+const hemi = new THREE.HemisphereLight(0xa8c0dc, 0x39404c, 2.6);
 scene.add(hemi);
-scene.add(new THREE.AmbientLight(0x55637a, 1.35));
-const sonne = new THREE.DirectionalLight(0xdce8ff, 1.8);
-sonne.position.set(60, 90, 30);
+scene.add(new THREE.AmbientLight(0x6a7890, 1.7));
+const sonne = new THREE.DirectionalLight(0xffeeda, 2.1);
+sonne.position.copy(HIMMEL_RICHTUNG).multiplyScalar(120);
 if (!IST_MOBIL) {
   sonne.castShadow = true;
   sonne.shadow.mapSize.set(2048, 2048);
@@ -119,7 +144,7 @@ if (!IST_MOBIL) {
 }
 scene.add(sonne);
 // Ein wanderndes warmes Licht bleibt beim Spieler, wie eine getragene Laterne
-const tragelicht = new THREE.PointLight(0xffb864, 11, 30, 1.9);
+const tragelicht = new THREE.PointLight(0xffc98a, 16, 38, 1.8);
 scene.add(tragelicht);
 
 // Nachbearbeitung: Bloom laesst Portale, Fragmente und Laternen
@@ -136,7 +161,7 @@ function resize() {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', () => { resize(); skaliereGluehen(); }); resize();
 
 // Weicher Leuchtfleck als Sprite-Textur
 function glowTex() {
@@ -150,6 +175,64 @@ function glowTex() {
   return new THREE.CanvasTexture(cv);
 }
 const GLOW = glowTex();
+
+// Jeder Sprite ist ein eigener Zeichenaufruf. Bei ueber 500 Lichtern
+// bricht damit jedes Handy ein. Deshalb wandern alle Leuchtpunkte in
+// eine einzige Punktwolke: ein Zeichenaufruf fuer die ganze Welt.
+const GLUEHEN = [];      // { x, y, z, groesse, farbe }
+let gluehWolke = null, gluehGroesse = null;
+function gluehen(x, y, z, groesse, farbe, alpha) {
+  GLUEHEN.push({ x, y, z, groesse: groesse * (alpha === undefined ? 1 : alpha), farbe });
+  return GLUEHEN.length - 1;
+}
+function baueGluehWolke() {
+  const n = GLUEHEN.length;
+  if (!n) return;
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 3);
+  gluehGroesse = new Float32Array(n);
+  const far = new Float32Array(n * 3);
+  const c = new THREE.Color();
+  GLUEHEN.forEach((p, i) => {
+    pos[i*3] = p.x; pos[i*3+1] = p.y; pos[i*3+2] = p.z;
+    gluehGroesse[i] = p.groesse;
+    c.set(p.farbe);
+    far[i*3] = c.r; far[i*3+1] = c.g; far[i*3+2] = c.b;
+  });
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('groesse', new THREE.BufferAttribute(gluehGroesse, 1));
+  g.setAttribute('farbe', new THREE.BufferAttribute(far, 3));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { karte: { value: GLOW }, skala: { value: 500 } },
+    vertexShader: `attribute float groesse; attribute vec3 farbe;
+      uniform float skala; varying vec3 vF;
+      void main(){ vF = farbe;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = max(0.0, groesse) * skala / max(1.0, -mv.z);
+        gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform sampler2D karte; varying vec3 vF;
+      void main(){ vec4 t = texture2D(karte, gl_PointCoord);
+        if (t.a < 0.01) discard;
+        gl_FragColor = vec4(vF, 1.0) * t; }`,
+  });
+  gluehWolke = new THREE.Points(g, mat);
+  gluehWolke.frustumCulled = false;
+  gluehWolke.renderOrder = 3;
+  scene.add(gluehWolke);
+  skaliereGluehen();
+}
+function skaliereGluehen() {
+  if (!gluehWolke) return;
+  gluehWolke.material.uniforms.skala.value =
+    innerHeight / (2 * Math.tan(camera.fov * Math.PI / 360));
+}
+function loescheGluehen(i) {
+  if (!gluehWolke || i < 0) return;
+  gluehGroesse[i] = 0;
+  gluehWolke.geometry.attributes.groesse.needsUpdate = true;
+}
+
 function glowSprite(scale, farbe) {
   const m = new THREE.SpriteMaterial({ map: GLOW, color: farbe || 0xffffff,
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -170,6 +253,49 @@ function ladeTex(url, wdh) {
 }
 const TEX_BODEN = ladeTex('./assets/tex_boden.jpg', [MAP.W / 2, MAP.H / 2]);
 const TEX_WAND = ladeTex('./assets/tex_wand_kalt.jpg');
+
+// Aus der Helligkeit der Textur eine Normalmap rechnen. Ohne die bleibt
+// Beton eine flache Flaeche, egal wie gut die Farbtextur ist.
+function normalAus(url, staerke, wdh, ziel) {
+  const bild = new Image();
+  bild.onload = () => {
+    const N = 512;
+    const cv = document.createElement('canvas'); cv.width = cv.height = N;
+    const c = cv.getContext('2d');
+    c.drawImage(bild, 0, 0, N, N);
+    const q = c.getImageData(0, 0, N, N).data;
+    const hell = new Float32Array(N * N);
+    for (let i = 0; i < N * N; i++) {
+      hell[i] = (q[i*4] * 0.299 + q[i*4+1] * 0.587 + q[i*4+2] * 0.114) / 255;
+    }
+    const raus = c.createImageData(N, N);
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const i = y * N + x;
+        const l = hell[y * N + ((x - 1 + N) % N)], r = hell[y * N + ((x + 1) % N)];
+        const o = hell[((y - 1 + N) % N) * N + x], u = hell[((y + 1) % N) * N + x];
+        const dx = (l - r) * staerke, dy = (o - u) * staerke;
+        const len = Math.hypot(dx, dy, 1);
+        raus.data[i*4]   = ((dx / len) * 0.5 + 0.5) * 255;
+        raus.data[i*4+1] = ((dy / len) * 0.5 + 0.5) * 255;
+        raus.data[i*4+2] = ((1 / len) * 0.5 + 0.5) * 255;
+        raus.data[i*4+3] = 255;
+      }
+    }
+    c.putImageData(raus, 0, 0);
+    const t = new THREE.CanvasTexture(cv);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (wdh) t.repeat.set(wdh[0], wdh[1]);
+    for (const m of ziel) { m.normalMap = t; m.needsUpdate = true; }
+  };
+  bild.src = url;
+}
+const MAT_BODEN = new THREE.MeshStandardMaterial({
+  vertexColors: true, map: TEX_BODEN, roughness: 0.94, metalness: 0.02 });
+const MAT_WAND = new THREE.MeshStandardMaterial({
+  map: TEX_WAND, roughness: 0.9, metalness: 0.03 });
+normalAus('./assets/tex_boden.jpg', 5, [MAP.W / 2, MAP.H / 2], [MAT_BODEN]);
+normalAus('./assets/tex_wand_kalt.jpg', 4, null, [MAT_WAND]);
 
 // ------------------------------------------------------------
 // Biomfarben (aus dem 2D-Spiel, entsaettigt in den Nebel gelegt)
@@ -226,13 +352,22 @@ function bauBoden() {
     else if (ch === '~' || ch === 'w') tmp.set(0x11202e);               // Wasser
     else if (ch === 'v') tmp.set(0x02040a);                             // Abgrund
     else tmp.multiplyScalar(0.9 + hash2(tx, ty) * 0.2);                  // feine Koernung
+    // Kontaktverschattung: je mehr Masse ringsum, desto dunkler der Boden.
+    // Erst das setzt die Bauten auf den Grund statt sie darauf zu legen.
+    let masse = 0;
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (!fest(tx + dx, ty + dy)) continue;
+        masse += 1 / (1 + dx * dx + dy * dy);
+      }
+    }
+    tmp.multiplyScalar(Math.max(0.32, 1 - masse * 0.16));
     farben[i * 3] = tmp.r; farben[i * 3 + 1] = tmp.g; farben[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(farben, 3));
   // Textur mal Vertexfarbe: die Betonplatten liegen unter allem,
   // die Biomfarbe toent sie ein
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: TEX_BODEN });
-  const m = new THREE.Mesh(geo, mat);
+  const m = new THREE.Mesh(geo, MAT_BODEN);
   m.position.set(MAP.W * T3 / 2, 0, MAP.H * T3 / 2);
   m.receiveShadow = true;
   scene.add(m);
@@ -270,29 +405,141 @@ function bauWelt() {
   const px = (e) => (e.tx + 0.5) * T3, pz = (e) => (e.ty + 0.5) * T3;
   const dummy = new THREE.Object3D();
 
-  // Architektur: jede Wandkachel ein Monolith, Hoehe variiert stark.
-  // Das ergibt die Skyline aus dem Moodboard.
+  // ------------------------------------------------------------
+  // Architektur. Ein Wuerfel je Kachel ergibt eine Lego-Skyline.
+  // Stattdessen bekommt jede Masse drei Schichten: den Hauptkoerper,
+  // einen abgesetzten Aufsatz und vorkragende Baender an den Kanten.
+  // Dazu leuchtende Oeffnungen, das Erkennungszeichen des Moodboards.
+  // ------------------------------------------------------------
   {
-    const geo = new THREE.BoxGeometry(T3, 1, T3);
-    geo.translate(0, 0.5, 0);
-    const mat = new THREE.MeshLambertMaterial({ map: TEX_WAND });
-    const inst = new THREE.InstancedMesh(geo, mat, waende.length);
-    inst.castShadow = true; inst.receiveShadow = true;
+    const frei = (tx, ty) => !fest(tx, ty);
+    const kanten = (e) => [[1,0],[-1,0],[0,1],[0,-1]].filter(([a,b]) => frei(e.tx+a, e.ty+b));
+
+    // Hoehen zuerst bestimmen, damit Aufsaetze und Baender darauf aufbauen
+    for (const e of waende) {
+      const nachbarn = 4 - kanten(e).length;
+      // Grosse Spreizung: manche Bloecke sind Tuerme, andere flach.
+      const stufe = Math.floor(e.h * 4);
+      const basis = [7, 13, 22, 34][stufe];
+      e.hoehe = basis * (0.75 + hash2(e.tx * 3, e.ty * 5) * 0.5) + nachbarn * 1.5;
+      HOEHEN[e.ty * MAP.W + e.tx] = e.hoehe;
+    }
+
+    const dummy2 = new THREE.Object3D();
     const farbe = new THREE.Color();
-    waende.forEach((e, i) => {
-      // Innen hoeher als am Rand einer Wandflaeche, wie gewachsene Bauten
-      const nachbarn = [[1,0],[-1,0],[0,1],[0,-1]].filter(([a,b]) => fest(e.tx+a, e.ty+b)).length;
-      const h = 6 + e.h * 10 + nachbarn * 2.5;
-      HOEHEN[e.ty * MAP.W + e.tx] = h;
-      dummy.position.set(px(e), 0, pz(e));
-      dummy.scale.set(1, h, 1);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix);
-      farbe.copy(BIO[biomAt(e.tx, e.ty)].wand).multiplyScalar(2.2 + e.h * 0.8);
-      inst.setColorAt(i, farbe);
-    });
-    scene.add(inst);
+    const setzen = (inst, i, pos3, skal, drehY, ton) => {
+      dummy2.position.set(pos3[0], pos3[1], pos3[2]);
+      dummy2.scale.set(skal[0], skal[1], skal[2]);
+      dummy2.rotation.set(0, drehY || 0, 0);
+      dummy2.updateMatrix();
+      inst.setMatrixAt(i, dummy2.matrix);
+      if (ton) inst.setColorAt(i, ton);
+    };
+
+    // --- Hauptkoerper aus gestapelten Segmenten ---
+    // Ein einzelner Wuerfel, in der Hoehe auf 30 Einheiten gezogen, streckt
+    // die Textur um das Achtfache. Deshalb wird jeder Turm aus gleich hohen
+    // Scheiben gestapelt. Der Massstab stimmt dann ueberall, und die Fugen
+    // zwischen den Scheiben lesen sich wie Geschosse in Sichtbeton.
+    const SEG = 4.5;
+    let segGesamt = 0;
+    for (const e of waende) {
+      e.segAnz = Math.max(2, Math.round(e.hoehe / SEG));
+      e.hoehe = e.segAnz * SEG;                       // auf volle Scheiben runden
+      HOEHEN[e.ty * MAP.W + e.tx] = e.hoehe;
+      segGesamt += e.segAnz;
+    }
+    const geoK = new THREE.BoxGeometry(T3, SEG, T3); geoK.translate(0, SEG / 2, 0);
+    const koerper = new THREE.InstancedMesh(geoK, MAT_WAND, segGesamt);
+    koerper.castShadow = koerper.receiveShadow = true;
+    let si = 0;
+    for (const e of waende) {
+      const grund = BIO[biomAt(e.tx, e.ty)].wand;
+      for (let k = 0; k < e.segAnz; k++) {
+        // Jede Scheibe leicht anders getoent, das bricht die Flaeche auf
+        const n = hash2(e.tx * 5 + k * 3, e.ty * 7 + k * 11);
+        farbe.copy(grund).multiplyScalar(1.85 + e.h * 0.7 + n * 0.5);
+        setzen(koerper, si++, [px(e), k * SEG, pz(e)], [1, 1, 1], 0, farbe);
+      }
+    }
+    scene.add(koerper);
+
+    // --- Aufsaetze: abgesetzter Kopf auf hohen Bloecken ---
+    const mitKopf = waende.filter((e) => e.hoehe > 16);
+    if (mitKopf.length) {
+      const geoA = new THREE.BoxGeometry(T3, SEG, T3); geoA.translate(0, SEG / 2, 0);
+      const aufs = new THREE.InstancedMesh(geoA, MAT_WAND, mitKopf.length);
+      aufs.castShadow = aufs.receiveShadow = true;
+      mitKopf.forEach((e, i) => {
+        const n = hash2(e.tx * 7, e.ty * 11);
+        const s2 = 0.55 + n * 0.3;
+        const hh = 1 + Math.round(n * 1.6);          // in ganzen Scheiben
+        const vx = (hash2(e.tx * 13, e.ty) - 0.5) * T3 * 0.3;
+        const vz = (hash2(e.tx, e.ty * 13) - 0.5) * T3 * 0.3;
+        farbe.copy(BIO[biomAt(e.tx, e.ty)].wand).multiplyScalar(2.4 + n);
+        setzen(aufs, i, [px(e) + vx, e.hoehe, pz(e) + vz], [s2, hh, s2], 0, farbe);
+      });
+      scene.add(aufs);
+    }
+
+    // --- Vorkragende Baender an den Aussenkanten ---
+    const baender = [];
+    for (const e of waende) {
+      for (const [dx, dz] of kanten(e)) {
+        const n = hash2(e.tx * 17 + dx * 3, e.ty * 19 + dz * 5);
+        if (n < 0.55) continue;                       // nicht ueberall, sonst Brei
+        baender.push({ e, dx, dz, n });
+      }
+    }
+    if (baender.length) {
+      const geoB = new THREE.BoxGeometry(1, 1, 1); geoB.translate(0, 0.5, 0);
+      const bnd = new THREE.InstancedMesh(geoB, MAT_WAND, baender.length);
+      bnd.castShadow = bnd.receiveShadow = true;
+      baender.forEach((b, i) => {
+        const { e, dx, dz, n } = b;
+        const y = 3 + n * (e.hoehe - 5);
+        const tief = 1.0 + n * 1.6;                   // wie weit es vorspringt
+        const dick = 0.8 + n * 1.4;
+        const laenge = T3 * (0.7 + n * 0.3);
+        const bx = px(e) + dx * (T3 / 2 + tief / 2 - 0.2);
+        const bz = pz(e) + dz * (T3 / 2 + tief / 2 - 0.2);
+        const skal = dx !== 0 ? [tief, dick, laenge] : [laenge, dick, tief];
+        farbe.copy(BIO[biomAt(e.tx, e.ty)].wand).multiplyScalar(2.9 + n * 0.8);
+        setzen(bnd, i, [bx, y, bz], skal, 0, farbe);
+      });
+      scene.add(bnd);
+    }
+
+    // --- Leuchtende Oeffnungen: das Erkennungszeichen des Moodboards ---
+    const oeffnungen = [];
+    for (const e of waende) {
+      for (const [dx, dz] of kanten(e)) {
+        const n = hash2(e.tx * 29 + dx, e.ty * 31 + dz);
+        if (n < 0.9 || e.hoehe < 12) continue;        // selten, das macht sie stark
+        oeffnungen.push({ e, dx, dz, n });
+      }
+    }
+    if (oeffnungen.length) {
+      const geoO = new THREE.PlaneGeometry(1, 1);
+      const matO = new THREE.MeshBasicMaterial({
+        color: 0xfff4e2, side: THREE.DoubleSide, fog: true,
+        transparent: true, opacity: 0.95, depthWrite: false });
+      const oef = new THREE.InstancedMesh(geoO, matO, oeffnungen.length);
+      oeffnungen.forEach((o, i) => {
+        const { e, dx, dz, n } = o;
+        const y = 5 + n * (e.hoehe - 9);
+        const b = 1.1 + n * 1.4, hh = 3 + n * 6;
+        dummy2.position.set(px(e) + dx * (T3 / 2 + 0.06), y + hh / 2, pz(e) + dz * (T3 / 2 + 0.06));
+        dummy2.scale.set(b, hh, 1);
+        dummy2.rotation.set(0, dx !== 0 ? Math.PI / 2 : 0, 0);
+        dummy2.updateMatrix();
+        oef.setMatrixAt(i, dummy2.matrix);
+        // Ein weicher Schein davor, damit es im Nebel glueht
+        gluehen(px(e) + dx * (T3 / 2 + 0.5), y + hh / 2, pz(e) + dz * (T3 / 2 + 0.5),
+          1.5 + n * 1.4, 0xffe9c8, 0.5);
+      });
+      scene.add(oef);
+    }
   }
 
   // Baeume: dunkle Silhouetten im Nebel
@@ -352,7 +599,7 @@ function bauWelt() {
     });
     scene.add(inst);
     for (const e of kristalle) {
-      if (e.h > 0.72) { const g = glowSprite(7, 0xb0a6ff); g.position.set(px(e), 2.6, pz(e)); scene.add(g); }
+      if (e.h > 0.72) gluehen(px(e), 2.6, pz(e), 2.2, 0xb0a6ff, 0.6);
     }
   }
 
@@ -402,10 +649,92 @@ function bauWelt() {
     lampen.forEach((e, i) => {
       dummy.position.set(px(e), 0, pz(e)); dummy.scale.set(1, 1, 1); dummy.rotation.set(0,0,0);
       dummy.updateMatrix(); inst.setMatrixAt(i, dummy.matrix);
-      const g = glowSprite(5, 0xffc878); g.position.set(px(e), 3.5, pz(e)); scene.add(g);
+      gluehen(px(e), 3.5, pz(e), 1.5, 0xffc878, 0.55);
     });
     scene.add(inst);
   }
+}
+
+// ------------------------------------------------------------
+// Lichtschacht: ein sichtbarer Strahl im Dunst. Der Kegel leuchtet
+// an seiner Silhouette, dadurch liest er sich als Volumen und nicht
+// als Pappe. Genau das traegt die Bilder im Moodboard.
+// ------------------------------------------------------------
+function schachtMaterial(farbe, staerke) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide, fog: false,
+    uniforms: { farbe: { value: new THREE.Color(farbe) }, staerke: { value: staerke } },
+    vertexShader: `varying float vH; varying vec3 vNw; varying vec3 vPw;
+      void main(){ vH = uv.y;
+        vec4 wp = modelMatrix * vec4(position, 1.0); vPw = wp.xyz;
+        vNw = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * wp; }`,
+    fragmentShader: `uniform vec3 farbe; uniform float staerke;
+      varying float vH; varying vec3 vNw; varying vec3 vPw;
+      void main(){
+        vec3 v = normalize(cameraPosition - vPw);
+        float rim = 1.0 - abs(dot(normalize(vNw), v));
+        float oben = smoothstep(0.0, 0.28, vH);
+        float unten = 1.0 - smoothstep(0.62, 1.0, vH);
+        gl_FragColor = vec4(farbe, staerke * rim * rim * oben * unten);
+      }`,
+  });
+}
+function lichtschacht(x, z, hoehe, radius, farbe, staerke) {
+  const g = new THREE.CylinderGeometry(radius * 0.3, radius, hoehe, 14, 1, true);
+  g.translate(0, hoehe / 2, 0);
+  const m = new THREE.Mesh(g, schachtMaterial(farbe, staerke));
+  m.position.set(x, 0, z);
+  m.renderOrder = 2;
+  scene.add(m);
+  return m;
+}
+
+// ------------------------------------------------------------
+// Schwebende Betonplatten. Direkt aus dem Moodboard: Masse, die
+// nicht faellt. Sie treiben langsam und drehen sich kaum merklich.
+// ------------------------------------------------------------
+let platten = null;
+const plattenDaten = [];
+function bauPlatten() {
+  const rng = mulberry32(90210);
+  const versuche = 700, ziel = 110;
+  while (plattenDaten.length < ziel && plattenDaten.length < versuche) {
+    const tx = 3 + Math.floor(rng() * (MAP.W - 6));
+    const ty = 3 + Math.floor(rng() * (MAP.H - 6));
+    if (fest(tx, ty)) continue;                       // nur ueber offenen Flaechen
+    plattenDaten.push({
+      x: (tx + 0.5) * T3, z: (ty + 0.5) * T3,
+      y: 16 + rng() * 34,
+      b: 3 + rng() * 12, d: 0.8 + rng() * 2.4, t: 3 + rng() * 10,
+      dreh: rng() * 6.28, tempo: (rng() - 0.5) * 0.06,
+      wippe: rng() * 6.28, hub: 0.6 + rng() * 1.8,
+      ton: 1.4 + rng() * 1.4,
+    });
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  platten = new THREE.InstancedMesh(geo, MAT_WAND, plattenDaten.length);
+  platten.castShadow = true;
+  platten.frustumCulled = false;
+  const farbe = new THREE.Color();
+  plattenDaten.forEach((p, i) => {
+    farbe.copy(BIO[biomAt(Math.floor(p.x / T3), Math.floor(p.z / T3))].wand).multiplyScalar(p.ton);
+    platten.setColorAt(i, farbe);
+  });
+  scene.add(platten);
+}
+function bewegePlatten(t) {
+  if (!platten) return;
+  const d = new THREE.Object3D();
+  plattenDaten.forEach((p, i) => {
+    d.position.set(p.x, p.y + Math.sin(t * 0.25 + p.wippe) * p.hub, p.z);
+    d.rotation.set(Math.sin(t * 0.1 + p.wippe) * 0.04, p.dreh + t * p.tempo, 0);
+    d.scale.set(p.b, p.d, p.t);
+    d.updateMatrix();
+    platten.setMatrixAt(i, d.matrix);
+  });
+  platten.instanceMatrix.needsUpdate = true;
 }
 
 // Wahrzeichen: das Monolith-Portal aus dem Moodboard, eines je Region.
@@ -444,19 +773,21 @@ function bauPortale() {
     const grp = new THREE.Group();
     const b = BIO[biomAt(r.x, r.y)];
     const stein = new THREE.Mesh(
-      new THREE.BoxGeometry(9, 30, 2.4),
+      new THREE.BoxGeometry(9, 44, 2.6),
       new THREE.MeshLambertMaterial({ map: TEX_WAND, color: b.wand.clone().multiplyScalar(2.6) }));
-    stein.position.y = 15;
+    stein.position.y = 22;
     stein.castShadow = true;
     const tuer = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 15),
       new THREE.MeshBasicMaterial({ color: 0xfff2dc }));
     tuer.position.set(0, 8.6, 1.25);
-    const g = glowSprite(26, 0xffe8c0); g.position.set(0, 9, 2.2);
-    grp.add(stein, tuer, g);
+    grp.add(stein, tuer);
+    gluehen(x, 9, z + 2.2, 7, 0xffe8c0, 0.6);
     grp.position.set(x, 0, z);
     scene.add(grp);
     portale.push({ x, z, name: r.name });
+    // Der Strahl macht das Portal schon von weitem sichtbar
+    lichtschacht(x, z, 70, 11, 0xffe6bc, 0.19);
     for (let dx = -1; dx <= 1; dx++) extraFest.add((platz[0] + dx) + ',' + platz[1]);
   }
 }
@@ -465,16 +796,20 @@ function bauPortale() {
 // Interaktive Dinge: Fragmente, Inschriften, Figuren, Schreine
 // ------------------------------------------------------------
 const dinge = [];         // { art, x, z, mesh, idx, aktiv }
+let fragInst = null;      // alle Wissensscherben in einem Zeichenaufruf
 function bauDinge() {
   // Fragmente: schwebende warmweisse Scherben
   const fragGeo = new THREE.TetrahedronGeometry(0.6, 0);
   const fragMat = new THREE.MeshStandardMaterial({ color: 0xfff0d0, emissive: 0xffdca0, emissiveIntensity: 1.4, roughness: 0.2 });
+  // Alle Scherben in einem InstancedMesh. 95 Einzelmeshes waeren
+  // 95 Zeichenaufrufe fuer ein paar Dreiecke.
+  fragInst = new THREE.InstancedMesh(fragGeo, fragMat, MAP.frag.length);
+  fragInst.frustumCulled = false;
+  scene.add(fragInst);
   MAP.frag.forEach(([tx, ty], i) => {
-    const m = new THREE.Mesh(fragGeo, fragMat);
-    m.position.set((tx + 0.5) * T3, 1.6, (ty + 0.5) * T3);
-    const g = glowSprite(4.5, 0xffe0b0); m.add(g);
-    scene.add(m);
-    dinge.push({ art: 'frag', x: m.position.x, z: m.position.z, mesh: m, idx: i, aktiv: true });
+    const x = (tx + 0.5) * T3, z = (ty + 0.5) * T3;
+    const gi = gluehen(x, 1.6, z, 1.8, 0xffe0b0, 0.7);
+    dinge.push({ art: 'frag', x, z, mesh: null, inst: i, gluehIdx: gi, idx: i, aktiv: true });
   });
   // Inschriften: flache Tafeln
   const inGeo = new THREE.BoxGeometry(1.8, 2.4, 0.4);
@@ -509,8 +844,8 @@ function bauDinge() {
     const auge = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 2.4),
       new THREE.MeshBasicMaterial({ color: 0xfff2dc }));
     auge.position.set(0, 2.4, 0.65);
-    const g = glowSprite(9, 0xffe8c0); g.position.set(0, 2.6, 1);
-    grp.add(st, auge, g);
+    grp.add(st, auge);
+    gluehen((tx + 0.5) * T3, 2.6, (ty + 0.5) * T3 + 1, 3, 0xffe8c0, 0.6);
     grp.position.set((tx + 0.5) * T3, 0, (ty + 0.5) * T3);
     scene.add(grp);
     dinge.push({ art: 'schrein', x: grp.position.x, z: grp.position.z, mesh: grp, idx: i, aktiv: true });
@@ -648,7 +983,7 @@ addEventListener('keyup', (e) => { const k = keyVon(e); if (k) tasten[k] = false
 
 // Maus wie in Minecraft: Klick ins Spiel sperrt den Zeiger,
 // Bewegung dreht die Kamera, Escape gibt ihn frei
-const maus = { yaw: 0, pitch: 0.32, aktiv: false };
+const maus = { yaw: 0, pitch: 0.13, aktiv: false };
 canvas.addEventListener('click', () => {
   if (!IST_MOBIL && S && !dialog && !fragOffen && document.pointerLockElement !== canvas) {
     canvas.requestPointerLock();
@@ -662,7 +997,7 @@ document.addEventListener('pointerlockchange', () => {
 addEventListener('mousemove', (e) => {
   if (!maus.aktiv) return;
   maus.yaw -= e.movementX * 0.0028;
-  maus.pitch = Math.min(1.25, Math.max(-0.15, maus.pitch + e.movementY * 0.0022));
+  maus.pitch = Math.min(1.15, Math.max(-0.30, maus.pitch + e.movementY * 0.0022));
 });
 // Am Handy: zweiter Finger auf der rechten Haelfte dreht die Kamera
 let drehId = null, drehX = 0;
@@ -864,7 +1199,13 @@ function zeigeFragment(ding) {
     S.stats[was]++;
     S.fragmente.push(ding.idx);
     ding.aktiv = false;
-    scene.remove(ding.mesh);
+    if (ding.mesh) scene.remove(ding.mesh);
+    if (ding.inst !== undefined) {
+      const d0 = new THREE.Object3D(); d0.scale.setScalar(0); d0.updateMatrix();
+      fragInst.setMatrixAt(ding.inst, d0.matrix);
+      fragInst.instanceMatrix.needsUpdate = true;
+      loescheGluehen(ding.gluehIdx);
+    }
     fragEl.classList.add('hidden');
     fragOffen = null;
     speechSynthesis.cancel();
@@ -895,7 +1236,7 @@ function zeigeSchrein() {
 // ------------------------------------------------------------
 // Start und Hauptschleife
 // ------------------------------------------------------------
-bauBoden(); bauWelt(); bauPortale(); bauDinge();
+bauBoden(); bauWelt(); bauPortale(); bauDinge(); bauPlatten(); baueGluehWolke();
 const spieler = bauSpieler();
 ladeHeldModell(spieler);
 $('lade').remove();
@@ -989,7 +1330,7 @@ function spielStart() {
   maus.yaw = bester;
   cam.x = pos.x * T3 - Math.sin(camYaw) * 9;
   cam.z = pos.z * T3 - Math.cos(camYaw) * 9;
-  cam.y = 4.8;
+  cam.y = 3.3;
   $('hud').classList.remove('hidden');
   sprichEl.classList.remove('hidden');
   $('zaehler').textContent = '✦ ' + S.fragmente.length;
@@ -1075,8 +1416,10 @@ function tickInner(now) {
 
     // ---- Kamera: Orbit um die Figur, Maus bestimmt den Winkel ----
     camYaw = maus.yaw;
-    const abst = 8.5;
-    const hoehe = 2 + Math.sin(maus.pitch) * abst;
+    // Nah und tief hinter der Schulter. So fuellt die Architektur das Bild
+    // statt des Bodens. Das ist der Blick aus dem Moodboard.
+    const abst = 6.2;
+    const hoehe = 2.5 + Math.sin(maus.pitch) * abst;
     let zx = wx - Math.sin(camYaw) * Math.cos(maus.pitch) * abst;
     let zz = wz - Math.cos(camYaw) * Math.cos(maus.pitch) * abst;
     // Sichtpruefung: steht ein Monolith zwischen Figur und Kamera,
@@ -1084,26 +1427,33 @@ function tickInner(now) {
     let frei = 1;
     for (let f = 0.15; f <= 1; f += 0.05) {
       const sx = wx + (zx - wx) * f, sz = wz + (zz - wz) * f;
-      const sy = 2 + (hoehe - 2) * f;
-      if (sichtHoehe(sx, sz) > sy) { frei = Math.max(0.34, f - 0.08); break; }
+      const sy = 2.5 + (hoehe - 2.5) * f;
+      if (sichtHoehe(sx, sz) > sy) { frei = Math.max(0.26, f - 0.06); break; }
     }
     zx = wx + (zx - wx) * frei;
     zz = wz + (zz - wz) * frei;
-    // In der Enge steigt die Kamera und schaut herab, statt in Waende
-    // zu schneiden. Draussen faehrt sie wieder hinter die Figur.
-    const zy = 2 + (hoehe - 2) * frei + (1 - frei) * 7.5;
+    // In der Enge rueckt die Kamera naeher heran und bleibt dabei flach.
+    // Frueher stieg sie nach oben, dadurch wurde aus dem Spiel in jedem
+    // Innenhof eine Draufsicht.
+    const zy = Math.max(1.9, 2.5 + (hoehe - 2.5) * frei);
     cam.x += (zx - cam.x) * Math.min(1, dt * 4.5);
     cam.z += (zz - cam.z) * Math.min(1, dt * 4.5);
     cam.y = (cam.y || hoehe) + (zy - (cam.y || hoehe)) * Math.min(1, dt * 4.5);
     camera.position.set(cam.x, cam.y, cam.z);
 
-    camera.lookAt(wx, 2 + sprungY * T3 / 2, wz);
+    // Zielpunkt knapp ueber der Schulter und nur leicht voraus. Zu weit
+    // vorne, und die Figur rutscht aus dem Bild.
+    camera.lookAt(wx + vor.x * 0.6, 2.0 + sprungY * T3 / 2, wz + vor.z * 0.6);
 
     // ---- Nebel folgt dem Biom ----
     const bio = BIO[biomAt(Math.floor(pos.x), Math.floor(pos.z))];
     fogZiel.copy(bio.nebel);
     fog.color.lerp(fogZiel, Math.min(1, dt * 1.5));
-    scene.background.lerp(fogZiel, Math.min(1, dt * 1.5));
+    // Die Kuppel wandert mit, sonst laeuft man aus ihr heraus
+    himmel.position.copy(camera.position);
+    himmelMat.uniforms.unten.value.lerp(fogZiel, Math.min(1, dt * 1.5));
+    himmelMat.uniforms.oben.value.lerp(
+      fogZiel.clone().multiplyScalar(0.32), Math.min(1, dt * 1.5));
 
     // ---- Debug (nur Entwicklung) ----
     if (location.search.includes('debug')) {
@@ -1142,12 +1492,20 @@ function tickInner(now) {
       }
     }
 
+    bewegePlatten(t);
+
     // ---- Fragmente drehen ----
-    for (const g of dinge) {
-      if (g.art === 'frag' && g.aktiv) {
-        g.mesh.rotation.y = t * 1.2 + g.idx;
-        g.mesh.position.y = 1.6 + Math.sin(t * 2 + g.idx) * 0.25;
+    if (fragInst) {
+      const d0 = new THREE.Object3D();
+      for (const g of dinge) {
+        if (g.art !== 'frag' || !g.aktiv) continue;
+        d0.position.set(g.x, 1.6 + Math.sin(t * 2 + g.idx) * 0.25, g.z);
+        d0.rotation.set(0, t * 1.2 + g.idx, 0.3);
+        d0.scale.setScalar(1);
+        d0.updateMatrix();
+        fragInst.setMatrixAt(g.inst, d0.matrix);
       }
+      fragInst.instanceMatrix.needsUpdate = true;
     }
   } else {
     eingabe.ok = false;
@@ -1155,6 +1513,8 @@ function tickInner(now) {
     const a = t * 0.05;
     camera.position.set(MAP.W * T3 / 2 + Math.cos(a) * 60, 30, MAP.H * T3 / 2 + Math.sin(a) * 60);
     camera.lookAt(MAP.W * T3 / 2, 6, MAP.H * T3 / 2);
+    himmel.position.copy(camera.position);
+    bewegePlatten(t);
   }
 
   composer.render();
