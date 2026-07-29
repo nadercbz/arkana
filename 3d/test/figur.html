@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Figurenpruefung</title>
+<style>
+  body { margin:0; background:#14181d; color:#cfd8e2; font:13px ui-monospace, monospace; }
+  #reihe { display:flex; }
+  canvas { display:block; }
+  #werte { padding:10px 14px; white-space:pre; line-height:1.5; }
+  #kopf { padding:8px 14px; color:#ffd9a0; letter-spacing:2px; }
+</style>
+</head>
+<body>
+<div id="kopf"></div>
+<div id="reihe"></div>
+<div id="werte"></div>
+
+<script type="importmap">{ "imports": { "three": "../vendor/three.module.min.js" } }</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
+import { baueRuheClip } from '../js/ruhepose.js';
+
+// Drei feste Blickwinkel: von vorn, von der Seite, von halbrechts.
+// Eine Standpose beurteilt man nicht aus einer einzigen Richtung,
+// das seitliche Wegdrehen der Beine sieht man nur von vorn.
+const SICHTEN = [
+  { name: 'vorn',  winkel: 0 },
+  { name: 'seite', winkel: Math.PI / 2 },
+  { name: 'drei',  winkel: Math.PI * 0.22 },
+];
+const B = 300, H = 560;
+
+const modus = new URLSearchParams(location.search).get('modus') || 'neu';
+document.getElementById('kopf').textContent =
+  'MODUS: ' + modus + '   (?modus=ruhe | alt | lauf | neu)';
+
+const szene = new THREE.Scene();
+szene.background = new THREE.Color(0x14181d);
+szene.add(new THREE.HemisphereLight(0xbcd0e0, 0x2a3038, 2.2));
+const key = new THREE.DirectionalLight(0xffffff, 2.0);
+key.position.set(3, 6, 5); szene.add(key);
+const fuell = new THREE.DirectionalLight(0x93a8bd, 1.1);
+fuell.position.set(-4, 2, -3); szene.add(fuell);
+// Bodenraster als Bezug: daran sieht man Fussstellung und Standbreite
+const raster = new THREE.GridHelper(4, 16, 0x4a5666, 0x2a323c);
+szene.add(raster);
+
+const kameras = [], renderer = [];
+for (const s of SICHTEN) {
+  const c = new THREE.PerspectiveCamera(30, B / H, 0.1, 100);
+  c.position.set(Math.sin(s.winkel) * 6, 1.05, Math.cos(s.winkel) * 6);
+  c.lookAt(0, 0.95, 0);
+  kameras.push(c);
+  const r = new THREE.WebGLRenderer({ antialias: true });
+  r.setPixelRatio(1); r.setSize(B, H);
+  r.outputColorSpace = THREE.SRGBColorSpace;
+  document.getElementById('reihe').appendChild(r.domElement);
+  renderer.push(r);
+}
+
+let mixer = null, aktion = null, knochen = {};
+const werte = document.getElementById('werte');
+
+new GLTFLoader().load('../assets/held_v2.glb', async (gltf) => {
+  const w = gltf.scene;
+  w.updateWorldMatrix(true, true);
+  let minY = Infinity, maxY = -Infinity;
+  w.traverse((o) => {
+    if (!o.isBone) return;
+    knochen[o.name] = o;
+    const p = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  });
+  const hoehe = (maxY - minY) * 1.12;
+  const s = 1.78 / hoehe;
+  w.scale.setScalar(s);
+  w.position.y = -minY * s;
+  szene.add(w);
+
+  mixer = new THREE.AnimationMixer(w);
+  if (modus === 'lauf') {
+    aktion = mixer.clipAction(gltf.animations[0]);
+  } else if (modus === 'alt') {
+    const g2 = await new GLTFLoader().loadAsync('../geparkt/held_ruhe_v6_kaputt.glb');
+    aktion = mixer.clipAction(g2.animations[0]);
+  } else if (modus === 'neu') {
+    aktion = mixer.clipAction(baueRuheClip(w));
+  }
+  if (aktion) { aktion.play(); aktion.weight = 1; }
+  window.__pruef = { mixer, knochen, aktion, THREE };
+  tick();
+});
+
+// Beugung und Verdrehung eines Knies aus seinem Quaternion.
+// Beugung ist die Drehung um die Scharnierachse X, Verdrehung alles
+// andere. Ein gesundes Knie hat nahezu null Verdrehung.
+function knieWerte(q) {
+  const beug = 2 * Math.atan2(q.x, q.w) * 180 / Math.PI;
+  const dreh = 2 * Math.atan2(Math.hypot(q.y, q.z), q.w) * 180 / Math.PI;
+  return { beug, dreh };
+}
+
+let t = 0, letzte = performance.now();
+function tick() {
+  requestAnimationFrame(tick);
+  const jetzt = performance.now();
+  const dt = Math.min(0.05, (jetzt - letzte) / 1000);
+  letzte = jetzt; t += dt;
+  if (mixer) mixer.update(dt);
+  for (let i = 0; i < renderer.length; i++) renderer[i].render(szene, kameras[i]);
+
+  if (knochen.LeftLeg) {
+    const l = knieWerte(knochen.LeftLeg.quaternion);
+    const r = knieWerte(knochen.RightLeg.quaternion);
+    const fussL = new THREE.Vector3().setFromMatrixPosition(knochen.LeftFoot.matrixWorld);
+    const fussR = new THREE.Vector3().setFromMatrixPosition(knochen.RightFoot.matrixWorld);
+    werte.textContent =
+      `Knie links   Beugung ${l.beug.toFixed(1).padStart(6)}°   Verdrehung ${l.dreh.toFixed(1).padStart(5)}°\n` +
+      `Knie rechts  Beugung ${r.beug.toFixed(1).padStart(6)}°   Verdrehung ${r.dreh.toFixed(1).padStart(5)}°\n` +
+      `Standbreite  ${Math.abs(fussL.x - fussR.x).toFixed(3)} m` +
+      `   Fussversatz vor/zurueck ${Math.abs(fussL.z - fussR.z).toFixed(3)} m\n` +
+      `Fusshoehe    links ${fussL.y.toFixed(3)}   rechts ${fussR.y.toFixed(3)}`;
+  }
+}
+</script>
+</body>
+</html>

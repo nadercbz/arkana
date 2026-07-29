@@ -11,6 +11,7 @@ import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from '../vendor/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 import { ATRIUM, baueAtrium, atriumBlockiert, atriumBoden } from './atrium.js';
+import { baueRuheClip } from './ruhepose.js';
 import { klangStart, klangStumm, musik, raumton, klangSchritt, klangFragment,
          klangBeam, erzaehler } from './klang.js';
 
@@ -1075,16 +1076,16 @@ function ladeHeldModell(fallback) {
     halter.add(wurzel);
     scene.add(halter);
     if (gltf.animations && gltf.animations.length) {
+      // Die Standanimation wird aus der Ruhepose des Skeletts gebaut,
+      // und zwar bevor irgendeine Animation darauf wirkt. Die
+      // mitgelieferte Ruhedatei war unbrauchbar, sie hat die Knie
+      // dauerhaft gebeugt und verdreht. Siehe js/ruhepose.js.
+      const stand = baueRuheClip(wurzel);
       mixer = new THREE.AnimationMixer(wurzel);
       laufClip = mixer.clipAction(gltf.animations[0]);
       laufClip.play(); laufClip.weight = 0;
-      // Ruhepose separat nachladen, damit die Figur im Stehen nicht
-      // in einem halben Schritt einfriert
-      new GLTFLoader().load('./assets/held_ruhe_v6.glb', (g2) => {
-        if (!g2.animations || !g2.animations.length) return;
-        ruheClip = mixer.clipAction(g2.animations[0]);
-        ruheClip.play(); ruheClip.weight = 1;
-      }, undefined, () => { /* ohne Ruheclip laeuft es auch */ });
+      ruheClip = mixer.clipAction(stand);
+      ruheClip.play(); ruheClip.weight = 1;
     }
     // Klotzfigur verschwindet, das echte Modell uebernimmt
     scene.remove(fallback.grp);
@@ -1778,7 +1779,6 @@ function tickInner(now) {
         // Cliptempo folgt dem Bodentempo, sonst rutschen die Fuesse
         laufClip.timeScale = 0.55 * tempo;
         laufClip.weight += (ziel - laufClip.weight) * Math.min(1, dt * 8);
-        if (!ruheClip) laufClip.paused = !geht && laufClip.weight < 0.02;
       }
       if (ruheClip) ruheClip.weight += ((1 - ziel) - ruheClip.weight) * Math.min(1, dt * 8);
       mixer.update(dt);
