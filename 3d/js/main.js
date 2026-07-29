@@ -11,7 +11,7 @@ import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from '../vendor/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 import { ATRIUM, baueAtrium, atriumBlockiert, atriumBoden } from './atrium.js';
-import { baueRuheClip } from './ruhepose.js';
+import { baueRuheClip, macheStandBeleber } from './ruhepose.js';
 import { klangStart, klangStumm, musik, raumton, klangSchritt, klangFragment,
          klangBeam, erzaehler } from './klang.js';
 
@@ -1023,7 +1023,7 @@ function bauDinge() {
 // Laufanimation. Nur wenn das fehlt oder nicht laedt, springt die
 // prozedurale Klotzfigur ein, damit das Spiel nie schwarz bleibt.
 // ------------------------------------------------------------
-let mixer = null, laufClip = null, ruheClip = null, modellGeladen = false;
+let mixer = null, laufClip = null, ruheClip = null, beleber = null, modellGeladen = false;
 
 function ladeHeldModell(fallback) {
   const loader = new GLTFLoader();
@@ -1086,6 +1086,9 @@ function ladeHeldModell(fallback) {
       laufClip.play(); laufClip.weight = 0;
       ruheClip = mixer.clipAction(stand);
       ruheClip.play(); ruheClip.weight = 1;
+      // Umsehen und Gewichtsverlagerung kommen obendrauf, mit
+      // Haltephasen und zufaelligem Abstand. Laeuft nach dem Mixer.
+      beleber = macheStandBeleber(wurzel);
     }
     // Klotzfigur verschwindet, das echte Modell uebernimmt
     scene.remove(fallback.grp);
@@ -1782,6 +1785,10 @@ function tickInner(now) {
       }
       if (ruheClip) ruheClip.weight += ((1 - ziel) - ruheClip.weight) * Math.min(1, dt * 8);
       mixer.update(dt);
+      // Muss nach dem Mixer laufen: der setzt die Knochen auf das
+      // Ergebnis der Ueberblendung, hier kommt das Leben obendrauf.
+      // Beim Loslaufen faehrt die Schicht mit dem Standgewicht herunter.
+      if (beleber) beleber.update(dt, ruheClip ? ruheClip.weight : 0);
     }
     spieler.grp.position.y = bodenY + sprungY * 2.2 + beamHoehe
       + (modellGeladen ? 0 : (geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03));
@@ -1828,7 +1835,7 @@ function tickInner(now) {
 
     if (location.search.includes('debug')) {
       window.__mess = { spieler, camera, THREE, pos, maus, mixer, laufClip, ruheClip,
-                        scene, atrium };
+                        beleber, scene, atrium };
     }
     // ---- Debug (nur Entwicklung) ----
     if (location.search.includes('debug')) {

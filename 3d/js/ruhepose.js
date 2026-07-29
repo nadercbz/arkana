@@ -30,8 +30,6 @@ const DAUER = 12;
 const BILDER_PRO_S = 10;
 
 const ATEM = 3;      // 4.0 s, Ein- und Ausatmen
-const GEWICHT = 2;   // 6.0 s, Verlagerung von einem Bein aufs andere
-const KOPF = 1;      // 12.0 s, langsames Umsehen
 const WIPPEN = 5;    // 2.4 s, feines Schwanken
 
 const G2B = Math.PI / 180;
@@ -80,38 +78,21 @@ export function baueRuheClip(wurzel) {
     ['LeftShoulder',  achseZ,  0.55, ATEM, 0],
     ['RightShoulder', achseZ, -0.55, ATEM, 0],
 
-    // Gewichtsverlagerung. Das Becken kippt langsam zur Seite, der
-    // Oberkoerper haelt mit einer Gegenneigung das Gleichgewicht.
-    ['Hips',    achseZ,  1.40, GEWICHT, 0],
-    ['Spine',   achseZ, -0.75, GEWICHT, 0],
-    ['Spine01', achseZ, -0.45, GEWICHT, 0],
-    // Die Oberschenkel halten dagegen, sonst rutschen die Fuesse
-    // mit dem kippenden Becken zur Seite.
-    ['LeftUpLeg',  achseZ, -1.40, GEWICHT, 0],
-    ['RightUpLeg', achseZ, -1.40, GEWICHT, 0],
-    // Das Becken dreht bei der Verlagerung leicht mit
-    ['Hips',    achseY,  0.80, GEWICHT, 0.25],
-
     // Feines Schwanken, wie es jeder stehende Mensch hat
     ['Hips',    achseX,  0.40, WIPPEN, 0.3],
     ['Spine',   achseX, -0.25, WIPPEN, 0.3],
-
-    // Umsehen. Der Kopf wandert langsam hin und her, mit einer zweiten
-    // langsameren Welle, damit es nicht wie ein Metronom wirkt.
-    ['Head',    achseY,  6.50, KOPF, 0],
-    ['Head',    achseY,  2.20, GEWICHT, 0.37],
-    ['Head',    achseX,  1.60, GEWICHT, 0.55],
-    ['neck',    achseY,  2.60, KOPF, 0],
     ['neck',    achseX,  0.70, ATEM, 0.5],
 
-    // Arme haengen und pendeln minimal mit der Verlagerung
-    ['LeftArm',      achseZ,  1.70, GEWICHT, 0.12],
-    ['RightArm',     achseZ, -1.70, GEWICHT, 0.12],
-    ['LeftForeArm',  achseZ,  1.00, GEWICHT, 0.20],
-    ['RightForeArm', achseZ, -1.00, GEWICHT, 0.20],
+    // Arme pendeln minimal mit dem Atem
     ['LeftArm',      achseX,  0.75, WIPPEN, 0.4],
     ['RightArm',     achseX,  0.75, WIPPEN, 0.6],
+    ['LeftForeArm',  achseZ,  0.55, ATEM, 0.2],
+    ['RightForeArm', achseZ, -0.55, ATEM, 0.2],
   ];
+  // Gewichtsverlagerung und Umsehen stecken absichtlich nicht hier
+  // drin. Als Sinuskurve in einer Schleife wirken sie getaktet und
+  // steif. Sie kommen aus macheStandBeleber weiter unten, mit
+  // Haltephasen und zufaelligem Abstand.
 
   // Nach Knochen buendeln
   const proKnochen = {};
@@ -147,4 +128,157 @@ export function baueRuheClip(wurzel) {
   }
 
   return new THREE.AnimationClip('Stand', DAUER, spuren);
+}
+
+// ============================================================
+// DER BELEBER
+//
+// Eine geschlossene Schleife aus Sinuskurven wirkt immer ein bisschen
+// steif, weil alles gleichmaessig weiterschwingt und sich nach kurzer
+// Zeit wiederholt. Menschen stehen anders: sie halten eine Haltung
+// eine Weile, sehen sich dann um, verlagern das Gewicht, halten
+// wieder. Also unregelmaessige Aktionen mit Haltephasen.
+//
+// Diese Schicht laeuft nach dem Mixer und legt ihre Drehungen auf das
+// Ergebnis der Ueberblendung. Sie beruehrt die Knie nicht, die Knie
+// bleiben bei jeder Aktion exakt auf der Ruhepose.
+// ============================================================
+
+// Weiches Anfahren eines Ziels. Kein hartes Einrasten, kein Ueberschwingen.
+function annaehern(wert, ziel, tempo, dt) {
+  return wert + (ziel - wert) * Math.min(1, tempo * dt);
+}
+
+export function macheStandBeleber(wurzel) {
+  const knochen = {};
+  wurzel.traverse((o) => { if (o.isBone) knochen[o.name] = o; });
+  const eltern = {};
+  for (const name in knochen) eltern[name] = elternDrehung(knochen[name], wurzel);
+
+  // Werte, die sich weich auf ihr Ziel zubewegen. gewicht ist das
+  // Standbein: minus eins links, plus eins rechts.
+  const w = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0 };
+  const ziel = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0 };
+  const tempo = { kopfGier: 2.2, kopfNick: 3.0, kopfNeig: 2.4, gewicht: 0.9, schulter: 3.5 };
+
+  let bisAktion = 1.5 + Math.random() * 2;
+  let blickHalten = 0;
+  const zuf = (a, b) => a + Math.random() * (b - a);
+
+  function neueAktion() {
+    const r = Math.random();
+    if (r < 0.42) {
+      // Umsehen. Der Kopf dreht zur Seite und bleibt eine Weile dort.
+      const seite = Math.random() < 0.5 ? -1 : 1;
+      ziel.kopfGier = seite * zuf(0.35, 1.0);
+      ziel.kopfNick = zuf(-0.35, 0.25);
+      ziel.kopfNeig = seite * zuf(0.0, 0.35);
+      blickHalten = zuf(1.0, 2.6);
+    } else if (r < 0.68) {
+      // Gewicht auf das andere Bein. Das haelt dann laenger.
+      ziel.gewicht = w.gewicht > 0 ? -zuf(0.6, 1.0) : zuf(0.6, 1.0);
+    } else if (r < 0.84) {
+      // Kurzes Nicken, als wuerde er etwas zur Kenntnis nehmen
+      ziel.kopfNick = zuf(0.4, 0.8);
+      blickHalten = zuf(0.25, 0.5);
+    } else {
+      // Schulter lockern
+      ziel.schulter = zuf(0.5, 1.0);
+      blickHalten = zuf(0.3, 0.6);
+    }
+    bisAktion = zuf(2.2, 5.5);
+  }
+
+  const tmpQ = new THREE.Quaternion();
+  const sammel = new THREE.Quaternion();
+  const ek = new THREE.Quaternion();
+
+  // Wichtig und leicht zu uebersehen: der AnimationMixer schreibt einen
+  // Knochen nur dann in die Szene, wenn sich der Wert der Animation
+  // gegenueber dem letzten Bild geaendert hat. Der Standclip haelt Kopf
+  // und Becken konstant, also schreibt der Mixer sie nie zurueck. Wer
+  // hier einfach auf den aktuellen Wert draufmultipliziert, addiert sich
+  // Bild fuer Bild auf, und nach einer Minute steht der Kopf verdreht.
+  //
+  // Darum merkt sich jeder Knochen zwei Dinge: den Ausgangswert, auf den
+  // gerechnet wird, und das, was zuletzt geschrieben wurde. Weicht der
+  // aktuelle Wert davon ab, hat der Mixer geschrieben und der neue Wert
+  // wird zum Ausgangswert. Sonst bleibt der alte stehen. So wird jedes
+  // Bild absolut gerechnet statt aufaddiert.
+  const basis = {}, zuletzt = {};
+  const fastGleich = (a, b) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6
+    && Math.abs(a.z - b.z) < 1e-6 && Math.abs(a.w - b.w) < 1e-6;
+
+  function lege(name, teile) {
+    const k = knochen[name];
+    if (!k) return;
+    if (!basis[name]) {
+      basis[name] = k.quaternion.clone();
+      zuletzt[name] = k.quaternion.clone();
+    } else if (!fastGleich(k.quaternion, zuletzt[name])) {
+      basis[name].copy(k.quaternion);
+    }
+
+    sammel.identity();
+    for (let i = 0; i < teile.length; i += 2) {
+      const grad = teile[i + 1];
+      if (Math.abs(grad) < 0.005) continue;
+      sammel.multiply(tmpQ.setFromAxisAngle(teile[i], grad * G2B));
+    }
+    ek.copy(eltern[name]).conjugate();
+    k.quaternion.copy(basis[name])
+      .premultiply(eltern[name]).premultiply(sammel).premultiply(ek);
+    zuletzt[name].copy(k.quaternion);
+  }
+
+  return {
+    /**
+     * Nach mixer.update aufrufen.
+     * staerke ist das Gewicht der Standanimation: beim Loslaufen
+     * faehrt die Schicht mit herunter, sonst zappelt der Kopf
+     * mitten im Schritt.
+     */
+    update(dt, staerke) {
+      bisAktion -= dt;
+      if (bisAktion <= 0) neueAktion();
+
+      if (blickHalten > 0) {
+        blickHalten -= dt;
+        if (blickHalten <= 0) {
+          // Zurueck nach vorn, aber nicht exakt geradeaus. Ein Mensch
+          // trifft die Mitte nie genau.
+          ziel.kopfGier = zuf(-0.12, 0.12);
+          ziel.kopfNick = zuf(-0.10, 0.10);
+          ziel.kopfNeig = 0;
+          ziel.schulter = 0;
+        }
+      }
+      for (const k in w) w[k] = annaehern(w[k], ziel[k], tempo[k], dt);
+
+      if (staerke <= 0.003) return;
+      const s = staerke;
+      const g = w.gewicht * s;
+
+      // Umsehen: Kopf fuehrt, Hals und Brustkorb gehen anteilig mit.
+      // Ohne das Mitgehen sieht es aus, als sitze der Kopf auf einer Stange.
+      lege('Head', [achseY, w.kopfGier * 26 * s, achseX, w.kopfNick * 9 * s,
+                    achseZ, w.kopfNeig * 5 * s - g * 0.9]);
+      lege('neck', [achseY, w.kopfGier * 10 * s, achseX, w.kopfNick * 4 * s]);
+      lege('Spine02', [achseY, w.kopfGier * 4.0 * s]);
+
+      // Gewichtsverlagerung: Becken kippt und dreht, der Oberkoerper
+      // haelt dagegen, die Oberschenkel halten die Fuesse an Ort.
+      lege('Hips', [achseZ, g * 2.6, achseY, g * 1.2]);
+      lege('Spine', [achseZ, -g * 1.1, achseY, -g * 0.5]);
+      lege('Spine01', [achseZ, -g * 0.7]);
+      lege('LeftUpLeg', [achseZ, -g * 2.6]);
+      lege('RightUpLeg', [achseZ, -g * 2.6]);
+
+      // Arme haengen mit, Schultern lockern gelegentlich
+      lege('LeftShoulder', [achseZ, w.schulter * 2.6 * s + g * 0.6]);
+      lege('RightShoulder', [achseZ, -w.schulter * 2.6 * s + g * 0.6]);
+      lege('LeftArm', [achseZ, g * 1.9]);
+      lege('RightArm', [achseZ, g * 1.9]);
+    },
+  };
 }

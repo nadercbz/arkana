@@ -20,7 +20,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
-import { baueRuheClip } from '../js/ruhepose.js';
+import { baueRuheClip, macheStandBeleber } from '../js/ruhepose.js';
 
 // Drei feste Blickwinkel: von vorn, von der Seite, von halbrechts.
 // Eine Standpose beurteilt man nicht aus einer einzigen Richtung,
@@ -60,7 +60,7 @@ for (const s of SICHTEN) {
   renderer.push(r);
 }
 
-let mixer = null, aktion = null, knochen = {};
+let mixer = null, aktion = null, beleber = null, knochen = {};
 const werte = document.getElementById('werte');
 
 new GLTFLoader().load('../assets/held_v2.glb', async (gltf) => {
@@ -87,9 +87,11 @@ new GLTFLoader().load('../assets/held_v2.glb', async (gltf) => {
     aktion = mixer.clipAction(g2.animations[0]);
   } else if (modus === 'neu') {
     aktion = mixer.clipAction(baueRuheClip(w));
+    // Nur im neuen Modus kommt die belebende Schicht dazu
+    beleber = macheStandBeleber(w);
   }
   if (aktion) { aktion.play(); aktion.weight = 1; }
-  window.__pruef = { mixer, knochen, aktion, THREE };
+  window.__pruef = { mixer, knochen, aktion, THREE, beleber: () => beleber };
   tick();
 });
 
@@ -109,6 +111,7 @@ function tick() {
   const dt = Math.min(0.05, (jetzt - letzte) / 1000);
   letzte = jetzt; t += dt;
   if (mixer) mixer.update(dt);
+  if (beleber) beleber.update(dt, 1);
   for (let i = 0; i < renderer.length; i++) renderer[i].render(szene, kameras[i]);
 
   if (knochen.LeftLeg) {
