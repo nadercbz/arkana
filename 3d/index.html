@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ARKANA 3D — Das verborgene Muster</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; background: #05070a; }
+body { font-family: "Courier New", ui-monospace, monospace; color: #d8e2ec; -webkit-user-select: none; user-select: none; }
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+/* ---------- Overlays ---------- */
+.overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; background: radial-gradient(ellipse at 50% 30%, #0d1219 0%, #05070a 70%);
+  z-index: 30; padding: 24px; text-align: center; }
+.overlay.hidden { display: none; }
+h1 { font-size: 44px; letter-spacing: 10px; color: #ffb864; text-shadow: 0 0 24px rgba(255,150,50,0.55); font-weight: bold; }
+.sub { margin-top: 10px; font-size: 13px; letter-spacing: 5px; color: #8fa0b4; }
+.btn { margin-top: 34px; padding: 15px 44px; border: 1px solid #a86a2a; color: #ffd9a0;
+  font-size: 16px; letter-spacing: 3px; background: rgba(60,35,10,0.35); cursor: pointer; }
+.btn:active { background: rgba(120,70,20,0.5); }
+.klein { margin-top: 16px; font-size: 12px; color: #6a7684; letter-spacing: 1px; }
+
+/* Signatur */
+#sig input { margin-top: 12px; padding: 13px; width: min(78vw, 300px); font-size: 17px;
+  background: #0b0f14; border: 1px solid #3a4656; color: #e8f0f8; text-align: center; letter-spacing: 2px; outline: none; }
+#zodiac { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; width: min(84vw, 340px); }
+#zodiac div { padding: 10px 2px; border: 1px solid #2c3644; font-size: 12px; color: #9fb0c2; cursor: pointer; }
+#zodiac div.on { border-color: #ffb864; color: #ffd9a0; background: rgba(120,70,20,0.3); }
+.frage { margin-top: 22px; font-size: 14px; color: #b8c6d4; letter-spacing: 2px; }
+
+/* HUD */
+#hud { position: fixed; left: 0; right: 0; top: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 8px;
+  display: flex; justify-content: space-between; z-index: 10; pointer-events: none;
+  font-size: 13px; letter-spacing: 2px; color: #c8d4e0; text-shadow: 0 1px 4px #000; }
+#hud.hidden, #stick.hidden, #ok.hidden { display: none; }
+#region { color: #ffd9a0; }
+
+/* Touch */
+#stick { position: fixed; width: 124px; height: 124px; border-radius: 50%;
+  border: 1px solid rgba(200,215,230,0.25); background: rgba(20,28,38,0.25);
+  z-index: 20; display: none; pointer-events: none; }
+#knob { position: absolute; left: 37px; top: 37px; width: 50px; height: 50px; border-radius: 50%;
+  background: rgba(200,215,230,0.3); }
+#ok { position: fixed; right: 20px; bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+  width: 92px; height: 92px; border-radius: 50%; border: 1px solid rgba(255,184,100,0.55);
+  background: rgba(70,45,15,0.4); color: #ffd9a0; font-size: 15px; letter-spacing: 2px;
+  z-index: 20; display: none; align-items: center; justify-content: center; font-family: inherit; }
+body.touch #ok { display: flex; }
+#ok.puls { animation: puls 1.1s infinite; }
+@keyframes puls { 50% { box-shadow: 0 0 26px rgba(255,184,100,0.7); } }
+
+/* Dialog */
+#dlg { position: fixed; left: 12px; right: 12px; bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  background: rgba(5,8,12,0.92); border: 1px solid #3a4656; border-left: 4px solid #ffb864;
+  padding: 16px 18px 14px; z-index: 25; font-size: 16px; line-height: 1.55; color: #e8f0f8; }
+#dlg.hidden { display: none; }
+#dlg .wer { color: #ffd9a0; font-size: 13px; letter-spacing: 2px; margin-bottom: 8px; }
+#dlg .weiter { text-align: right; color: #8fa0b4; font-size: 12px; margin-top: 8px; }
+#sprich { position: fixed; right: 16px; top: calc(44px + env(safe-area-inset-top, 0px)); z-index: 26;
+  font-size: 11px; letter-spacing: 1px; color: #8fa0b4; border: 1px solid #2c3644; padding: 6px 10px;
+  background: rgba(10,14,20,0.7); cursor: pointer; }
+#sprich.an { color: #ffd9a0; border-color: #a86a2a; }
+
+/* Fragment-Karte */
+#frag { position: fixed; inset: 0; z-index: 28; display: flex; align-items: center; justify-content: center;
+  background: rgba(3,5,8,0.88); padding: 20px; }
+#frag.hidden { display: none; }
+#frag .karte { max-width: 420px; width: 100%; max-height: 78vh; overflow-y: auto; background: #0b0f14;
+  border: 1px solid #4a5666; border-top: 3px solid #ffb864; padding: 22px; font-size: 15px; line-height: 1.6; }
+#frag .titel { color: #ffd9a0; font-size: 17px; letter-spacing: 1px; margin-bottom: 12px; }
+#frag .modul { color: #6a7684; font-size: 11px; letter-spacing: 2px; margin-bottom: 14px; }
+#frag .wahl { display: flex; gap: 10px; margin-top: 18px; }
+#frag .wahl div { flex: 1; text-align: center; padding: 12px 4px; border: 1px solid #3a4656; color: #b8c6d4;
+  cursor: pointer; font-size: 13px; letter-spacing: 2px; }
+#frag .wahl div:active { background: rgba(120,70,20,0.3); }
+#lade { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+  background: #05070a; color: #8fa0b4; letter-spacing: 4px; font-size: 13px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="hud" class="hidden">
+  <span id="region">ARKANA</span>
+  <span id="zaehler">✦ 0</span>
+</div>
+<div id="stick"><div id="knob"></div></div>
+<button id="ok">OK</button>
+<button id="sprich" class="hidden">🔊 STIMME AUS</button>
+
+<div id="dlg" class="hidden">
+  <div class="wer"></div>
+  <div class="text"></div>
+  <div class="weiter">OK ▸</div>
+</div>
+
+<div id="frag" class="hidden"></div>
+
+<div id="titel" class="overlay">
+  <h1>ARKANA</h1>
+  <div class="sub">DAS VERBORGENE MUSTER</div>
+  <button class="btn" id="start">EINTRETEN</button>
+  <div class="klein">Linke Seite: Laufen · OK: Untersuchen<br>Am Rechner: WASD / Pfeile + Enter</div>
+</div>
+
+<div id="sig" class="overlay hidden">
+  <div class="sub">DAS TERMINAL FRAGT</div>
+  <div class="frage">Wie nennt man dich?</div>
+  <input id="name" maxlength="20" autocomplete="off" placeholder="DEIN NAME">
+  <div class="frage">Dein Sternzeichen?</div>
+  <div id="zodiac"></div>
+  <div class="frage">Wie viele Jahre trägst du?</div>
+  <input id="alter" inputmode="numeric" maxlength="3" placeholder="ALTER">
+  <button class="btn" id="los">DIE SIGNATUR LESEN</button>
+</div>
+
+<div id="lade">DIE WELT VERDICHTET SICH ...</div>
+
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<script type="module" src="./js/main.js?v=1785322932"></script>
+</body>
+</html>
