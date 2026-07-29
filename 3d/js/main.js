@@ -915,7 +915,7 @@ function ladeHeldModell(fallback) {
       laufClip.play(); laufClip.weight = 0;
       // Ruhepose separat nachladen, damit die Figur im Stehen nicht
       // in einem halben Schritt einfriert
-      new GLTFLoader().load('./assets/held_ruhe_v2.glb', (g2) => {
+      new GLTFLoader().load('./assets/held_ruhe_v3.glb', (g2) => {
         if (!g2.animations || !g2.animations.length) return;
         ruheClip = mixer.clipAction(g2.animations[0]);
         ruheClip.play(); ruheClip.weight = 1;
