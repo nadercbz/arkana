@@ -861,7 +861,7 @@ let mixer = null, laufClip = null, ruheClip = null, modellGeladen = false;
 
 function ladeHeldModell(fallback) {
   const loader = new GLTFLoader();
-  loader.load('./assets/held.glb', (gltf) => {
+  loader.load('./assets/held_v2.glb', (gltf) => {
     const wurzel = gltf.scene;
     wurzel.updateWorldMatrix(true, true);
 
@@ -915,7 +915,7 @@ function ladeHeldModell(fallback) {
       laufClip.play(); laufClip.weight = 0;
       // Ruhepose separat nachladen, damit die Figur im Stehen nicht
       // in einem halben Schritt einfriert
-      new GLTFLoader().load('./assets/held_ruhe.glb', (g2) => {
+      new GLTFLoader().load('./assets/held_ruhe_v2.glb', (g2) => {
         if (!g2.animations || !g2.animations.length) return;
         ruheClip = mixer.clipAction(g2.animations[0]);
         ruheClip.play(); ruheClip.weight = 1;
@@ -1418,7 +1418,7 @@ function tickInner(now) {
     camYaw = maus.yaw;
     // Nah und tief hinter der Schulter. So fuellt die Architektur das Bild
     // statt des Bodens. Das ist der Blick aus dem Moodboard.
-    const abst = 6.2;
+    const abst = 4.6;
     const hoehe = 2.5 + Math.sin(maus.pitch) * abst;
     let zx = wx - Math.sin(camYaw) * Math.cos(maus.pitch) * abst;
     let zz = wz - Math.cos(camYaw) * Math.cos(maus.pitch) * abst;
