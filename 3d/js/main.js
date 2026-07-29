@@ -8,6 +8,7 @@ import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.j
 import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from '../vendor/addons/postprocessing/ShaderPass.js';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 import { ATRIUM, baueAtrium, atriumBlockiert, atriumBoden } from './atrium.js';
 import { klangStart, klangStumm, musik, raumton, klangSchritt, klangFragment,
@@ -94,11 +95,15 @@ function laden() {
 // ------------------------------------------------------------
 const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const IST_MOBIL = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// Jeder Bildpunkt laeuft durch Bloom und den Bildschluss, der Puffer
+// kostet also mehrfach. Auf dem Handy waeren bei Geraeteverhaeltnis 3
+// gut vier Millionen Bildpunkte pro Durchgang faellig, das haelt kein
+// Telefon bei 60 Bildern. 1.5 sieht auf dieser Pixeldichte gleich aus.
+renderer.setPixelRatio(Math.min(devicePixelRatio, IST_MOBIL ? 1.5 : 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.28;
-const IST_MOBIL = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 renderer.shadowMap.enabled = !IST_MOBIL;          // Schatten kosten, Handys sparen
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -135,9 +140,14 @@ const himmel = new THREE.Mesh(new THREE.SphereGeometry(320, 24, 16), himmelMat);
 himmel.frustumCulled = false;
 scene.add(himmel);
 
-const hemi = new THREE.HemisphereLight(0xa8c0dc, 0x39404c, 2.6);
+// Im Atrium traegt die Umgebungskarte viel Grundhelligkeit, draussen
+// in Arkana kaum. Deshalb werden beide Fuelllichter in setzeOrt je
+// nach Ort gesetzt. Die Startwerte sind die von Arkana, weil die
+// Titelkamera ueber die Aussenwelt fliegt.
+const hemi = new THREE.HemisphereLight(0xa8c0dc, 0x39404c, 2.8);
 scene.add(hemi);
-scene.add(new THREE.AmbientLight(0x6a7890, 1.7));
+const umgebungslicht = new THREE.AmbientLight(0x6a7890, 1.8);
+scene.add(umgebungslicht);
 const sonne = new THREE.DirectionalLight(0xffeeda, 2.1);
 sonne.position.copy(HIMMEL_RICHTUNG).multiplyScalar(120);
 if (!IST_MOBIL) {
@@ -155,6 +165,39 @@ scene.add(sonne);
 const tragelicht = new THREE.PointLight(0xffc98a, 16, 38, 1.8);
 scene.add(tragelicht);
 
+// ------------------------------------------------------------
+// Umgebungskarten. Der wichtigste Unterschied zwischen Bastelgrafik
+// und einem gerenderten Bild. Ohne sie hat Beton keinen Schimmer,
+// nasse Flaechen spiegeln nichts und metalness ist unbrauchbar.
+// Zwei Stueck, weil drinnen und draussen voellig anders leuchten.
+// ------------------------------------------------------------
+const pmrem = new THREE.PMREMGenerator(renderer);
+function bauEnv(fuellen) {
+  const s = new THREE.Scene();
+  fuellen(s);
+  const t = pmrem.fromScene(s, 0.03).texture;
+  s.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+  return t;
+}
+// Draussen: die Himmelskuppel mit ihrer fernen blendenden Quelle
+const ENV_AUSSEN = bauEnv((s) => {
+  const k = new THREE.Mesh(new THREE.SphereGeometry(50, 24, 16), himmelMat.clone());
+  s.add(k);
+});
+// Drinnen: dunkler Kasten, oben das leuchtende Deckenloch. Genau das
+// gibt den Waenden ihren Streifglanz von oben.
+const ENV_ATRIUM = bauEnv((s) => {
+  const wand = new THREE.MeshBasicMaterial({ color: 0x39434e, side: THREE.BackSide });
+  s.add(new THREE.Mesh(new THREE.BoxGeometry(60, 46, 60), wand));
+  const loch = new THREE.Mesh(new THREE.PlaneGeometry(24, 22),
+    new THREE.MeshBasicMaterial({ color: 0xf2fafd }));
+  loch.rotation.x = Math.PI / 2; loch.position.y = 22.6; s.add(loch);
+  const grund = new THREE.Mesh(new THREE.PlaneGeometry(60, 60),
+    new THREE.MeshBasicMaterial({ color: 0x454f59 }));
+  grund.rotation.x = -Math.PI / 2; grund.position.y = -22.6; s.add(grund);
+});
+scene.environment = ENV_AUSSEN;
+
 // Nachbearbeitung: Bloom laesst Portale, Fragmente und Laternen
 // wirklich leuchten statt nur hell zu sein
 const composer = new EffectComposer(renderer);
@@ -162,6 +205,53 @@ composer.addPass(new RenderPass(scene, camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.55, 0.88);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
+
+// Der Bildschluss. Ein sauber gerendertes Bild sieht ohne diese Schicht
+// immer nach Echtzeitgrafik aus. Farbsaum an den Raendern, filmischer
+// Kontrast, kalte Schatten, Vignette und Korn machen daraus eine
+// Aufnahme. Die Werte bleiben absichtlich niedrig, das soll wirken
+// ohne aufzufallen.
+const BildSchluss = {
+  uniforms: {
+    tDiffuse: { value: null },
+    zeit: { value: 0 },
+    koernung: { value: 0.045 },
+    vignette: { value: 0.8 },
+    saum: { value: 0.0022 },
+    kontrast: { value: 1.045 },
+    hebung: { value: new THREE.Color(0x0a1119) },
+    saettigung: { value: 1.04 },
+  },
+  vertexShader: `varying vec2 vUv;
+    void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float zeit, koernung, vignette, saum, kontrast, saettigung;
+    uniform vec3 hebung;
+    varying vec2 vUv;
+    void main(){
+      vec2 m = vUv - 0.5;
+      float r2 = dot(m, m);
+      // Farbsaum nimmt nach aussen zu, wie bei einem echten Objektiv
+      vec2 v = m * saum * r2 * 4.0;
+      vec3 c = vec3(
+        texture2D(tDiffuse, vUv - v).r,
+        texture2D(tDiffuse, vUv).g,
+        texture2D(tDiffuse, vUv + v).b);
+      // Kontrast um die Bildmitte, danach die Schatten kalt anheben
+      c = (c - 0.5) * kontrast + 0.5;
+      c = mix(hebung, c, 1.0 - 0.10 * (1.0 - smoothstep(0.0, 0.35, dot(c, vec3(0.333)))));
+      float grau = dot(c, vec3(0.299, 0.587, 0.114));
+      c = mix(vec3(grau), c, saettigung);
+      c *= 1.0 - vignette * r2 * r2 * 1.15;
+      // Korn, in dunklen Flaechen staerker als in hellen
+      float k = fract(sin(dot(vUv * (1.0 + zeit), vec2(12.9898, 78.233))) * 43758.5453);
+      c += (k - 0.5) * koernung * (1.25 - grau);
+      gl_FragColor = vec4(max(c, 0.0), 1.0);
+    }`,
+};
+const schluss = new ShaderPass(BildSchluss);
+composer.addPass(schluss);
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -252,19 +342,31 @@ function glowSprite(scale, farbe) {
 // Higgsfield-Texturen (nach der Stilformel generiert)
 // ------------------------------------------------------------
 const texLader = new THREE.TextureLoader();
+const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 function ladeTex(url, wdh) {
   const t = texLader.load(url);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  // Ohne Anisotropie verwaschen Boeden im flachen Blickwinkel zu Brei.
+  // Das ist der billigste sichtbare Qualitaetssprung ueberhaupt.
+  t.anisotropy = Math.min(8, MAX_ANISO);
   if (wdh) t.repeat.set(wdh[0], wdh[1]);
   return t;
 }
 const TEX_BODEN = ladeTex('./assets/tex_boden.jpg', [MAP.W / 2, MAP.H / 2]);
-const TEX_WAND = ladeTex('./assets/tex_wand_kalt.jpg');
+const TEX_WAND = ladeTex('./assets/tex_wand_beton.jpg');
 
-// Aus der Helligkeit der Textur eine Normalmap rechnen. Ohne die bleibt
-// Beton eine flache Flaeche, egal wie gut die Farbtextur ist.
-function normalAus(url, staerke, wdh, ziel) {
+// Aus einer Farbtextur die fehlenden PBR-Karten rechnen. Eine Farbtextur
+// allein bleibt eine flache bunte Flaeche. Erst Normalen (Relief),
+// Rauheit (wo glaenzt es) und Hohlraum (Tiefe in Fugen und Poren)
+// lassen Beton wie Beton aussehen.
+//   rauh: [glatt, rauh] — dunkle Stellen gelten als feucht, also glatt
+//   hohl: wie stark Vertiefungen abgedunkelt werden
+function pbrAus(url, opt, ziel) {
+  const staerke = opt.staerke ?? 4;
+  const wdh = opt.wdh || null;
+  const rauh = opt.rauh || [0.45, 0.95];
+  const hohl = opt.hohl ?? 0.5;
   const bild = new Image();
   bild.onload = () => {
     const N = 512;
@@ -276,34 +378,89 @@ function normalAus(url, staerke, wdh, ziel) {
     for (let i = 0; i < N * N; i++) {
       hell[i] = (q[i*4] * 0.299 + q[i*4+1] * 0.587 + q[i*4+2] * 0.114) / 255;
     }
-    const raus = c.createImageData(N, N);
+    // Weichgezeichnete Fassung als Bezug. Wo das Bild dunkler ist als
+    // seine Umgebung, liegt eine Vertiefung. Daraus wird der Hohlraum.
+    const weich = new Float32Array(N * N);
+    const R = 4;
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
-        const i = y * N + x;
-        const l = hell[y * N + ((x - 1 + N) % N)], r = hell[y * N + ((x + 1) % N)];
-        const o = hell[((y - 1 + N) % N) * N + x], u = hell[((y + 1) % N) * N + x];
-        const dx = (l - r) * staerke, dy = (o - u) * staerke;
-        const len = Math.hypot(dx, dy, 1);
-        raus.data[i*4]   = ((dx / len) * 0.5 + 0.5) * 255;
-        raus.data[i*4+1] = ((dy / len) * 0.5 + 0.5) * 255;
-        raus.data[i*4+2] = ((1 / len) * 0.5 + 0.5) * 255;
-        raus.data[i*4+3] = 255;
+        let s = 0, n = 0;
+        for (let dy = -R; dy <= R; dy += 2) {
+          for (let dx = -R; dx <= R; dx += 2) {
+            s += hell[(((y + dy) % N + N) % N) * N + (((x + dx) % N + N) % N)]; n++;
+          }
+        }
+        weich[y * N + x] = s / n;
       }
     }
-    c.putImageData(raus, 0, 0);
-    const t = new THREE.CanvasTexture(cv);
-    t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    if (wdh) t.repeat.set(wdh[0], wdh[1]);
-    for (const m of ziel) { m.normalMap = t; m.needsUpdate = true; }
+
+    const machTex = (fuellen) => {
+      const bild2 = c.createImageData(N, N);
+      fuellen(bild2.data);
+      const cv2 = document.createElement('canvas'); cv2.width = cv2.height = N;
+      cv2.getContext('2d').putImageData(bild2, 0, 0);
+      const t = new THREE.CanvasTexture(cv2);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.anisotropy = Math.min(8, MAX_ANISO);
+      if (wdh) t.repeat.set(wdh[0], wdh[1]);
+      return t;
+    };
+
+    const nrm = machTex((d) => {
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+          const i = y * N + x;
+          const l = hell[y * N + ((x - 1 + N) % N)], r = hell[y * N + ((x + 1) % N)];
+          const o = hell[((y - 1 + N) % N) * N + x], u = hell[((y + 1) % N) * N + x];
+          const dx = (l - r) * staerke, dy = (o - u) * staerke;
+          const len = Math.hypot(dx, dy, 1);
+          d[i*4]   = ((dx / len) * 0.5 + 0.5) * 255;
+          d[i*4+1] = ((dy / len) * 0.5 + 0.5) * 255;
+          d[i*4+2] = ((1 / len) * 0.5 + 0.5) * 255;
+          d[i*4+3] = 255;
+        }
+      }
+    });
+
+    // Rauheit liegt im Gruenkanal, Metall im Blaukanal. Beton ist nie
+    // metallisch, der Blaukanal bleibt darum leer.
+    const rau = machTex((d) => {
+      for (let i = 0; i < N * N; i++) {
+        const v = Math.min(1, Math.max(0, hell[i]));
+        const g = rauh[0] + (rauh[1] - rauh[0]) * v;
+        d[i*4] = 255; d[i*4+1] = g * 255; d[i*4+2] = 0; d[i*4+3] = 255;
+      }
+    });
+
+    const ao = machTex((d) => {
+      for (let i = 0; i < N * N; i++) {
+        const tiefe = Math.min(1, Math.max(0, weich[i] - hell[i]) * 4);
+        const v = (1 - tiefe * hohl) * 255;
+        d[i*4] = v; d[i*4+1] = v; d[i*4+2] = v; d[i*4+3] = 255;
+      }
+    });
+    // Der Hohlraum braucht sonst einen zweiten UV-Satz, den die
+    // Klotzgeometrie hier nicht hat. Kanal 0 nimmt den vorhandenen.
+    ao.channel = 0;
+
+    for (const m of ziel) {
+      m.normalMap = nrm;
+      m.roughnessMap = rau;
+      m.roughness = 1;              // der absolute Wert steckt in der Karte
+      m.aoMap = ao;
+      m.aoMapIntensity = 1;
+      m.needsUpdate = true;
+    }
   };
   bild.src = url;
 }
 const MAT_BODEN = new THREE.MeshStandardMaterial({
   vertexColors: true, map: TEX_BODEN, roughness: 0.94, metalness: 0.02 });
 const MAT_WAND = new THREE.MeshStandardMaterial({
-  map: TEX_WAND, roughness: 0.9, metalness: 0.03 });
-normalAus('./assets/tex_boden.jpg', 5, [MAP.W / 2, MAP.H / 2], [MAT_BODEN]);
-normalAus('./assets/tex_wand_kalt.jpg', 4, null, [MAT_WAND]);
+  map: TEX_WAND, roughness: 0.9, metalness: 0.02 });
+pbrAus('./assets/tex_boden.jpg', { staerke: 5, wdh: [MAP.W / 2, MAP.H / 2],
+  rauh: [0.55, 0.98], hohl: 0.55 }, [MAT_BODEN]);
+pbrAus('./assets/tex_wand_beton.jpg', { staerke: 4, rauh: [0.52, 0.95], hohl: 0.6 }, [MAT_WAND]);
 
 // ------------------------------------------------------------
 // Biomfarben (aus dem 2D-Spiel, entsaettigt in den Nebel gelegt)
@@ -1361,7 +1518,27 @@ ARKANA_GRUPPE.name = 'arkana';
 for (const kind of scene.children.slice(vorWelt)) ARKANA_GRUPPE.add(kind);
 scene.add(ARKANA_GRUPPE);
 
-const atrium = baueAtrium(MAT_WAND, MAT_BODEN, GLOW, IST_MOBIL);
+// Das Atrium bringt eigene Texturen mit. Die Wiederholung steckt hier
+// nicht in der Textur, sondern in den UVs jeder Geometrie, damit eine
+// Kachel auf einer 50-Meter-Wand genauso gross ist wie auf einer Stufe.
+const ATRIUM_TEX = {
+  wand: ladeTex('./assets/tex_wand_beton.jpg'),
+  boden: ladeTex('./assets/tex_boden_beton.jpg'),
+  decke: ladeTex('./assets/tex_decke_beton.jpg'),
+};
+const atrium = baueAtrium(ATRIUM_TEX, GLOW, IST_MOBIL);
+pbrAus('./assets/tex_wand_beton.jpg', { staerke: 4.5, rauh: [0.5, 0.95], hohl: 0.65 },
+  [atrium.mat.hell, atrium.mat.mittel, atrium.mat.dunkel]);
+// Simse und Kanten bleiben glatter, dadurch greifen sie Streiflicht ab
+// und heben die Silhouette von der Flaeche ab.
+pbrAus('./assets/tex_wand_beton.jpg', { staerke: 3, rauh: [0.32, 0.6], hohl: 0.4 },
+  [atrium.mat.kante]);
+pbrAus('./assets/tex_decke_beton.jpg', { staerke: 4, rauh: [0.72, 1.0], hohl: 0.6 },
+  [atrium.mat.decke]);
+// Der Boden: dunkle Stellen der Textur gelten als feucht und werden
+// spiegelglatt, der Rest bleibt matt. Daher die weite Spanne.
+pbrAus('./assets/tex_boden_beton.jpg', { staerke: 3, rauh: [0.1, 0.72], hohl: 0.5 },
+  [atrium.mat.boden]);
 scene.add(atrium.gruppe);
 
 let ort = 'atrium';             // wo der Spieler gerade ist
@@ -1373,7 +1550,11 @@ function setzeOrt(neu) {
   // Die Sonne von Arkana wuerde im Atrium durch die Decke scheinen
   sonne.visible = !imAtrium;
   tragelicht.intensity = imAtrium ? 3 : 16;
-  hemi.intensity = imAtrium ? 1.5 : 2.6;
+  // Im Atrium darf das Fuelllicht zurueckgehen, dort leuchtet die
+  // Umgebungskarte kraeftig. Draussen traegt sie kaum, da bleibt es hoch.
+  hemi.intensity = imAtrium ? 1.25 : 2.8;
+  umgebungslicht.intensity = imAtrium ? 0.9 : 1.8;
+  scene.environment = imAtrium ? ENV_ATRIUM : ENV_AUSSEN;
   fog.density = imAtrium ? 0.021 : 0.0125;
   if (S) S.ort = neu;
 }
@@ -1646,7 +1827,8 @@ function tickInner(now) {
       fogZiel.clone().multiplyScalar(0.32), Math.min(1, dt * 1.5));
 
     if (location.search.includes('debug')) {
-      window.__mess = { spieler, camera, THREE, pos, maus, mixer, laufClip, ruheClip };
+      window.__mess = { spieler, camera, THREE, pos, maus, mixer, laufClip, ruheClip,
+                        scene, atrium };
     }
     // ---- Debug (nur Entwicklung) ----
     if (location.search.includes('debug')) {
@@ -1715,6 +1897,8 @@ function tickInner(now) {
     bewegePlatten(t);
   }
 
+  // Das Korn muss pro Bild wandern, sonst klebt ein Muster im Bild
+  schluss.uniforms.zeit.value = (t * 7.13) % 100;
   composer.render();
 }
 requestAnimationFrame(tick);
