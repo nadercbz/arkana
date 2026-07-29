@@ -32,6 +32,15 @@ const BILDER_PRO_S = 10;
 const ATEM = 3;      // 4.0 s, Ein- und Ausatmen
 const WIPPEN = 5;    // 2.4 s, feines Schwanken
 
+// Die Achsen des Koerperraums: X nickt, Y dreht, Z neigt zur Seite.
+// Muessen vor allen Listen stehen, die sie benutzen. Ein const ist
+// vor seiner Zeile nicht verwendbar, das Modul wuerde beim Laden
+// werfen und das ganze Spiel bliebe im Ladebildschirm haengen.
+const G2B = Math.PI / 180;
+const achseX = new THREE.Vector3(1, 0, 0);
+const achseY = new THREE.Vector3(0, 1, 0);
+const achseZ = new THREE.Vector3(0, 0, 1);
+
 // Konstante Haltungskorrektur.
 //
 // Die Bindepose des Modells ist eine A-Pose: die Oberarme stehen 23.4
@@ -56,11 +65,6 @@ const HALTUNG = [
   ['LeftShoulder',  achseZ, -2.5],
   ['RightShoulder', achseZ,  2.5],
 ];
-
-const G2B = Math.PI / 180;
-const achseX = new THREE.Vector3(1, 0, 0);
-const achseY = new THREE.Vector3(0, 1, 0);
-const achseZ = new THREE.Vector3(0, 0, 1);
 
 // Drehung aller Vorfahren bis unter die Wurzel. Damit laesst sich eine
 // Drehung aus dem Koerperraum in den Elternraum des Knochens holen.
