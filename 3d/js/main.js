@@ -1043,7 +1043,11 @@ function tickInner(now) {
     // ---- Figur ----
     const wx = pos.x * T3, wz = pos.z * T3;
     spieler.grp.position.set(wx, 0, wz);
-    spieler.grp.rotation.y = blick + (modellGeladen ? Math.PI : 0);
+    // Das Modell schaut in seinem eigenen Raum nach +Z, genau wie die
+    // Ersatzfigur. rotation.y = blick richtet es also entlang der
+    // Blickrichtung der Kamera aus, weg vom Betrachter. Ein Aufschlag
+    // von 180 Grad drehte es frueher zum Spieler hin.
+    spieler.grp.rotation.y = blick;
     const ph = laufzeit * 7 * (rueckwaerts ? -1 : 1);
     const amp = geht ? 0.55 : 0;
     if (spieler.teile) {
