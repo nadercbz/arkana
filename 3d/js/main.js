@@ -4,6 +4,10 @@
 // eine kleine warme Figur, alles Wichtige leuchtet warmweiss.
 // ============================================================
 import * as THREE from 'three';
+import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
 
 const T3 = 4;                     // eine Kachel = 4 Welt-Einheiten
 const $ = (id) => document.getElementById(id);
@@ -84,28 +88,50 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPrefere
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.28;
+const IST_MOBIL = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+renderer.shadowMap.enabled = !IST_MOBIL;          // Schatten kosten, Handys sparen
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 400);
 
 // Nebel traegt den Look. Farbe wandert mit dem Biom.
-const fog = new THREE.FogExp2(0x232c38, 0.022);
+const fog = new THREE.FogExp2(0x232c38, 0.016);
 scene.fog = fog;
 scene.background = new THREE.Color(0x232c38);
 
-const hemi = new THREE.HemisphereLight(0x8fa8c8, 0x1c222c, 1.0);
+const hemi = new THREE.HemisphereLight(0x8fa8c8, 0x232a34, 1.45);
 scene.add(hemi);
-scene.add(new THREE.AmbientLight(0x39424e, 0.55));
-const sonne = new THREE.DirectionalLight(0xffd9a8, 1.1);
+scene.add(new THREE.AmbientLight(0x424c5a, 0.85));
+const sonne = new THREE.DirectionalLight(0xffd9a8, 1.5);
 sonne.position.set(60, 90, 30);
+if (!IST_MOBIL) {
+  sonne.castShadow = true;
+  sonne.shadow.mapSize.set(2048, 2048);
+  sonne.shadow.camera.near = 10; sonne.shadow.camera.far = 260;
+  const R = 70;
+  sonne.shadow.camera.left = -R; sonne.shadow.camera.right = R;
+  sonne.shadow.camera.top = R; sonne.shadow.camera.bottom = -R;
+  sonne.shadow.bias = -0.0004;
+  scene.add(sonne.target);
+}
 scene.add(sonne);
 // Ein wanderndes warmes Licht bleibt beim Spieler, wie eine getragene Laterne
-const tragelicht = new THREE.PointLight(0xffb864, 34, 34, 1.6);
+const tragelicht = new THREE.PointLight(0xffb864, 11, 30, 1.9);
 scene.add(tragelicht);
+
+// Nachbearbeitung: Bloom laesst Portale, Fragmente und Laternen
+// wirklich leuchten statt nur hell zu sein
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.42, 0.55, 0.88);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
+  composer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 }
@@ -129,6 +155,20 @@ function glowSprite(scale, farbe) {
   const s = new THREE.Sprite(m); s.scale.setScalar(scale);
   return s;
 }
+
+// ------------------------------------------------------------
+// Higgsfield-Texturen (nach der Stilformel generiert)
+// ------------------------------------------------------------
+const texLader = new THREE.TextureLoader();
+function ladeTex(url, wdh) {
+  const t = texLader.load(url);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  if (wdh) t.repeat.set(wdh[0], wdh[1]);
+  return t;
+}
+const TEX_BODEN = ladeTex('./assets/tex_boden.png', [MAP.W / 2, MAP.H / 2]);
+const TEX_WAND = ladeTex('./assets/tex_wand.png');
 
 // ------------------------------------------------------------
 // Biomfarben (aus dem 2D-Spiel, entsaettigt in den Nebel gelegt)
@@ -188,9 +228,12 @@ function bauBoden() {
     farben[i * 3] = tmp.r; farben[i * 3 + 1] = tmp.g; farben[i * 3 + 2] = tmp.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(farben, 3));
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  // Textur mal Vertexfarbe: die Betonplatten liegen unter allem,
+  // die Biomfarbe toent sie ein
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: TEX_BODEN });
   const m = new THREE.Mesh(geo, mat);
   m.position.set(MAP.W * T3 / 2, 0, MAP.H * T3 / 2);
+  m.receiveShadow = true;
   scene.add(m);
 }
 
@@ -231,8 +274,9 @@ function bauWelt() {
   {
     const geo = new THREE.BoxGeometry(T3, 1, T3);
     geo.translate(0, 0.5, 0);
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: false });
+    const mat = new THREE.MeshLambertMaterial({ map: TEX_WAND });
     const inst = new THREE.InstancedMesh(geo, mat, waende.length);
+    inst.castShadow = true; inst.receiveShadow = true;
     const farbe = new THREE.Color();
     waende.forEach((e, i) => {
       // Innen hoeher als am Rand einer Wandflaeche, wie gewachsene Bauten
@@ -244,7 +288,7 @@ function bauWelt() {
       dummy.rotation.set(0, 0, 0);
       dummy.updateMatrix();
       inst.setMatrixAt(i, dummy.matrix);
-      farbe.copy(BIO[biomAt(e.tx, e.ty)].wand).multiplyScalar(0.85 + e.h * 0.3);
+      farbe.copy(BIO[biomAt(e.tx, e.ty)].wand).multiplyScalar(2.2 + e.h * 0.8);
       inst.setColorAt(i, farbe);
     });
     scene.add(inst);
@@ -257,6 +301,7 @@ function bauWelt() {
     const kroneGeo = new THREE.IcosahedronGeometry(1, 0);
     const stamm = new THREE.InstancedMesh(stammGeo, new THREE.MeshLambertMaterial({ color: 0x241c14 }), baeume.length);
     const krone = new THREE.InstancedMesh(kroneGeo, new THREE.MeshLambertMaterial({}), baeume.length);
+    stamm.castShadow = true; krone.castShadow = true;
     const farbe = new THREE.Color();
     baeume.forEach((e, i) => {
       const tot = e.ch === '3';
@@ -399,8 +444,9 @@ function bauPortale() {
     const b = BIO[biomAt(r.x, r.y)];
     const stein = new THREE.Mesh(
       new THREE.BoxGeometry(9, 30, 2.4),
-      new THREE.MeshLambertMaterial({ color: b.wand.clone().multiplyScalar(1.4) }));
+      new THREE.MeshLambertMaterial({ map: TEX_WAND, color: b.wand.clone().multiplyScalar(2.6) }));
     stein.position.y = 15;
+    stein.castShadow = true;
     const tuer = new THREE.Mesh(
       new THREE.PlaneGeometry(4.2, 15),
       new THREE.MeshBasicMaterial({ color: 0xfff2dc }));
@@ -518,9 +564,47 @@ addEventListener('keydown', (e) => {
   const k = keyVon(e);
   if (!k) return;
   tasten[k] = true;
-  if (k === 'Enter' || k === 'Space' || k === 'KeyE') { eingabe.ok = true; e.preventDefault(); }
+  if (k === 'Enter' || k === 'KeyE') { eingabe.ok = true; e.preventDefault(); }
+  if (k === 'Space') e.preventDefault();
 });
 addEventListener('keyup', (e) => { const k = keyVon(e); if (k) tasten[k] = false; });
+
+// Maus wie in Minecraft: Klick ins Spiel sperrt den Zeiger,
+// Bewegung dreht die Kamera, Escape gibt ihn frei
+const maus = { yaw: 0, pitch: 0.32, aktiv: false };
+canvas.addEventListener('click', () => {
+  if (!IST_MOBIL && S && !dialog && !fragOffen && document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
+  }
+});
+document.addEventListener('pointerlockchange', () => {
+  maus.aktiv = document.pointerLockElement === canvas;
+});
+addEventListener('mousemove', (e) => {
+  if (!maus.aktiv) return;
+  maus.yaw -= e.movementX * 0.0028;
+  maus.pitch = Math.min(1.25, Math.max(-0.15, maus.pitch + e.movementY * 0.0022));
+});
+// Am Handy: zweiter Finger auf der rechten Haelfte dreht die Kamera
+let drehId = null, drehX = 0;
+addEventListener('touchstart', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.clientX > innerWidth * 0.55 && drehId === null
+        && !(t.target.closest && t.target.closest('button, .overlay, #dlg, #frag'))) {
+      drehId = t.identifier; drehX = t.clientX;
+    }
+  }
+}, { passive: true });
+addEventListener('touchmove', (e) => {
+  for (const t of e.changedTouches) {
+    if (t.identifier !== drehId) continue;
+    maus.yaw -= (t.clientX - drehX) * 0.006;
+    drehX = t.clientX;
+  }
+}, { passive: true });
+addEventListener('touchend', (e) => {
+  for (const t of e.changedTouches) if (t.identifier === drehId) drehId = null;
+}, { passive: true });
 
 const stickEl = $('stick'), knobEl = $('knob');
 const stick = { id: null, cx: 0, cy: 0 };
@@ -793,6 +877,7 @@ const pos = { x: 0, z: 0 };
 let blick = 0;
 let camYaw = 0;
 let laufzeit = 0;
+let sprungY = 0, sprungV = 0;    // Sprunghoehe und -geschwindigkeit
 const cam = { x: 0, y: 8, z: 10 };
 let naechstes = null;
 
@@ -821,6 +906,7 @@ function spielStart() {
     if (f > bestFrei) { bestFrei = f; bester = yaw; }
   }
   camYaw = blick = bester;
+  maus.yaw = bester;
   cam.x = pos.x * T3 - Math.sin(camYaw) * 9;
   cam.z = pos.z * T3 - Math.cos(camYaw) * 9;
   cam.y = 4.8;
@@ -846,15 +932,24 @@ function tickInner(now) {
   const t = now / 1000;
 
   if (S) {
-    // ---- Bewegung ----
-    const d = (dialog || fragOffen) ? { x: 0, y: 0 } : richtung();
-    const tempo = 3.6;             // Kacheln pro Sekunde
+    // ---- Bewegung: W ist immer die Blickrichtung der Kamera ----
+    const roh = (dialog || fragOffen) ? { x: 0, y: 0 } : richtung();
+    const vor = { x: Math.sin(maus.yaw), z: Math.cos(maus.yaw) };
+    const rechts = { x: vor.z, z: -vor.x };
+    const d = { x: vor.x * -roh.y + rechts.x * roh.x,
+                y: vor.z * -roh.y + rechts.z * roh.x };
+    const tempo = 3.9;             // Kacheln pro Sekunde
     const geht = Math.hypot(d.x, d.y) > 0.05;
     if (geht) {
       bewege(pos, d.x * tempo * dt, d.y * tempo * dt);
       blick += ((Math.atan2(d.x, d.y) - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 12);
       laufzeit += dt * (1 + Math.hypot(d.x, d.y));
     }
+    // Sprung: Leertaste, einfache Schwerkraft
+    if (tasten.Space && sprungY <= 0.001 && !dialog && !fragOffen) sprungV = 7.2;
+    sprungV -= 20 * dt;
+    sprungY = Math.max(0, sprungY + sprungV * dt);
+    if (sprungY <= 0) sprungV = Math.max(0, sprungV);
     S.px = pos.x; S.py = pos.z;
     speicherTimer += dt;
     if (speicherTimer > 4) { speicherTimer = 0; speichern(); }
@@ -869,17 +964,17 @@ function tickInner(now) {
     spieler.teile.beinR.rotation.x = Math.sin(ph + Math.PI) * amp;
     spieler.teile.armL.rotation.x = Math.sin(ph + Math.PI) * amp * 0.8;
     spieler.teile.armR.rotation.x = Math.sin(ph) * amp * 0.8;
-    spieler.grp.position.y = geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03;
-    tragelicht.position.set(wx, 3.2, wz);
+    spieler.grp.position.y = sprungY * 2.2 + (geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03);
+    tragelicht.position.set(wx + Math.sin(blick) * 1.5, 4.2, wz + Math.cos(blick) * 1.5);
+    sonne.position.set(wx + 60, 90, wz + 30);
+    if (sonne.target) { sonne.target.position.set(wx, 0, wz); sonne.target.updateMatrixWorld(); }
 
-    // ---- Kamera: hinter der Figur, mit Traegheit im Winkel ----
-    // Der Winkel folgt dem Blick nur langsam, so bleibt das Bild ruhig.
-    if (geht) {
-      camYaw += ((blick - camYaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 1.6);
-    }
-    const abst = 9, hoehe = 4.8;
-    let zx = wx - Math.sin(camYaw) * abst;
-    let zz = wz - Math.cos(camYaw) * abst;
+    // ---- Kamera: Orbit um die Figur, Maus bestimmt den Winkel ----
+    camYaw = maus.yaw;
+    const abst = 8.5;
+    const hoehe = 2 + Math.sin(maus.pitch) * abst;
+    let zx = wx - Math.sin(camYaw) * Math.cos(maus.pitch) * abst;
+    let zz = wz - Math.cos(camYaw) * Math.cos(maus.pitch) * abst;
     // Sichtpruefung: steht ein Monolith zwischen Figur und Kamera,
     // rueckt die Kamera davor, statt hineinzuschneiden
     let frei = 1;
@@ -898,7 +993,7 @@ function tickInner(now) {
     cam.y = (cam.y || hoehe) + (zy - (cam.y || hoehe)) * Math.min(1, dt * 4.5);
     camera.position.set(cam.x, cam.y, cam.z);
 
-    camera.lookAt(wx + Math.sin(blick) * 1.2, 2, wz + Math.cos(blick) * 1.2);
+    camera.lookAt(wx, 2 + sprungY * T3 / 2, wz);
 
     // ---- Nebel folgt dem Biom ----
     const bio = BIO[biomAt(Math.floor(pos.x), Math.floor(pos.z))];
@@ -958,6 +1053,6 @@ function tickInner(now) {
     camera.lookAt(MAP.W * T3 / 2, 6, MAP.H * T3 / 2);
   }
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 requestAnimationFrame(tick);
