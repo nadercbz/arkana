@@ -656,6 +656,8 @@ canvas.addEventListener('click', () => {
 });
 document.addEventListener('pointerlockchange', () => {
   maus.aktiv = document.pointerLockElement === canvas;
+  const h = $('mausHinweis');
+  if (h && maus.aktiv) h.remove();
 });
 addEventListener('mousemove', (e) => {
   if (!maus.aktiv) return;
@@ -1010,19 +1012,25 @@ function tickInner(now) {
   const t = now / 1000;
 
   if (S) {
-    // ---- Bewegung: W ist immer die Blickrichtung der Kamera ----
+    // ---- Bewegung, relativ zur Kamera wie in Minecraft ----
+    // W laeuft dahin, wo die Kamera hinschaut. Der Rechts-Vektor ist das
+    // Kreuzprodukt aus Oben und Blickrichtung, NICHT die um 90 Grad
+    // gedrehte Blickrichtung. Vertauscht man das, sind A und D getauscht.
     const roh = (dialog || fragOffen) ? { x: 0, y: 0 } : richtung();
     const vor = { x: Math.sin(maus.yaw), z: Math.cos(maus.yaw) };
-    const rechts = { x: vor.z, z: -vor.x };
+    const rechts = { x: -vor.z, z: vor.x };
     const d = { x: vor.x * -roh.y + rechts.x * roh.x,
                 y: vor.z * -roh.y + rechts.z * roh.x };
     const tempo = 3.9;             // Kacheln pro Sekunde
     const geht = Math.hypot(d.x, d.y) > 0.05;
     if (geht) {
       bewege(pos, d.x * tempo * dt, d.y * tempo * dt);
-      blick += ((Math.atan2(d.x, d.y) - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 12);
       laufzeit += dt * (1 + Math.hypot(d.x, d.y));
     }
+    // Der Koerper schaut dorthin, wo die Kamera hinschaut. Bei S laeuft
+    // er rueckwaerts, bei A und D seitwaerts, so wie man es erwartet.
+    blick += ((maus.yaw - blick + Math.PI * 3) % (Math.PI * 2) - Math.PI) * Math.min(1, dt * 10);
+    const rueckwaerts = geht && (d.x * vor.x + d.y * vor.z) < -0.25;
     // Sprung: Leertaste, einfache Schwerkraft
     if (tasten.Space && sprungY <= 0.001 && !dialog && !fragOffen) sprungV = 7.2;
     sprungV -= 20 * dt;
@@ -1036,7 +1044,7 @@ function tickInner(now) {
     const wx = pos.x * T3, wz = pos.z * T3;
     spieler.grp.position.set(wx, 0, wz);
     spieler.grp.rotation.y = blick + (modellGeladen ? Math.PI : 0);
-    const ph = laufzeit * 7;
+    const ph = laufzeit * 7 * (rueckwaerts ? -1 : 1);
     const amp = geht ? 0.55 : 0;
     if (spieler.teile) {
       spieler.teile.beinL.rotation.x = Math.sin(ph) * amp;
@@ -1048,7 +1056,7 @@ function tickInner(now) {
       // Weich zwischen Ruhe und Gehen ueberblenden
       const ziel = geht ? 1 : 0;
       if (laufClip) {
-        laufClip.timeScale = 1.25;
+        laufClip.timeScale = rueckwaerts ? -1.05 : 1.25;
         laufClip.weight += (ziel - laufClip.weight) * Math.min(1, dt * 8);
         if (!ruheClip) laufClip.paused = !geht && laufClip.weight < 0.02;
       }
