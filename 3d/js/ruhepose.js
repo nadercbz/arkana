@@ -32,6 +32,31 @@ const BILDER_PRO_S = 10;
 const ATEM = 3;      // 4.0 s, Ein- und Ausatmen
 const WIPPEN = 5;    // 2.4 s, feines Schwanken
 
+// Konstante Haltungskorrektur.
+//
+// Die Bindepose des Modells ist eine A-Pose: die Oberarme stehen 23.4
+// Grad von der Senkrechten ab, die Haende liegen dadurch etwa 23 cm
+// neben dem Koerper. So steht kein Mensch entspannt da, das sah aus
+// wie ein Schaufensterpuppen-Gestell. Ein entspannt haengender Arm
+// steht rund 7 Grad ab und hat den Ellbogen leicht gebeugt.
+//
+// Diese Werte gelten immer, unabhaengig von der Bewegung. Sie liegen
+// als Erstes auf der Ruhepose, alles andere kommt darauf.
+const HALTUNG = [
+  // Oberarme an den Koerper. Das ist der eigentliche Fix.
+  ['LeftArm',  achseZ, -16.0],
+  ['RightArm', achseZ,  16.0],
+  // Ellbogen leicht gebeugt, die Haende kommen dadurch nach vorn
+  ['LeftForeArm',  achseX, -8.0],
+  ['RightForeArm', achseX, -8.0],
+  // Unterarme minimal einwaerts, die Handflaechen zeigen zum Bein
+  ['LeftForeArm',  achseZ, -5.0],
+  ['RightForeArm', achseZ,  5.0],
+  // Schultern faellt etwas ab, ein entspannter Nacken ist nicht hochgezogen
+  ['LeftShoulder',  achseZ, -2.5],
+  ['RightShoulder', achseZ,  2.5],
+];
+
 const G2B = Math.PI / 180;
 const achseX = new THREE.Vector3(1, 0, 0);
 const achseY = new THREE.Vector3(0, 1, 0);
@@ -94,16 +119,22 @@ export function baueRuheClip(wurzel) {
   // steif. Sie kommen aus macheStandBeleber weiter unten, mit
   // Haltephasen und zufaelligem Abstand.
 
-  // Nach Knochen buendeln
+  // Nach Knochen buendeln. fest sind die Haltungswerte, die immer
+  // gelten, wellen die Schwingungen darauf.
   const proKnochen = {};
+  const eintrag = (name) => (proKnochen[name] = proKnochen[name] || { fest: [], wellen: [] });
+  for (const [name, achse, grad] of HALTUNG) {
+    if (knochen[name]) eintrag(name).fest.push({ achse, grad });
+  }
   for (const [name, achse, grad, welle, phase] of bewegungen) {
-    if (!knochen[name]) continue;
-    (proKnochen[name] = proKnochen[name] || []).push({ achse, grad, welle, phase });
+    if (knochen[name]) eintrag(name).wellen.push({ achse, grad, welle, phase });
   }
 
   const spuren = [];
   const tmp = new THREE.Quaternion();
   const wq = new THREE.Quaternion();
+  const einzel = new THREE.Quaternion();
+  const ek = new THREE.Quaternion();
 
   for (const name in knochen) {
     const werte = new Float32Array(anzahl * 4);
@@ -114,11 +145,14 @@ export function baueRuheClip(wurzel) {
         // Alle Anteile als Weltdrehungen aufsammeln, dann einmal
         // in den Elternraum holen. Das haelt die Reihenfolge stabil.
         wq.identity();
-        for (const b of teile) {
-          const s = Math.sin(2 * Math.PI * (b.welle * (i / (anzahl - 1)) + b.phase));
-          wq.multiply(new THREE.Quaternion().setFromAxisAngle(b.achse, b.grad * s * G2B));
+        for (const h of teile.fest) {
+          wq.multiply(einzel.setFromAxisAngle(h.achse, h.grad * G2B));
         }
-        const ek = eltern[name].clone().conjugate();
+        for (const b of teile.wellen) {
+          const s = Math.sin(2 * Math.PI * (b.welle * (i / (anzahl - 1)) + b.phase));
+          wq.multiply(einzel.setFromAxisAngle(b.achse, b.grad * s * G2B));
+        }
+        ek.copy(eltern[name]).conjugate();
         tmp.copy(ek).multiply(wq).multiply(eltern[name]).multiply(ruhe[name]);
       }
       werte[i * 4] = tmp.x; werte[i * 4 + 1] = tmp.y;
@@ -157,9 +191,12 @@ export function macheStandBeleber(wurzel) {
 
   // Werte, die sich weich auf ihr Ziel zubewegen. gewicht ist das
   // Standbein: minus eins links, plus eins rechts.
-  const w = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0 };
-  const ziel = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0 };
-  const tempo = { kopfGier: 2.2, kopfNick: 3.0, kopfNeig: 2.4, gewicht: 0.9, schulter: 3.5 };
+  const w = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0,
+              armL: 0, armR: 0 };
+  const ziel = { kopfGier: 0, kopfNick: 0, kopfNeig: 0, gewicht: 0, schulter: 0,
+                 armL: 0, armR: 0 };
+  const tempo = { kopfGier: 2.2, kopfNick: 3.0, kopfNeig: 2.4, gewicht: 0.9, schulter: 3.5,
+                  armL: 1.3, armR: 1.3 };
 
   let bisAktion = 1.5 + Math.random() * 2;
   let blickHalten = 0;
@@ -167,26 +204,31 @@ export function macheStandBeleber(wurzel) {
 
   function neueAktion() {
     const r = Math.random();
-    if (r < 0.42) {
+    if (r < 0.36) {
       // Umsehen. Der Kopf dreht zur Seite und bleibt eine Weile dort.
       const seite = Math.random() < 0.5 ? -1 : 1;
       ziel.kopfGier = seite * zuf(0.35, 1.0);
       ziel.kopfNick = zuf(-0.35, 0.25);
       ziel.kopfNeig = seite * zuf(0.0, 0.35);
       blickHalten = zuf(1.0, 2.6);
-    } else if (r < 0.68) {
+    } else if (r < 0.58) {
       // Gewicht auf das andere Bein. Das haelt dann laenger.
       ziel.gewicht = w.gewicht > 0 ? -zuf(0.6, 1.0) : zuf(0.6, 1.0);
-    } else if (r < 0.84) {
+    } else if (r < 0.72) {
       // Kurzes Nicken, als wuerde er etwas zur Kenntnis nehmen
       ziel.kopfNick = zuf(0.4, 0.8);
       blickHalten = zuf(0.25, 0.5);
-    } else {
+    } else if (r < 0.84) {
       // Schulter lockern
       ziel.schulter = zuf(0.5, 1.0);
       blickHalten = zuf(0.3, 0.6);
+    } else {
+      // Arme neu ablegen. Beide Seiten unabhaengig, sonst wirkt es
+      // wie eine Turnuebung. Meist bewegt sich nur eine Seite.
+      if (Math.random() < 0.65) ziel.armL = zuf(-0.8, 0.8);
+      if (Math.random() < 0.65) ziel.armR = zuf(-0.8, 0.8);
     }
-    bisAktion = zuf(2.2, 5.5);
+    bisAktion = zuf(1.8, 4.6);
   }
 
   const tmpQ = new THREE.Quaternion();
@@ -274,11 +316,23 @@ export function macheStandBeleber(wurzel) {
       lege('LeftUpLeg', [achseZ, -g * 2.6]);
       lege('RightUpLeg', [achseZ, -g * 2.6]);
 
-      // Arme haengen mit, Schultern lockern gelegentlich
+      // Arme haengen mit, Schultern lockern gelegentlich. Die Arme
+      // legen sich ausserdem gelegentlich neu ab, jede Seite fuer sich.
       lege('LeftShoulder', [achseZ, w.schulter * 2.6 * s + g * 0.6]);
       lege('RightShoulder', [achseZ, -w.schulter * 2.6 * s + g * 0.6]);
-      lege('LeftArm', [achseZ, g * 1.9]);
-      lege('RightArm', [achseZ, g * 1.9]);
+
+      // raus ist der Ausschlag vom Koerper weg, in Grad. Nachgemessen
+      // liegt die entspannte Hand nur zwei Zentimeter neben der
+      // Mantelkante, und pro Grad wandert sie etwa einen Zentimeter.
+      // Nach innen darf deshalb fast nichts dazukommen, sonst schiebt
+      // sich die Hand sichtbar in den Mantel. Nach aussen ist frei.
+      const lehne = g * 1.2;
+      const rausL = Math.max(-0.8, w.armL * 3.0 * s - lehne);
+      const rausR = Math.max(-0.8, w.armR * 3.0 * s + lehne);
+      lege('LeftArm',  [achseZ,  rausL, achseX, w.armL * 2.6 * s]);
+      lege('RightArm', [achseZ, -rausR, achseX, w.armR * 2.6 * s]);
+      lege('LeftForeArm',  [achseX, w.armL * 4.5 * s]);
+      lege('RightForeArm', [achseX, w.armR * 4.5 * s]);
     },
   };
 }
