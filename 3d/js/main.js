@@ -8,6 +8,7 @@ import { EffectComposer } from '../vendor/addons/postprocessing/EffectComposer.j
 import { RenderPass } from '../vendor/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../vendor/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 
 const T3 = 4;                     // eine Kachel = 4 Welt-Einheiten
 const $ = (id) => document.getElementById(id);
@@ -101,10 +102,10 @@ const fog = new THREE.FogExp2(0x232c38, 0.016);
 scene.fog = fog;
 scene.background = new THREE.Color(0x232c38);
 
-const hemi = new THREE.HemisphereLight(0x8fa8c8, 0x232a34, 1.45);
+const hemi = new THREE.HemisphereLight(0x9fb8d8, 0x2b3440, 2.1);
 scene.add(hemi);
-scene.add(new THREE.AmbientLight(0x424c5a, 0.85));
-const sonne = new THREE.DirectionalLight(0xffd9a8, 1.5);
+scene.add(new THREE.AmbientLight(0x55637a, 1.35));
+const sonne = new THREE.DirectionalLight(0xdce8ff, 1.8);
 sonne.position.set(60, 90, 30);
 if (!IST_MOBIL) {
   sonne.castShadow = true;
@@ -167,8 +168,8 @@ function ladeTex(url, wdh) {
   if (wdh) t.repeat.set(wdh[0], wdh[1]);
   return t;
 }
-const TEX_BODEN = ladeTex('./assets/tex_boden.png', [MAP.W / 2, MAP.H / 2]);
-const TEX_WAND = ladeTex('./assets/tex_wand.png');
+const TEX_BODEN = ladeTex('./assets/tex_boden.jpg', [MAP.W / 2, MAP.H / 2]);
+const TEX_WAND = ladeTex('./assets/tex_wand_kalt.jpg');
 
 // ------------------------------------------------------------
 // Biomfarben (aus dem 2D-Spiel, entsaettigt in den Nebel gelegt)
@@ -517,9 +518,85 @@ function bauDinge() {
 }
 
 // ------------------------------------------------------------
-// Die Figur: kleine warme Gestalt, prozedural animiert.
-// Wird spaeter durch das Higgsfield-Modell ersetzt.
+// Die Figur. Bevorzugt das gerigte Higgsfield-Modell mit echter
+// Laufanimation. Nur wenn das fehlt oder nicht laedt, springt die
+// prozedurale Klotzfigur ein, damit das Spiel nie schwarz bleibt.
 // ------------------------------------------------------------
+let mixer = null, laufClip = null, ruheClip = null, modellGeladen = false;
+
+function ladeHeldModell(fallback) {
+  const loader = new GLTFLoader();
+  loader.load('./assets/held.glb', (gltf) => {
+    const wurzel = gltf.scene;
+    wurzel.updateWorldMatrix(true, true);
+
+    // Hoehe messen. Bei gerigten Modellen liefert Box3 oft Unsinn, weil die
+    // Geometrie in Bindepose in einem winzigen lokalen Raum liegt. Verlaesslich
+    // ist die Spannweite der Knochen in Weltkoordinaten.
+    let minY = Infinity, maxY = -Infinity, knochen = 0;
+    wurzel.traverse((o) => {
+      if (!o.isBone) return;
+      knochen++;
+      const p = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    });
+    let hoehe = maxY - minY;
+    let bodenY = minY;
+    if (!Number.isFinite(hoehe) || hoehe <= 0.01) {
+      // Kein Skelett gefunden: auf die Geometrie zurueckfallen
+      const box = new THREE.Box3().setFromObject(wurzel);
+      hoehe = box.max.y - box.min.y;
+      bodenY = box.min.y;
+    }
+    // Knochen enden am Hals, der Kopf sitzt darueber. Aufschlag von 12 Prozent.
+    if (knochen > 0) hoehe *= 1.12;
+    if (!Number.isFinite(hoehe) || hoehe <= 0.01) { hoehe = 1.78; bodenY = 0; }
+    const s2 = 2.15 / hoehe;
+    wurzel.scale.setScalar(s2);
+    wurzel.position.y = -bodenY * s2;
+    document.body.dataset.modell = JSON.stringify({
+      knochen, hoehe: +hoehe.toFixed(3), skalierung: +s2.toFixed(3),
+      bodenY: +bodenY.toFixed(3), clips: gltf.animations.map((a) => a.name),
+    });
+    wurzel.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.frustumCulled = false;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (!m) continue;
+        m.side = THREE.DoubleSide;          // duenne Stoffteile von hinten
+        m.transparent = false; m.depthWrite = true;
+        m.envMapIntensity = 0.6;
+      }
+    });
+    const halter = new THREE.Group();
+    halter.add(wurzel);
+    scene.add(halter);
+    if (gltf.animations && gltf.animations.length) {
+      mixer = new THREE.AnimationMixer(wurzel);
+      laufClip = mixer.clipAction(gltf.animations[0]);
+      laufClip.play(); laufClip.weight = 0;
+      // Ruhepose separat nachladen, damit die Figur im Stehen nicht
+      // in einem halben Schritt einfriert
+      new GLTFLoader().load('./assets/held_ruhe.glb', (g2) => {
+        if (!g2.animations || !g2.animations.length) return;
+        ruheClip = mixer.clipAction(g2.animations[0]);
+        ruheClip.play(); ruheClip.weight = 1;
+      }, undefined, () => { /* ohne Ruheclip laeuft es auch */ });
+    }
+    // Klotzfigur verschwindet, das echte Modell uebernimmt
+    scene.remove(fallback.grp);
+    spieler.grp = halter;
+    spieler.teile = null;
+    modellGeladen = true;
+  }, undefined, () => {
+    // Kein Modell da: die Klotzfigur bleibt einfach stehen
+    modellGeladen = false;
+  });
+}
+
 function bauSpieler() {
   const grp = new THREE.Group();
   const stoff = new THREE.MeshLambertMaterial({ color: 0xc4652a });
@@ -818,6 +895,7 @@ function zeigeSchrein() {
 // ------------------------------------------------------------
 bauBoden(); bauWelt(); bauPortale(); bauDinge();
 const spieler = bauSpieler();
+ladeHeldModell(spieler);
 $('lade').remove();
 
 // Titel und Signatur
@@ -957,14 +1035,28 @@ function tickInner(now) {
     // ---- Figur ----
     const wx = pos.x * T3, wz = pos.z * T3;
     spieler.grp.position.set(wx, 0, wz);
-    spieler.grp.rotation.y = blick;
+    spieler.grp.rotation.y = blick + (modellGeladen ? Math.PI : 0);
     const ph = laufzeit * 7;
     const amp = geht ? 0.55 : 0;
-    spieler.teile.beinL.rotation.x = Math.sin(ph) * amp;
-    spieler.teile.beinR.rotation.x = Math.sin(ph + Math.PI) * amp;
-    spieler.teile.armL.rotation.x = Math.sin(ph + Math.PI) * amp * 0.8;
-    spieler.teile.armR.rotation.x = Math.sin(ph) * amp * 0.8;
-    spieler.grp.position.y = sprungY * 2.2 + (geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03);
+    if (spieler.teile) {
+      spieler.teile.beinL.rotation.x = Math.sin(ph) * amp;
+      spieler.teile.beinR.rotation.x = Math.sin(ph + Math.PI) * amp;
+      spieler.teile.armL.rotation.x = Math.sin(ph + Math.PI) * amp * 0.8;
+      spieler.teile.armR.rotation.x = Math.sin(ph) * amp * 0.8;
+    }
+    if (mixer) {
+      // Weich zwischen Ruhe und Gehen ueberblenden
+      const ziel = geht ? 1 : 0;
+      if (laufClip) {
+        laufClip.timeScale = 1.25;
+        laufClip.weight += (ziel - laufClip.weight) * Math.min(1, dt * 8);
+        if (!ruheClip) laufClip.paused = !geht && laufClip.weight < 0.02;
+      }
+      if (ruheClip) ruheClip.weight += ((1 - ziel) - ruheClip.weight) * Math.min(1, dt * 8);
+      mixer.update(dt);
+    }
+    spieler.grp.position.y = sprungY * 2.2
+      + (modellGeladen ? 0 : (geht ? Math.abs(Math.sin(ph)) * 0.1 : Math.sin(t * 1.8) * 0.03));
     tragelicht.position.set(wx + Math.sin(blick) * 1.5, 4.2, wz + Math.cos(blick) * 1.5);
     sonne.position.set(wx + 60, 90, wz + 30);
     if (sonne.target) { sonne.target.position.set(wx, 0, wz); sonne.target.updateMatrixWorld(); }

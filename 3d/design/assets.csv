@@ -1,12 +1,10 @@
 id,kind,beschreibung,einsatz,status
-tex_wand,texture,weathered cast concrete wall board-form lines,Waende aller Biome (getont),generiert
-tex_boden,texture,dark ash-grey concrete floor slabs,Boden aller Biome (getont),generiert
-img_held,3d-concept,lone wanderer amber hooded cloak,Basis fuer image_to_3d Heldenmodell,generiert
-img_monolith,3d-concept,concrete monolith glowing doorway,Basis fuer image_to_3d Wahrzeichen,generiert
-glb_held,3d,aus img_held,Spielfigur (gerigged + Walk),offen
-glb_monolith,3d,aus img_monolith,Wahrzeichen in Regionsmitten,offen
-audio_ambient_arkana,music,slow dark ambient drone distant choir,Grundteppich Arkana,offen
-audio_ambient_stadt,music,grey rainy city hum,Prolog Stadt,offen
+tex_wand,texture,weathered cast concrete wall,Waende aller Biome (getont),eingebaut
+tex_boden,texture,dark ash-grey concrete floor slabs,Boden aller Biome (getont),eingebaut
+held_ref_a,3d-concept,"contemporary figure, dark coat, A-pose",Basis fuer image_to_3d,fertig
+glb_held,3d,"gerigged + Casual_Walk, 20k tris",Spielfigur,laeuft
+img_monolith,3d-concept,concrete monolith glowing doorway,Basis fuer Wahrzeichen,fertig
+glb_monolith,3d,statisches Mesh,Wahrzeichen in Regionsmitten,offen
+audio_ambient_arkana,music,slow dark ambient drone,Grundteppich Arkana,offen
 sfx_schritt,sfx,footstep on concrete,Schritte,offen
-sfx_fragment,sfx,crystalline chime swell,Fragment aufnehmen,offen
 voice_erzaehler,tts,ruhige deutsche Erzaehlstimme,Dialoge und Inschriften,offen
